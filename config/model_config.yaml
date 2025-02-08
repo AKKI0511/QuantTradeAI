@@ -1,0 +1,66 @@
+# Model Configuration for Momentum Trading Strategy
+
+# Data Parameters
+data:
+  symbols: ['AAPL', 'META', 'TSLA', 'JPM', 'AMZN']
+  start_date: '2015-01-01'
+  end_date: '2024-12-31'
+  test_start: '2025-01-01'
+  test_end: '2025-01-31'
+
+# Feature Engineering Parameters
+features:
+  technical_indicators:
+    sma: [5, 10, 20, 50, 200]
+    ema: [5, 10, 20, 50, 200]
+    rsi: [14]
+    macd:
+      fast: 12
+      slow: 26
+      signal: 9
+    stochastic:
+      k: 14
+      d: 3
+  
+  returns:
+    periods: [1, 5, 20]  # Daily, Weekly, Monthly
+
+# Model Parameters
+models:
+  voting_classifier:
+    voting: 'soft'
+    weights: [1, 2, 2]  # [logistic, random_forest, xgboost]
+  
+  logistic_regression:
+    C: 1.0
+    max_iter: 1000
+    class_weight: 'balanced'
+  
+  random_forest:
+    n_estimators: 100
+    max_depth: 10
+    min_samples_split: 2
+    min_samples_leaf: 1
+    class_weight: 'balanced'
+  
+  xgboost:
+    n_estimators: 100
+    max_depth: 6
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bytree: 0.8
+    scale_pos_weight: 1
+
+# Training Parameters
+training:
+  test_size: 0.2
+  random_state: 42
+  cv_folds: 5
+  
+# Trading Parameters
+trading:
+  position_size: 0.2  # Percentage of portfolio per position
+  stop_loss: 0.02    # 2% stop loss
+  take_profit: 0.04  # 4% take profit
+  max_positions: 5   # Maximum number of simultaneous positions
+  transaction_cost: 0.001  # 0.1% per trade 
