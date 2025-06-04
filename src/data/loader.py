@@ -87,7 +87,8 @@ class DataLoader:
                 return False
             
             # Check for excessive missing values
-            if df.isnull().sum().max() > len(df) * 0.01:  # Max 1% missing values
+            # Check missing value ratio per column
+            if df.isnull().mean().max() > 0.01:  # Max 1% missing values
                 logger.error(f"Too many missing values for {symbol}")
                 return False
         
