@@ -122,9 +122,9 @@ class DataProcessor:
             
             # 2. Volume-Price Trend
             # Measures buying/selling pressure
-            df['vpt'] = (df['Volume'] * 
-                        ((df['Close'] - df['Close'].shift(1)) / 
-                         df['Close'].shift(1))).cumsum()
+            df['vpt'] = (
+                df['Volume'] * df['Close'].pct_change()
+            ).fillna(0).cumsum()
             
             # Normalize features
             df['momentum_score'] = (df['momentum_score'] - df['momentum_score'].mean()) / df['momentum_score'].std()
