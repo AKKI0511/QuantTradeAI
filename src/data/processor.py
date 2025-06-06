@@ -20,6 +20,10 @@ class DataProcessor:
         self.macd_params = {"fast": 12, "slow": 26, "signal": 9}
         self.stoch_params = {"k": 14, "d": 3}
 
+        # Bollinger Bands parameters
+        self.bb_period = 20
+        self.bb_std = 2
+
     def process_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Process raw OHLCV data and generate all required features.
@@ -35,13 +39,16 @@ class DataProcessor:
         # 1. Generate Momentum Indicators
         df = self._add_momentum_indicators(df)
 
-        # 2. Generate Return-based Features
+        # 2. Generate Bollinger Bands
+        df = self._add_bollinger_bands(df)
+
+        # 3. Generate Return-based Features
         df = self._add_return_features(df)
 
-        # 3. Generate Custom Features
+        # 4. Generate Custom Features
         df = self._add_custom_features(df)
 
-        # 4. Clean up and validate
+        # 5. Clean up and validate
         df = self._clean_data(df)
 
         return df
@@ -87,6 +94,19 @@ class DataProcessor:
 
         except Exception as e:
             logger.error(f"Error calculating momentum indicators: {str(e)}")
+            raise
+
+        return df
+
+    def _add_bollinger_bands(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Calculate Bollinger Bands using ``pandas_ta`` and append them."""
+        try:
+            bb = ta.bbands(df["Close"], length=self.bb_period, std=self.bb_std)
+            df["bb_lower"] = bb.iloc[:, 0]
+            df["bb_middle"] = bb.iloc[:, 1]
+            df["bb_upper"] = bb.iloc[:, 2]
+        except Exception as e:
+            logger.error(f"Error calculating Bollinger Bands: {str(e)}")
             raise
 
         return df
