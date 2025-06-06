@@ -19,8 +19,8 @@ volume_features:
 volatility_features:
   - atr_periods: [14]
   - bollinger_bands:
-      periods: [20]
-      std_dev: [2]
+      period: 20
+      std_dev: 2
   - keltner_channels:
       periods: [20]
       atr_multiple: 2
