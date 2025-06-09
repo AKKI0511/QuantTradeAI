@@ -10,6 +10,10 @@ price_features:
 
 # Volume Features
 volume_features:
+  - volume_sma:
+      periods: [5, 10, 20]
+  - volume_ema:
+      periods: [5, 10, 20]
   - volume_sma_ratios: [5, 10, 20]
   - volume_ema_ratios: [5, 10, 20]
   - on_balance_volume
@@ -68,8 +72,9 @@ preprocessing:
 pipeline:
   steps:
     - generate_technical_indicators
+    - generate_volume_features
     - generate_custom_features
     - handle_missing_values
     - remove_outliers
     - scale_features
-    - select_features 
+    - select_features
