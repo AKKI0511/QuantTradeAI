@@ -14,6 +14,7 @@ A comprehensive machine learning framework for quantitative trading strategies, 
 - Robust data pipeline for financial instruments
 - Advanced feature engineering toolkit:
   - Momentum indicators (SMA, EMA, RSI, MACD, Stochastic, Bollinger Bands)
+  - Volume indicators (On-Balance Volume and volume MA ratios)
   - Return-based features
   - Custom feature engineering
 - Ensemble ML models:

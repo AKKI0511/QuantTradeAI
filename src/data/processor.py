@@ -24,6 +24,10 @@ class DataProcessor:
         self.bb_period = 20
         self.bb_std = 2
 
+        # Volume indicator parameters
+        self.volume_sma_periods = [5, 10, 20]
+        self.volume_ema_periods = [5, 10, 20]
+
     def process_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Process raw OHLCV data and generate all required features.
@@ -42,13 +46,16 @@ class DataProcessor:
         # 2. Generate Bollinger Bands
         df = self._add_bollinger_bands(df)
 
-        # 3. Generate Return-based Features
+        # 3. Generate Volume-based Features
+        df = self._add_volume_features(df)
+
+        # 4. Generate Return-based Features
         df = self._add_return_features(df)
 
-        # 4. Generate Custom Features
+        # 5. Generate Custom Features
         df = self._add_custom_features(df)
 
-        # 5. Clean up and validate
+        # 6. Clean up and validate
         df = self._clean_data(df)
 
         return df
@@ -107,6 +114,24 @@ class DataProcessor:
             df["bb_upper"] = bb.iloc[:, 2]
         except Exception as e:
             logger.error(f"Error calculating Bollinger Bands: {str(e)}")
+            raise
+
+        return df
+
+    def _add_volume_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add volume-based indicators such as moving averages and OBV."""
+        try:
+            for period in self.volume_sma_periods:
+                df[f"volume_sma_{period}"] = ta.sma(df["Volume"], length=period)
+                df[f"volume_sma_ratio_{period}"] = df["Volume"] / df[f"volume_sma_{period}"]
+
+            for period in self.volume_ema_periods:
+                df[f"volume_ema_{period}"] = ta.ema(df["Volume"], length=period)
+                df[f"volume_ema_ratio_{period}"] = df["Volume"] / df[f"volume_ema_{period}"]
+
+            df["obv"] = ta.obv(df["Close"], df["Volume"])
+        except Exception as e:
+            logger.error(f"Error calculating volume features: {str(e)}")
             raise
 
         return df
