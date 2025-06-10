@@ -93,6 +93,27 @@ class TestConfigLoading(unittest.TestCase):
         self.assertEqual(processor.sma_periods, DEFAULT_SMA_PERIODS)
         self.assertEqual(processor.rsi_period, DEFAULT_RSI_PERIOD)
 
+    def test_load_parameters_list_style_config(self):
+        list_style_config = {
+            'volatility_features': [
+                {'bollinger_bands': {'period': 30, 'std_dev': 3}}
+            ],
+            'volume_features': [
+                {'volume_sma': {'periods': [7, 14, 28]}},
+                {'volume_ema': {'periods': [8, 15, 30]}}
+            ],
+            'price_features': ['close_to_open', 'close_to_high'],
+            'momentum_features': ['macd']
+        }
+        with open(DUMMY_CONFIG_PATH, 'w') as f:
+            yaml.dump(list_style_config, f)
+
+        processor = DataProcessor()
+        self.assertEqual(processor.bb_period, 30)
+        self.assertEqual(processor.bb_std, 3)
+        self.assertEqual(processor.volume_sma_periods, [7, 14, 28])
+        self.assertEqual(processor.volume_ema_periods, [8, 15, 30])
+
 
 class TestFeatureGenerationMethods(unittest.TestCase):
 
