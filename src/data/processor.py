@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Union
 import logging
+import yaml  # Added for YAML loading
 import pandas_ta as ta  # For efficient technical analysis calculations
 
 logging.basicConfig(level=logging.INFO)
@@ -12,21 +13,76 @@ class DataProcessor:
     """Process raw OHLCV data and generate required features for the competition."""
 
     def __init__(self):
-        """Initialize DataProcessor with default parameters."""
-        # Parameters for technical indicators
-        self.sma_periods = [5, 10, 20, 50, 200]
-        self.ema_periods = [5, 10, 20, 50, 200]
-        self.rsi_period = 14
-        self.macd_params = {"fast": 12, "slow": 26, "signal": 9}
-        self.stoch_params = {"k": 14, "d": 3}
+        """Initialize DataProcessor with parameters from config or defaults."""
+        # Default parameters for technical indicators
+        default_sma_periods = [5, 10, 20, 50, 200]
+        default_ema_periods = [5, 10, 20, 50, 200]
+        default_rsi_period = 14
+        default_macd_params = {"fast": 12, "slow": 26, "signal": 9}
+        default_stoch_params = {"k": 14, "d": 3}
+        default_bb_period = 20
+        default_bb_std = 2
+        default_volume_sma_periods = [5, 10, 20]
+        default_volume_ema_periods = [5, 10, 20]
 
-        # Bollinger Bands parameters
-        self.bb_period = 20
-        self.bb_std = 2
+        config_path = "config/features_config.yaml"
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
 
-        # Volume indicator parameters
-        self.volume_sma_periods = [5, 10, 20]
-        self.volume_ema_periods = [5, 10, 20]
+            # Price-based features (using defaults as specific keys are not in YAML for these)
+            # Assuming 'custom_features.price_momentum.periods' might be a proxy if available
+            # For this exercise, we will stick to defaults if not clearly specified for price SMA/EMA
+            self.sma_periods = config.get('price_features', {}).get('sma_periods', default_sma_periods)
+            self.ema_periods = config.get('price_features', {}).get('ema_periods', default_ema_periods)
+
+            # Momentum features (using defaults as specific keys are not in YAML)
+            # We would expect keys like 'momentum_features.rsi_period', etc.
+            self.rsi_period = config.get('momentum_features', {}).get('rsi_period', default_rsi_period)
+            self.macd_params = config.get('momentum_features', {}).get('macd_params', default_macd_params)
+            self.stoch_params = config.get('momentum_features', {}).get('stoch_params', default_stoch_params)
+
+            # Bollinger Bands parameters
+            bb_config = config.get('volatility_features', {}).get('bollinger_bands', {})
+            self.bb_period = bb_config.get('period', default_bb_period)
+            self.bb_std = bb_config.get('std_dev', default_bb_std)
+
+            # Volume indicator parameters
+            volume_config = config.get('volume_features', {})
+            self.volume_sma_periods = volume_config.get('volume_sma', {}).get('periods', default_volume_sma_periods)
+            self.volume_ema_periods = volume_config.get('volume_ema', {}).get('periods', default_volume_ema_periods)
+
+            logger.info("Successfully loaded feature parameters from %s", config_path)
+
+        except FileNotFoundError:
+            logger.warning("Feature configuration file %s not found. Using default parameters.", config_path)
+            self.sma_periods = default_sma_periods
+            self.ema_periods = default_ema_periods
+            self.rsi_period = default_rsi_period
+            self.macd_params = default_macd_params
+            self.stoch_params = default_stoch_params
+            self.bb_period = default_bb_period
+            self.bb_std = default_bb_std
+            self.volume_sma_periods = default_volume_sma_periods
+            self.volume_ema_periods = default_volume_ema_periods
+        except (yaml.YAMLError, KeyError) as e:
+            logger.warning("Error parsing %s or key not found: %s. Using default parameters.", config_path, e)
+            self.sma_periods = default_sma_periods
+            self.ema_periods = default_ema_periods
+            self.rsi_period = default_rsi_period
+            self.macd_params = default_macd_params
+            self.stoch_params = default_stoch_params
+            self.bb_period = default_bb_period
+            self.bb_std = default_bb_std
+            self.volume_sma_periods = default_volume_sma_periods
+            self.volume_ema_periods = default_volume_ema_periods
+
+        # Log the actual parameters being used
+        logger.info(f"DataProcessor initialized with bb_period: {self.bb_period}")
+        logger.info(f"DataProcessor initialized with bb_std: {self.bb_std}")
+        logger.info(f"DataProcessor initialized with volume_sma_periods: {self.volume_sma_periods}")
+        logger.info(f"DataProcessor initialized with volume_ema_periods: {self.volume_ema_periods}")
+        logger.info(f"DataProcessor initialized with sma_periods: {self.sma_periods}")
 
     def process_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """
