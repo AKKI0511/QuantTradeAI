@@ -40,27 +40,54 @@ class DataProcessor:
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
 
-            # Price-based features (using defaults as specific keys are not in YAML for these)
-            # Assuming 'custom_features.price_momentum.periods' might be a proxy if available
-            # For this exercise, we will stick to defaults if not clearly specified for price SMA/EMA
-            self.sma_periods = config.get('price_features', {}).get('sma_periods', default_sma_periods)
-            self.ema_periods = config.get('price_features', {}).get('ema_periods', default_ema_periods)
+            # Price-based features -- handle both mapping and list style configs
+            price_cfg = config.get('price_features', {})
+            if isinstance(price_cfg, dict):
+                self.sma_periods = price_cfg.get('sma_periods', default_sma_periods)
+                self.ema_periods = price_cfg.get('ema_periods', default_ema_periods)
+            else:  # fallback when provided as a simple list
+                self.sma_periods = default_sma_periods
+                self.ema_periods = default_ema_periods
 
-            # Momentum features (using defaults as specific keys are not in YAML)
-            # We would expect keys like 'momentum_features.rsi_period', etc.
-            self.rsi_period = config.get('momentum_features', {}).get('rsi_period', default_rsi_period)
-            self.macd_params = config.get('momentum_features', {}).get('macd_params', default_macd_params)
-            self.stoch_params = config.get('momentum_features', {}).get('stoch_params', default_stoch_params)
+            # Momentum features
+            momentum_cfg = config.get('momentum_features', {})
+            if isinstance(momentum_cfg, dict):
+                self.rsi_period = momentum_cfg.get('rsi_period', default_rsi_period)
+                self.macd_params = momentum_cfg.get('macd_params', default_macd_params)
+                self.stoch_params = momentum_cfg.get('stoch_params', default_stoch_params)
+            else:
+                self.rsi_period = default_rsi_period
+                self.macd_params = default_macd_params
+                self.stoch_params = default_stoch_params
 
             # Bollinger Bands parameters
-            bb_config = config.get('volatility_features', {}).get('bollinger_bands', {})
-            self.bb_period = bb_config.get('period', default_bb_period)
-            self.bb_std = bb_config.get('std_dev', default_bb_std)
+            volatility_cfg = config.get('volatility_features', {})
+            bb_config = {}
+            if isinstance(volatility_cfg, dict):
+                bb_config = volatility_cfg.get('bollinger_bands', {})
+            elif isinstance(volatility_cfg, list):
+                for item in volatility_cfg:
+                    if isinstance(item, dict) and 'bollinger_bands' in item:
+                        bb_config = item['bollinger_bands']
+                        break
+            self.bb_period = bb_config.get('period', default_bb_period) if isinstance(bb_config, dict) else default_bb_period
+            self.bb_std = bb_config.get('std_dev', default_bb_std) if isinstance(bb_config, dict) else default_bb_std
 
             # Volume indicator parameters
-            volume_config = config.get('volume_features', {})
-            self.volume_sma_periods = volume_config.get('volume_sma', {}).get('periods', default_volume_sma_periods)
-            self.volume_ema_periods = volume_config.get('volume_ema', {}).get('periods', default_volume_ema_periods)
+            volume_cfg = config.get('volume_features', {})
+            vol_sma_cfg, vol_ema_cfg = {}, {}
+            if isinstance(volume_cfg, dict):
+                vol_sma_cfg = volume_cfg.get('volume_sma', {})
+                vol_ema_cfg = volume_cfg.get('volume_ema', {})
+            elif isinstance(volume_cfg, list):
+                for item in volume_cfg:
+                    if isinstance(item, dict):
+                        if 'volume_sma' in item:
+                            vol_sma_cfg = item['volume_sma']
+                        if 'volume_ema' in item:
+                            vol_ema_cfg = item['volume_ema']
+            self.volume_sma_periods = vol_sma_cfg.get('periods', default_volume_sma_periods)
+            self.volume_ema_periods = vol_ema_cfg.get('periods', default_volume_ema_periods)
 
             logger.info("Successfully loaded feature parameters from %s", config_path)
 
