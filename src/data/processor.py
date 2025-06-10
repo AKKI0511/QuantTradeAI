@@ -3,6 +3,16 @@ import numpy as np
 from typing import Dict, List, Union
 import logging
 import yaml  # Added for YAML loading
+
+# ---------------------------------------------------------------------------
+# pandas_ta relies on the deprecated ``numpy.NaN`` constant which was removed
+# in numpy 2.0.  Tests mock ``pandas_ta`` functions but importing the library
+# would normally fail under numpy>=2 due to this missing attribute.  To keep the
+# import working we provide ``numpy.NaN`` when it's absent before importing
+# ``pandas_ta``.
+if not hasattr(np, "NaN"):
+    np.NaN = np.nan  # pragma: no cover - simple compatibility shim
+
 import pandas_ta as ta  # For efficient technical analysis calculations
 
 logging.basicConfig(level=logging.INFO)
