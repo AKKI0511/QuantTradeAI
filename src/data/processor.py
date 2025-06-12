@@ -2,6 +2,17 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Union
 import logging
+import yaml  # Added for YAML loading
+
+# ---------------------------------------------------------------------------
+# pandas_ta relies on the deprecated ``numpy.NaN`` constant which was removed
+# in numpy 2.0.  Tests mock ``pandas_ta`` functions but importing the library
+# would normally fail under numpy>=2 due to this missing attribute.  To keep the
+# import working we provide ``numpy.NaN`` when it's absent before importing
+# ``pandas_ta``.
+if not hasattr(np, "NaN"):
+    np.NaN = np.nan  # pragma: no cover - simple compatibility shim
+
 import pandas_ta as ta  # For efficient technical analysis calculations
 
 logging.basicConfig(level=logging.INFO)
@@ -12,21 +23,103 @@ class DataProcessor:
     """Process raw OHLCV data and generate required features for the competition."""
 
     def __init__(self):
-        """Initialize DataProcessor with default parameters."""
-        # Parameters for technical indicators
-        self.sma_periods = [5, 10, 20, 50, 200]
-        self.ema_periods = [5, 10, 20, 50, 200]
-        self.rsi_period = 14
-        self.macd_params = {"fast": 12, "slow": 26, "signal": 9}
-        self.stoch_params = {"k": 14, "d": 3}
+        """Initialize DataProcessor with parameters from config or defaults."""
+        # Default parameters for technical indicators
+        default_sma_periods = [5, 10, 20, 50, 200]
+        default_ema_periods = [5, 10, 20, 50, 200]
+        default_rsi_period = 14
+        default_macd_params = {"fast": 12, "slow": 26, "signal": 9}
+        default_stoch_params = {"k": 14, "d": 3}
+        default_bb_period = 20
+        default_bb_std = 2
+        default_volume_sma_periods = [5, 10, 20]
+        default_volume_ema_periods = [5, 10, 20]
 
-        # Bollinger Bands parameters
-        self.bb_period = 20
-        self.bb_std = 2
+        config_path = "config/features_config.yaml"
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
 
-        # Volume indicator parameters
-        self.volume_sma_periods = [5, 10, 20]
-        self.volume_ema_periods = [5, 10, 20]
+            # Price-based features -- handle both mapping and list style configs
+            price_cfg = config.get('price_features', {})
+            if isinstance(price_cfg, dict):
+                self.sma_periods = price_cfg.get('sma_periods', default_sma_periods)
+                self.ema_periods = price_cfg.get('ema_periods', default_ema_periods)
+            else:  # fallback when provided as a simple list
+                self.sma_periods = default_sma_periods
+                self.ema_periods = default_ema_periods
+
+            # Momentum features
+            momentum_cfg = config.get('momentum_features', {})
+            if isinstance(momentum_cfg, dict):
+                self.rsi_period = momentum_cfg.get('rsi_period', default_rsi_period)
+                self.macd_params = momentum_cfg.get('macd_params', default_macd_params)
+                self.stoch_params = momentum_cfg.get('stoch_params', default_stoch_params)
+            else:
+                self.rsi_period = default_rsi_period
+                self.macd_params = default_macd_params
+                self.stoch_params = default_stoch_params
+
+            # Bollinger Bands parameters
+            volatility_cfg = config.get('volatility_features', {})
+            bb_config = {}
+            if isinstance(volatility_cfg, dict):
+                bb_config = volatility_cfg.get('bollinger_bands', {})
+            elif isinstance(volatility_cfg, list):
+                for item in volatility_cfg:
+                    if isinstance(item, dict) and 'bollinger_bands' in item:
+                        bb_config = item['bollinger_bands']
+                        break
+            self.bb_period = bb_config.get('period', default_bb_period) if isinstance(bb_config, dict) else default_bb_period
+            self.bb_std = bb_config.get('std_dev', default_bb_std) if isinstance(bb_config, dict) else default_bb_std
+
+            # Volume indicator parameters
+            volume_cfg = config.get('volume_features', {})
+            vol_sma_cfg, vol_ema_cfg = {}, {}
+            if isinstance(volume_cfg, dict):
+                vol_sma_cfg = volume_cfg.get('volume_sma', {})
+                vol_ema_cfg = volume_cfg.get('volume_ema', {})
+            elif isinstance(volume_cfg, list):
+                for item in volume_cfg:
+                    if isinstance(item, dict):
+                        if 'volume_sma' in item:
+                            vol_sma_cfg = item['volume_sma']
+                        if 'volume_ema' in item:
+                            vol_ema_cfg = item['volume_ema']
+            self.volume_sma_periods = vol_sma_cfg.get('periods', default_volume_sma_periods)
+            self.volume_ema_periods = vol_ema_cfg.get('periods', default_volume_ema_periods)
+
+            logger.info("Successfully loaded feature parameters from %s", config_path)
+
+        except FileNotFoundError:
+            logger.warning("Feature configuration file %s not found. Using default parameters.", config_path)
+            self.sma_periods = default_sma_periods
+            self.ema_periods = default_ema_periods
+            self.rsi_period = default_rsi_period
+            self.macd_params = default_macd_params
+            self.stoch_params = default_stoch_params
+            self.bb_period = default_bb_period
+            self.bb_std = default_bb_std
+            self.volume_sma_periods = default_volume_sma_periods
+            self.volume_ema_periods = default_volume_ema_periods
+        except (yaml.YAMLError, KeyError) as e:
+            logger.warning("Error parsing %s or key not found: %s. Using default parameters.", config_path, e)
+            self.sma_periods = default_sma_periods
+            self.ema_periods = default_ema_periods
+            self.rsi_period = default_rsi_period
+            self.macd_params = default_macd_params
+            self.stoch_params = default_stoch_params
+            self.bb_period = default_bb_period
+            self.bb_std = default_bb_std
+            self.volume_sma_periods = default_volume_sma_periods
+            self.volume_ema_periods = default_volume_ema_periods
+
+        # Log the actual parameters being used
+        logger.info(f"DataProcessor initialized with bb_period: {self.bb_period}")
+        logger.info(f"DataProcessor initialized with bb_std: {self.bb_std}")
+        logger.info(f"DataProcessor initialized with volume_sma_periods: {self.volume_sma_periods}")
+        logger.info(f"DataProcessor initialized with volume_ema_periods: {self.volume_ema_periods}")
+        logger.info(f"DataProcessor initialized with sma_periods: {self.sma_periods}")
 
     def process_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """
