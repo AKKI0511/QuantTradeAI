@@ -96,6 +96,18 @@ pip install -r requirements.txt
 python setup.py develop
 ```
 
+## Data Caching
+
+The `DataLoader` caches downloaded OHLCV data in parquet format to reduce
+network usage. Configure caching in `config/model_config.yaml`:
+
+```yaml
+data:
+  cache_dir: 'data/raw'   # Storage location for cached files
+  use_cache: true         # Toggle cache usage
+  refresh: false          # Force fresh download when true
+```
+
 ## Competition Evaluation Metrics
 
 ### Trade-Level Analytics
