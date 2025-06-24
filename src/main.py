@@ -12,10 +12,10 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def setup_directories():
+def setup_directories(cache_dir: str = 'data/raw'):
     """Create necessary directories if they don't exist."""
     dirs = [
-        'data/raw',
+        cache_dir,
         'data/processed',
         'models/trained',
         'models/experiments',
@@ -30,6 +30,9 @@ def run_pipeline(config_path: str = "config/model_config.yaml"):
     # Load configuration
     with open(config_path, 'r') as file:
         config = yaml.safe_load(file)
+
+    cache_dir = config.get('data', {}).get('cache_dir', 'data/raw')
+    setup_directories(cache_dir)
     
     # Initialize components
     data_loader = DataLoader(config_path)
@@ -44,7 +47,8 @@ def run_pipeline(config_path: str = "config/model_config.yaml"):
     try:
         # 1. Fetch Data
         logger.info("Fetching data...")
-        data_dict = data_loader.fetch_data()
+        refresh = config.get('data', {}).get('refresh', False)
+        data_dict = data_loader.fetch_data(refresh=refresh)
         
         # Process each stock
         results = {}
@@ -103,5 +107,4 @@ def run_pipeline(config_path: str = "config/model_config.yaml"):
         raise
 
 if __name__ == "__main__":
-    setup_directories()
-    run_pipeline() 
+    run_pipeline()

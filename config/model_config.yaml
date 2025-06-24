@@ -5,6 +5,9 @@ data:
   symbols: ['AAPL', 'META', 'TSLA', 'JPM', 'AMZN']
   start_date: '2015-01-01'
   end_date: '2024-12-31'
+  cache_dir: 'data/raw'
+  use_cache: true
+  refresh: false
   test_start: '2025-01-01'
   test_end: '2025-01-31'
 

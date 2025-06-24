@@ -4,6 +4,7 @@ from typing import List, Dict, Optional
 import logging
 from datetime import datetime
 import yaml
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,41 +16,58 @@ class DataLoader:
         """Initialize DataLoader with configuration."""
         with open(config_path, 'r') as file:
             self.config = yaml.safe_load(file)
-        self.symbols = self.config['data']['symbols']
-        self.start_date = self.config['data']['start_date']
-        self.end_date = self.config['data']['end_date']
+        data_cfg = self.config.get('data', {})
+        self.symbols = data_cfg['symbols']
+        self.start_date = data_cfg['start_date']
+        self.end_date = data_cfg['end_date']
+        self.cache_dir = data_cfg.get('cache_dir', 'data/raw')
+        self.use_cache = data_cfg.get('use_cache', True)
+        self.default_refresh = data_cfg.get('refresh', False)
         
-    def fetch_data(self, symbols: Optional[List[str]] = None) -> Dict[str, pd.DataFrame]:
+    def fetch_data(self, symbols: Optional[List[str]] = None, refresh: Optional[bool] = None) -> Dict[str, pd.DataFrame]:
         """
         Fetch OHLCV data for specified symbols.
         
         Args:
             symbols: List of stock symbols. If None, uses symbols from config.
+            refresh: Override cache and fetch fresh data when True.
             
         Returns:
             Dictionary of DataFrames with OHLCV data for each symbol.
         """
         symbols = symbols or self.symbols
+        refresh = self.default_refresh if refresh is None else refresh
         data_dict = {}
-        
+
         for symbol in symbols:
+            cache_file = os.path.join(self.cache_dir, f"{symbol}_data.parquet")
             try:
-                logger.info(f"Fetching data for {symbol}")
-                ticker = yf.Ticker(symbol)
-                df = ticker.history(start=self.start_date, end=self.end_date)
-                
-                if df.empty:
-                    logger.error(f"No data found for {symbol}")
-                    continue
-                    
+                if self.use_cache and not refresh and os.path.exists(cache_file):
+                    logger.info(f"Loading cached data for {symbol} from {cache_file}")
+                    df = pd.read_parquet(cache_file)
+                else:
+                    logger.info(f"Fetching data for {symbol}")
+                    ticker = yf.Ticker(symbol)
+                    df = ticker.history(start=self.start_date, end=self.end_date)
+
+                    if df.empty:
+                        logger.error(f"No data found for {symbol}")
+                        continue
+
+                    # Save to cache if enabled
+                    if self.use_cache:
+                        os.makedirs(self.cache_dir, exist_ok=True)
+                        df.to_parquet(cache_file)
+                        logger.info(f"Cached data for {symbol} at {cache_file}")
+
                 # Validate data completeness
                 missing_dates = self._check_missing_dates(df)
                 if missing_dates:
                     logger.warning(f"Missing dates for {symbol}: {len(missing_dates)} days")
-                
+
                 data_dict[symbol] = df
-                logger.info(f"Successfully fetched {len(df)} records for {symbol}")
-                
+                logger.info(f"Successfully retrieved {len(df)} records for {symbol}")
+
             except Exception as e:
                 logger.error(f"Error fetching data for {symbol}: {str(e)}")
                 continue
@@ -94,9 +112,10 @@ class DataLoader:
         
         return True
     
-    def save_data(self, data_dict: Dict[str, pd.DataFrame], path: str = "data/raw") -> None:
+    def save_data(self, data_dict: Dict[str, pd.DataFrame], path: Optional[str] = None) -> None:
         """Save the fetched data to disk."""
         import os
+        path = path or self.cache_dir
         os.makedirs(path, exist_ok=True)
         
         for symbol, df in data_dict.items():
