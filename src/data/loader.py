@@ -4,27 +4,38 @@ from typing import List, Dict, Optional
 import logging
 from datetime import datetime, timedelta
 import yaml
+from pydantic import ValidationError
+
+from utils.config_schemas import ModelConfigSchema
 import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class DataLoader:
     """Data loader class for fetching and validating stock data."""
-    
+
     def __init__(self, config_path: str = "config/model_config.yaml"):
-        """Initialize DataLoader with configuration."""
-        with open(config_path, 'r') as file:
-            self.config = yaml.safe_load(file)
-        data_cfg = self.config.get('data', {})
-        self.symbols = data_cfg['symbols']
-        self.start_date = data_cfg['start_date']
-        self.end_date = data_cfg['end_date']
+        """Initialize DataLoader with configuration and validate it."""
+        with open(config_path, "r") as file:
+            raw_cfg = yaml.safe_load(file)
+
+        try:
+            schema = ModelConfigSchema(**raw_cfg)
+        except ValidationError as exc:
+            raise ValueError(f"Invalid model configuration: {exc}") from exc
+
+        data_cfg = schema.data
+        self.config = raw_cfg
+        self.symbols = data_cfg.symbols
+        self.start_date = data_cfg.start_date
+        self.end_date = data_cfg.end_date
         # allow both legacy 'cache_dir' and new 'cache_path' keys
-        self.cache_dir = data_cfg.get('cache_path', data_cfg.get('cache_dir', 'data/raw'))
-        self.cache_expiration_days = data_cfg.get('cache_expiration_days')
-        self.use_cache = data_cfg.get('use_cache', True)
-        self.default_refresh = data_cfg.get('refresh', False)
+        self.cache_dir = data_cfg.cache_path or data_cfg.cache_dir or "data/raw"
+        self.cache_expiration_days = data_cfg.cache_expiration_days
+        self.use_cache = data_cfg.use_cache
+        self.default_refresh = data_cfg.refresh
 
     def _is_cache_valid(self, cache_file: str) -> bool:
         """Return True if the cache file exists and is not expired."""
@@ -34,15 +45,17 @@ class DataLoader:
             return True
         file_time = datetime.fromtimestamp(os.path.getmtime(cache_file))
         return datetime.now() - file_time < timedelta(days=self.cache_expiration_days)
-        
-    def fetch_data(self, symbols: Optional[List[str]] = None, refresh: Optional[bool] = None) -> Dict[str, pd.DataFrame]:
+
+    def fetch_data(
+        self, symbols: Optional[List[str]] = None, refresh: Optional[bool] = None
+    ) -> Dict[str, pd.DataFrame]:
         """
         Fetch OHLCV data for specified symbols.
-        
+
         Args:
             symbols: List of stock symbols. If None, uses symbols from config.
             refresh: Override cache and fetch fresh data when True.
-            
+
         Returns:
             Dictionary of DataFrames with OHLCV data for each symbol.
         """
@@ -74,7 +87,9 @@ class DataLoader:
                 # Validate data completeness
                 missing_dates = self._check_missing_dates(df)
                 if missing_dates:
-                    logger.warning(f"Missing dates for {symbol}: {len(missing_dates)} days")
+                    logger.warning(
+                        f"Missing dates for {symbol}: {len(missing_dates)} days"
+                    )
 
                 data_dict[symbol] = df
                 logger.info(f"Successfully retrieved {len(df)} records for {symbol}")
@@ -82,54 +97,57 @@ class DataLoader:
             except Exception as e:
                 logger.error(f"Error fetching data for {symbol}: {str(e)}")
                 continue
-                
+
         return data_dict
-    
+
     def _check_missing_dates(self, df: pd.DataFrame) -> List[datetime]:
         """Check for missing trading days in the data."""
-        all_dates = pd.date_range(start=df.index.min(), end=df.index.max(), freq='B')
+        all_dates = pd.date_range(start=df.index.min(), end=df.index.max(), freq="B")
         missing_dates = all_dates.difference(df.index)
         return list(missing_dates)
-    
+
     def validate_data(self, data_dict: Dict[str, pd.DataFrame]) -> bool:
         """
         Validate the fetched data meets requirements.
-        
+
         Args:
             data_dict: Dictionary of DataFrames with OHLCV data.
-            
+
         Returns:
             bool: True if data is valid, False otherwise.
         """
-        required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-        
+        required_columns = ["Open", "High", "Low", "Close", "Volume"]
+
         for symbol, df in data_dict.items():
             # Check required columns
             if not all(col in df.columns for col in required_columns):
                 logger.error(f"Missing required columns for {symbol}")
                 return False
-            
+
             # Check data range
             date_range = (df.index.max() - df.index.min()).days
             if date_range < 365:  # At least one year of data
                 logger.error(f"Insufficient data range for {symbol}")
                 return False
-            
+
             # Check for excessive missing values
             # Check missing value ratio per column
             if df.isnull().mean().max() > 0.01:  # Max 1% missing values
                 logger.error(f"Too many missing values for {symbol}")
                 return False
-        
+
         return True
-    
-    def save_data(self, data_dict: Dict[str, pd.DataFrame], path: Optional[str] = None) -> None:
+
+    def save_data(
+        self, data_dict: Dict[str, pd.DataFrame], path: Optional[str] = None
+    ) -> None:
         """Save the fetched data to disk."""
         import os
+
         path = path or self.cache_dir
         os.makedirs(path, exist_ok=True)
-        
+
         for symbol, df in data_dict.items():
             file_path = f"{path}/{symbol}_data.parquet"
             df.to_parquet(file_path)
-            logger.info(f"Saved data for {symbol} to {file_path}") 
+            logger.info(f"Saved data for {symbol} to {file_path}")

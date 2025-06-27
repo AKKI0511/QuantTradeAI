@@ -3,6 +3,9 @@ import numpy as np
 from typing import Dict, List, Union
 import logging
 import yaml  # Added for YAML loading
+from pydantic import ValidationError
+
+from utils.config_schemas import FeaturesConfigSchema
 
 # ---------------------------------------------------------------------------
 # pandas_ta relies on the deprecated ``numpy.NaN`` constant which was removed
@@ -24,7 +27,7 @@ logger = logging.getLogger(__name__)
 class DataProcessor:
     """Process raw OHLCV data and generate required features for the competition."""
 
-    def __init__(self):
+    def __init__(self, config_path: str = "config/features_config.yaml"):
         """Initialize DataProcessor with parameters from config or defaults."""
         # Default parameters for technical indicators
         default_sma_periods = [5, 10, 20, 50, 200]
@@ -37,103 +40,130 @@ class DataProcessor:
         default_volume_sma_periods = [5, 10, 20]
         default_volume_ema_periods = [5, 10, 20]
 
-        config_path = "config/features_config.yaml"
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 config = yaml.safe_load(f)
 
+            try:
+                FeaturesConfigSchema(**config)
+            except ValidationError as exc:
+                raise ValueError(f"Invalid feature configuration: {exc}") from exc
+
             # Price-based features -- handle both mapping and list style configs
-            price_cfg = config.get('price_features', {})
+            price_cfg = config.get("price_features", {})
             if isinstance(price_cfg, dict):
-                self.sma_periods = price_cfg.get('sma_periods', default_sma_periods)
-                self.ema_periods = price_cfg.get('ema_periods', default_ema_periods)
+                self.sma_periods = price_cfg.get("sma_periods", default_sma_periods)
+                self.ema_periods = price_cfg.get("ema_periods", default_ema_periods)
             else:  # fallback when provided as a simple list
                 self.sma_periods = default_sma_periods
                 self.ema_periods = default_ema_periods
 
             # Momentum features
-            momentum_cfg = config.get('momentum_features', {})
+            momentum_cfg = config.get("momentum_features", {})
             if isinstance(momentum_cfg, dict):
-                self.rsi_period = momentum_cfg.get('rsi_period', default_rsi_period)
-                self.macd_params = momentum_cfg.get('macd_params', default_macd_params)
-                self.stoch_params = momentum_cfg.get('stoch_params', default_stoch_params)
+                self.rsi_period = momentum_cfg.get("rsi_period", default_rsi_period)
+                self.macd_params = momentum_cfg.get("macd_params", default_macd_params)
+                self.stoch_params = momentum_cfg.get(
+                    "stoch_params", default_stoch_params
+                )
             else:
                 self.rsi_period = default_rsi_period
                 self.macd_params = default_macd_params
                 self.stoch_params = default_stoch_params
 
             # Bollinger Bands parameters
-            volatility_cfg = config.get('volatility_features', {})
+            volatility_cfg = config.get("volatility_features", {})
             bb_config = {}
             if isinstance(volatility_cfg, dict):
-                bb_config = volatility_cfg.get('bollinger_bands', {})
+                bb_config = volatility_cfg.get("bollinger_bands", {})
             elif isinstance(volatility_cfg, list):
                 for item in volatility_cfg:
-                    if isinstance(item, dict) and 'bollinger_bands' in item:
-                        bb_config = item['bollinger_bands']
+                    if isinstance(item, dict) and "bollinger_bands" in item:
+                        bb_config = item["bollinger_bands"]
                         break
-            self.bb_period = bb_config.get('period', default_bb_period) if isinstance(bb_config, dict) else default_bb_period
-            self.bb_std = bb_config.get('std_dev', default_bb_std) if isinstance(bb_config, dict) else default_bb_std
+            self.bb_period = (
+                bb_config.get("period", default_bb_period)
+                if isinstance(bb_config, dict)
+                else default_bb_period
+            )
+            self.bb_std = (
+                bb_config.get("std_dev", default_bb_std)
+                if isinstance(bb_config, dict)
+                else default_bb_std
+            )
 
             # Volume indicator parameters
-            volume_cfg = config.get('volume_features', {})
+            volume_cfg = config.get("volume_features", {})
             vol_sma_cfg, vol_ema_cfg = {}, {}
             if isinstance(volume_cfg, dict):
-                vol_sma_cfg = volume_cfg.get('volume_sma', {})
-                vol_ema_cfg = volume_cfg.get('volume_ema', {})
+                vol_sma_cfg = volume_cfg.get("volume_sma", {})
+                vol_ema_cfg = volume_cfg.get("volume_ema", {})
             elif isinstance(volume_cfg, list):
                 for item in volume_cfg:
                     if isinstance(item, dict):
-                        if 'volume_sma' in item:
-                            vol_sma_cfg = item['volume_sma']
-                        if 'volume_ema' in item:
-                            vol_ema_cfg = item['volume_ema']
-            self.volume_sma_periods = vol_sma_cfg.get('periods', default_volume_sma_periods)
-            self.volume_ema_periods = vol_ema_cfg.get('periods', default_volume_ema_periods)
+                        if "volume_sma" in item:
+                            vol_sma_cfg = item["volume_sma"]
+                        if "volume_ema" in item:
+                            vol_ema_cfg = item["volume_ema"]
+            self.volume_sma_periods = vol_sma_cfg.get(
+                "periods", default_volume_sma_periods
+            )
+            self.volume_ema_periods = vol_ema_cfg.get(
+                "periods", default_volume_ema_periods
+            )
 
             # Feature combinations for cross/ratio indicators
-            comb_cfg = config.get('feature_combinations', [])
+            comb_cfg = config.get("feature_combinations", [])
             cross_cfg, ratio_cfg = [], []
             if isinstance(comb_cfg, list):
                 for item in comb_cfg:
                     if isinstance(item, dict):
-                        cross_cfg.extend(item.get('cross_indicators', []))
-                        ratio_cfg.extend(item.get('ratio_indicators', []))
+                        cross_cfg.extend(item.get("cross_indicators", []))
+                        ratio_cfg.extend(item.get("ratio_indicators", []))
             elif isinstance(comb_cfg, dict):
-                cross_cfg = comb_cfg.get('cross_indicators', [])
-                ratio_cfg = comb_cfg.get('ratio_indicators', [])
+                cross_cfg = comb_cfg.get("cross_indicators", [])
+                ratio_cfg = comb_cfg.get("ratio_indicators", [])
             self.cross_indicators = cross_cfg
             self.ratio_indicators = ratio_cfg
 
             # Feature preprocessing and selection
-            prep_cfg = config.get('preprocessing', {})
-            scale_cfg = prep_cfg.get('scaling', {}) if isinstance(prep_cfg, dict) else {}
-            self.scaling_method = scale_cfg.get('method', 'standard')
-            self.scaling_range = scale_cfg.get('target_range', [-1, 1])
+            prep_cfg = config.get("preprocessing", {})
+            scale_cfg = (
+                prep_cfg.get("scaling", {}) if isinstance(prep_cfg, dict) else {}
+            )
+            self.scaling_method = scale_cfg.get("method", "standard")
+            self.scaling_range = scale_cfg.get("target_range", [-1, 1])
 
-            out_cfg = prep_cfg.get('outliers', {}) if isinstance(prep_cfg, dict) else {}
-            self.outlier_method = out_cfg.get('method', 'winsorize')
-            self.outlier_limits = out_cfg.get('limits', [0.01, 0.99])
+            out_cfg = prep_cfg.get("outliers", {}) if isinstance(prep_cfg, dict) else {}
+            self.outlier_method = out_cfg.get("method", "winsorize")
+            self.outlier_limits = out_cfg.get("limits", [0.01, 0.99])
 
-            fs_cfg = config.get('feature_selection', {})
-            self.feature_selection_method = fs_cfg.get('method', 'recursive')
-            self.n_features = fs_cfg.get('n_features', None)
+            fs_cfg = config.get("feature_selection", {})
+            self.feature_selection_method = fs_cfg.get("method", "recursive")
+            self.n_features = fs_cfg.get("n_features", None)
 
-            pipe_cfg = config.get('pipeline', {}).get('steps') if isinstance(config.get('pipeline', {}), dict) else None
+            pipe_cfg = (
+                config.get("pipeline", {}).get("steps")
+                if isinstance(config.get("pipeline", {}), dict)
+                else None
+            )
             self.pipeline = pipe_cfg or [
-                'generate_technical_indicators',
-                'generate_volume_features',
-                'generate_custom_features',
-                'handle_missing_values',
-                'remove_outliers',
-                'scale_features',
-                'select_features',
+                "generate_technical_indicators",
+                "generate_volume_features",
+                "generate_custom_features",
+                "handle_missing_values",
+                "remove_outliers",
+                "scale_features",
+                "select_features",
             ]
 
             logger.info("Successfully loaded feature parameters from %s", config_path)
 
         except FileNotFoundError:
-            logger.warning("Feature configuration file %s not found. Using default parameters.", config_path)
+            logger.warning(
+                "Feature configuration file %s not found. Using default parameters.",
+                config_path,
+            )
             self.sma_periods = default_sma_periods
             self.ema_periods = default_ema_periods
             self.rsi_period = default_rsi_period
@@ -145,23 +175,27 @@ class DataProcessor:
             self.volume_ema_periods = default_volume_ema_periods
             self.cross_indicators = []
             self.ratio_indicators = []
-            self.scaling_method = 'standard'
+            self.scaling_method = "standard"
             self.scaling_range = [-1, 1]
-            self.outlier_method = 'winsorize'
+            self.outlier_method = "winsorize"
             self.outlier_limits = [0.01, 0.99]
-            self.feature_selection_method = 'recursive'
+            self.feature_selection_method = "recursive"
             self.n_features = None
             self.pipeline = [
-                'generate_technical_indicators',
-                'generate_volume_features',
-                'generate_custom_features',
-                'handle_missing_values',
-                'remove_outliers',
-                'scale_features',
-                'select_features',
+                "generate_technical_indicators",
+                "generate_volume_features",
+                "generate_custom_features",
+                "handle_missing_values",
+                "remove_outliers",
+                "scale_features",
+                "select_features",
             ]
         except (yaml.YAMLError, KeyError) as e:
-            logger.warning("Error parsing %s or key not found: %s. Using default parameters.", config_path, e)
+            logger.warning(
+                "Error parsing %s or key not found: %s. Using default parameters.",
+                config_path,
+                e,
+            )
             self.sma_periods = default_sma_periods
             self.ema_periods = default_ema_periods
             self.rsi_period = default_rsi_period
@@ -173,27 +207,31 @@ class DataProcessor:
             self.volume_ema_periods = default_volume_ema_periods
             self.cross_indicators = []
             self.ratio_indicators = []
-            self.scaling_method = 'standard'
+            self.scaling_method = "standard"
             self.scaling_range = [-1, 1]
-            self.outlier_method = 'winsorize'
+            self.outlier_method = "winsorize"
             self.outlier_limits = [0.01, 0.99]
-            self.feature_selection_method = 'recursive'
+            self.feature_selection_method = "recursive"
             self.n_features = None
             self.pipeline = [
-                'generate_technical_indicators',
-                'generate_volume_features',
-                'generate_custom_features',
-                'handle_missing_values',
-                'remove_outliers',
-                'scale_features',
-                'select_features',
+                "generate_technical_indicators",
+                "generate_volume_features",
+                "generate_custom_features",
+                "handle_missing_values",
+                "remove_outliers",
+                "scale_features",
+                "select_features",
             ]
 
         # Log the actual parameters being used
         logger.info(f"DataProcessor initialized with bb_period: {self.bb_period}")
         logger.info(f"DataProcessor initialized with bb_std: {self.bb_std}")
-        logger.info(f"DataProcessor initialized with volume_sma_periods: {self.volume_sma_periods}")
-        logger.info(f"DataProcessor initialized with volume_ema_periods: {self.volume_ema_periods}")
+        logger.info(
+            f"DataProcessor initialized with volume_sma_periods: {self.volume_sma_periods}"
+        )
+        logger.info(
+            f"DataProcessor initialized with volume_ema_periods: {self.volume_ema_periods}"
+        )
         logger.info(f"DataProcessor initialized with sma_periods: {self.sma_periods}")
 
     def process_data(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -209,13 +247,13 @@ class DataProcessor:
         df = data.copy()
 
         step_map = {
-            'generate_technical_indicators': self._generate_technical_indicators,
-            'generate_volume_features': self._add_volume_features,
-            'generate_custom_features': self._generate_custom_features,
-            'handle_missing_values': self._handle_missing_values,
-            'remove_outliers': self._remove_outliers,
-            'scale_features': self._scale_features,
-            'select_features': self._select_features,
+            "generate_technical_indicators": self._generate_technical_indicators,
+            "generate_volume_features": self._add_volume_features,
+            "generate_custom_features": self._generate_custom_features,
+            "handle_missing_values": self._handle_missing_values,
+            "remove_outliers": self._remove_outliers,
+            "scale_features": self._scale_features,
+            "select_features": self._select_features,
         }
 
         for step in self.pipeline:
@@ -285,11 +323,15 @@ class DataProcessor:
         try:
             for period in self.volume_sma_periods:
                 df[f"volume_sma_{period}"] = ft.sma(df["Volume"], period)
-                df[f"volume_sma_ratio_{period}"] = df["Volume"] / df[f"volume_sma_{period}"]
+                df[f"volume_sma_ratio_{period}"] = (
+                    df["Volume"] / df[f"volume_sma_{period}"]
+                )
 
             for period in self.volume_ema_periods:
                 df[f"volume_ema_{period}"] = ft.ema(df["Volume"], period)
-                df[f"volume_ema_ratio_{period}"] = df["Volume"] / df[f"volume_ema_{period}"]
+                df[f"volume_ema_ratio_{period}"] = (
+                    df["Volume"] / df[f"volume_ema_{period}"]
+                )
 
             df["obv"] = ta.obv(df["Close"], df["Volume"])
         except Exception as e:
@@ -330,12 +372,15 @@ class DataProcessor:
         for pair in self.cross_indicators:
             if len(pair) == 2 and pair[0] in df.columns and pair[1] in df.columns:
                 col_name = f"cross_{pair[0]}_{pair[1]}"
-                df[col_name] = ((df[pair[0]] > df[pair[1]]) & (df[pair[0]].shift(1) <= df[pair[1]].shift(1))).astype(int)
+                df[col_name] = (
+                    (df[pair[0]] > df[pair[1]])
+                    & (df[pair[0]].shift(1) <= df[pair[1]].shift(1))
+                ).astype(int)
 
         for pair in self.ratio_indicators:
             if len(pair) == 2 and pair[0] in df.columns and pair[1] in df.columns:
                 col_name = f"ratio_{pair[0]}_{pair[1]}"
-                with np.errstate(divide='ignore', invalid='ignore'):
+                with np.errstate(divide="ignore", invalid="ignore"):
                     df[col_name] = df[pair[0]] / df[pair[1]]
 
         return df
@@ -360,7 +405,8 @@ class DataProcessor:
             # Measures buying/selling pressure
 
             df["vpt"] = (
-                df["Volume"] * ((df["Close"] - df["Close"].shift(1)) / df["Close"].shift(1))
+                df["Volume"]
+                * ((df["Close"] - df["Close"].shift(1)) / df["Close"].shift(1))
             ).cumsum()
 
             df["volatility_breakout"] = cf.volatility_breakout(
@@ -370,7 +416,9 @@ class DataProcessor:
             )
 
             # Normalize features
-            df["momentum_score"] = (df["momentum_score"] - df["momentum_score"].mean()) / df["momentum_score"].std()
+            df["momentum_score"] = (
+                df["momentum_score"] - df["momentum_score"].mean()
+            ) / df["momentum_score"].std()
             df["vpt"] = (df["vpt"] - df["vpt"].mean()) / df["vpt"].std()
 
         except Exception as e:
@@ -387,12 +435,12 @@ class DataProcessor:
         """Remove or clip outliers based on configuration."""
         lower, upper = self.outlier_limits
         numeric_cols = df.select_dtypes(include=[np.number]).columns
-        if self.outlier_method == 'winsorize':
+        if self.outlier_method == "winsorize":
             for col in numeric_cols:
                 q_low = df[col].quantile(lower)
                 q_high = df[col].quantile(upper)
                 df[col] = df[col].clip(q_low, q_high)
-        elif self.outlier_method == 'clip':
+        elif self.outlier_method == "clip":
             for col in numeric_cols:
                 q_low = df[col].quantile(lower)
                 q_high = df[col].quantile(upper)
@@ -405,9 +453,9 @@ class DataProcessor:
 
         numeric_cols = df.select_dtypes(include=[np.number]).columns
         scaler = None
-        if self.scaling_method == 'minmax':
+        if self.scaling_method == "minmax":
             scaler = MinMaxScaler(feature_range=tuple(self.scaling_range))
-        elif self.scaling_method == 'robust':
+        elif self.scaling_method == "robust":
             scaler = RobustScaler()
         else:
             scaler = StandardScaler()
