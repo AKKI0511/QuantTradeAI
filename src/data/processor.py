@@ -14,6 +14,8 @@ if not hasattr(np, "NaN"):
     np.NaN = np.nan  # pragma: no cover - simple compatibility shim
 
 import pandas_ta as ta  # For efficient technical analysis calculations
+from features import technical as ft
+from features import custom as cf
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -158,39 +160,34 @@ class DataProcessor:
         try:
             # SMA
             for period in self.sma_periods:
-                df[f"sma_{period}"] = ta.sma(df["Close"], length=period)
+                df[f"sma_{period}"] = ft.sma(df["Close"], period)
 
             # EMA
             for period in self.ema_periods:
-                df[f"ema_{period}"] = ta.ema(df["Close"], length=period)
+                df[f"ema_{period}"] = ft.ema(df["Close"], period)
 
             # RSI
-            df["rsi"] = ta.rsi(df["Close"], length=self.rsi_period)
+            df["rsi"] = ft.rsi(df["Close"], period=self.rsi_period)
 
             # MACD
             fast = self.macd_params["fast"]
             slow = self.macd_params["slow"]
             signal = self.macd_params["signal"]
-            macd = ta.macd(df["Close"], fast=fast, slow=slow, signal=signal)
-
-            macd_col = f"MACD_{fast}_{slow}_{signal}"
-            macds_col = f"MACDs_{fast}_{slow}_{signal}"
-            macdh_col = f"MACDh_{fast}_{slow}_{signal}"
-
-            df["macd"] = macd[macd_col]
-            df["macd_signal"] = macd[macds_col]
-            df["macd_hist"] = macd[macdh_col]
+            macd_df = ft.macd(df["Close"], fast=fast, slow=slow, signal=signal)
+            df["macd"] = macd_df["macd"]
+            df["macd_signal"] = macd_df["signal"]
+            df["macd_hist"] = macd_df["hist"]
 
             # Stochastic Oscillator
-            stoch = ta.stoch(
+            stoch_df = ft.stochastic(
                 df["High"],
                 df["Low"],
                 df["Close"],
                 k=self.stoch_params["k"],
                 d=self.stoch_params["d"],
             )
-            df["stoch_k"] = stoch["STOCHk_14_3_3"]
-            df["stoch_d"] = stoch["STOCHd_14_3_3"]
+            df["stoch_k"] = stoch_df["stoch_k"]
+            df["stoch_d"] = stoch_df["stoch_d"]
 
         except Exception as e:
             logger.error(f"Error calculating momentum indicators: {str(e)}")
@@ -215,11 +212,11 @@ class DataProcessor:
         """Add volume-based indicators such as moving averages and OBV."""
         try:
             for period in self.volume_sma_periods:
-                df[f"volume_sma_{period}"] = ta.sma(df["Volume"], length=period)
+                df[f"volume_sma_{period}"] = ft.sma(df["Volume"], period)
                 df[f"volume_sma_ratio_{period}"] = df["Volume"] / df[f"volume_sma_{period}"]
 
             for period in self.volume_ema_periods:
-                df[f"volume_ema_{period}"] = ta.ema(df["Volume"], length=period)
+                df[f"volume_ema_{period}"] = ft.ema(df["Volume"], period)
                 df[f"volume_ema_ratio_{period}"] = df["Volume"] / df[f"volume_ema_{period}"]
 
             df["obv"] = ta.obv(df["Close"], df["Volume"])
@@ -253,25 +250,29 @@ class DataProcessor:
     def _add_custom_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add custom features unique to our strategy."""
         try:
-            # 1. Price Momentum Score
-            # Combines multiple momentum indicators into a single score
-            df["momentum_score"] = (
-                (df["Close"] > df["sma_20"]).astype(int) * 0.3
-                + (df["rsi"] > 50).astype(int) * 0.3
-                + (df["macd"] > df["macd_signal"]).astype(int) * 0.4
+            df["momentum_score"] = cf.momentum_score(
+                df["Close"],
+                df["sma_20"],
+                df["rsi"],
+                df["macd"],
+                df["macd_signal"],
             )
 
             # 2. Volume-Price Trend
             # Measures buying/selling pressure
+
             df["vpt"] = (
-                df["Volume"]
-                * ((df["Close"] - df["Close"].shift(1)) / df["Close"].shift(1))
+                df["Volume"] * ((df["Close"] - df["Close"].shift(1)) / df["Close"].shift(1))
             ).cumsum()
 
+            df["volatility_breakout"] = cf.volatility_breakout(
+                df["High"],
+                df["Low"],
+                df["Close"],
+            )
+
             # Normalize features
-            df["momentum_score"] = (
-                df["momentum_score"] - df["momentum_score"].mean()
-            ) / df["momentum_score"].std()
+            df["momentum_score"] = (df["momentum_score"] - df["momentum_score"].mean()) / df["momentum_score"].std()
             df["vpt"] = (df["vpt"] - df["vpt"].mean()) / df["vpt"].std()
 
         except Exception as e:

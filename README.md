@@ -17,11 +17,15 @@ A comprehensive machine learning framework for quantitative trading strategies, 
   - Volume indicators (On-Balance Volume and volume MA ratios)
   - Return-based features
   - Custom feature engineering
+  - Reusable indicator helpers in `features/technical.py`
+  - Strategy-specific features in `features/custom.py`
 - Ensemble ML models:
   - Voting Classifier with Logistic Regression, Random Forest, and XGBoost
   - Hyperparameter optimization
   - Cross-validation framework
-- Comprehensive performance analytics and visualization
+  - Comprehensive performance analytics and visualization
+  - Utility metrics in `utils/metrics.py`
+  - Charting helpers in `utils/visualization.py`
 
 ## Tech Stack
 - Python 3.9+
