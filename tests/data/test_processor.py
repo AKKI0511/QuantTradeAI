@@ -199,5 +199,41 @@ class TestFeatureGenerationMethods(unittest.TestCase):
         self.assertIn('volume_sma_ratio_15', processed_df.columns)
         self.assertIn('obv', processed_df.columns) # OBV is also added
 
+
+class TestPipelineExecution(unittest.TestCase):
+
+    def setUp(self):
+        self.df = pd.DataFrame({
+            'Open': [1, 2],
+            'High': [2, 3],
+            'Low': [1, 1.5],
+            'Close': [1.5, 2.5],
+            'Volume': [100, 110]
+        })
+
+    def test_process_data_runs_pipeline_steps(self):
+        processor = DataProcessor()
+        processor.pipeline = [
+            'generate_technical_indicators',
+            'handle_missing_values',
+            'scale_features'
+        ]
+
+        call_sequence = []
+
+        def record(name):
+            def inner(df):
+                call_sequence.append(name)
+                return df
+            return inner
+
+        with patch.object(processor, '_generate_technical_indicators', side_effect=record('tech')) as m_tech, \
+             patch.object(processor, '_handle_missing_values', side_effect=record('missing')) as m_missing, \
+             patch.object(processor, '_scale_features', side_effect=record('scale')) as m_scale, \
+             patch.object(processor, '_clean_data', side_effect=record('clean')) as m_clean:
+            processor.process_data(self.df.copy())
+
+        self.assertEqual(call_sequence, ['tech', 'missing', 'scale', 'clean'])
+
 if __name__ == '__main__':
     unittest.main()

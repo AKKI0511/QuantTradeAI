@@ -91,6 +91,45 @@ class DataProcessor:
             self.volume_sma_periods = vol_sma_cfg.get('periods', default_volume_sma_periods)
             self.volume_ema_periods = vol_ema_cfg.get('periods', default_volume_ema_periods)
 
+            # Feature combinations for cross/ratio indicators
+            comb_cfg = config.get('feature_combinations', [])
+            cross_cfg, ratio_cfg = [], []
+            if isinstance(comb_cfg, list):
+                for item in comb_cfg:
+                    if isinstance(item, dict):
+                        cross_cfg.extend(item.get('cross_indicators', []))
+                        ratio_cfg.extend(item.get('ratio_indicators', []))
+            elif isinstance(comb_cfg, dict):
+                cross_cfg = comb_cfg.get('cross_indicators', [])
+                ratio_cfg = comb_cfg.get('ratio_indicators', [])
+            self.cross_indicators = cross_cfg
+            self.ratio_indicators = ratio_cfg
+
+            # Feature preprocessing and selection
+            prep_cfg = config.get('preprocessing', {})
+            scale_cfg = prep_cfg.get('scaling', {}) if isinstance(prep_cfg, dict) else {}
+            self.scaling_method = scale_cfg.get('method', 'standard')
+            self.scaling_range = scale_cfg.get('target_range', [-1, 1])
+
+            out_cfg = prep_cfg.get('outliers', {}) if isinstance(prep_cfg, dict) else {}
+            self.outlier_method = out_cfg.get('method', 'winsorize')
+            self.outlier_limits = out_cfg.get('limits', [0.01, 0.99])
+
+            fs_cfg = config.get('feature_selection', {})
+            self.feature_selection_method = fs_cfg.get('method', 'recursive')
+            self.n_features = fs_cfg.get('n_features', None)
+
+            pipe_cfg = config.get('pipeline', {}).get('steps') if isinstance(config.get('pipeline', {}), dict) else None
+            self.pipeline = pipe_cfg or [
+                'generate_technical_indicators',
+                'generate_volume_features',
+                'generate_custom_features',
+                'handle_missing_values',
+                'remove_outliers',
+                'scale_features',
+                'select_features',
+            ]
+
             logger.info("Successfully loaded feature parameters from %s", config_path)
 
         except FileNotFoundError:
@@ -104,6 +143,23 @@ class DataProcessor:
             self.bb_std = default_bb_std
             self.volume_sma_periods = default_volume_sma_periods
             self.volume_ema_periods = default_volume_ema_periods
+            self.cross_indicators = []
+            self.ratio_indicators = []
+            self.scaling_method = 'standard'
+            self.scaling_range = [-1, 1]
+            self.outlier_method = 'winsorize'
+            self.outlier_limits = [0.01, 0.99]
+            self.feature_selection_method = 'recursive'
+            self.n_features = None
+            self.pipeline = [
+                'generate_technical_indicators',
+                'generate_volume_features',
+                'generate_custom_features',
+                'handle_missing_values',
+                'remove_outliers',
+                'scale_features',
+                'select_features',
+            ]
         except (yaml.YAMLError, KeyError) as e:
             logger.warning("Error parsing %s or key not found: %s. Using default parameters.", config_path, e)
             self.sma_periods = default_sma_periods
@@ -115,6 +171,23 @@ class DataProcessor:
             self.bb_std = default_bb_std
             self.volume_sma_periods = default_volume_sma_periods
             self.volume_ema_periods = default_volume_ema_periods
+            self.cross_indicators = []
+            self.ratio_indicators = []
+            self.scaling_method = 'standard'
+            self.scaling_range = [-1, 1]
+            self.outlier_method = 'winsorize'
+            self.outlier_limits = [0.01, 0.99]
+            self.feature_selection_method = 'recursive'
+            self.n_features = None
+            self.pipeline = [
+                'generate_technical_indicators',
+                'generate_volume_features',
+                'generate_custom_features',
+                'handle_missing_values',
+                'remove_outliers',
+                'scale_features',
+                'select_features',
+            ]
 
         # Log the actual parameters being used
         logger.info(f"DataProcessor initialized with bb_period: {self.bb_period}")
@@ -135,22 +208,21 @@ class DataProcessor:
         """
         df = data.copy()
 
-        # 1. Generate Momentum Indicators
-        df = self._add_momentum_indicators(df)
+        step_map = {
+            'generate_technical_indicators': self._generate_technical_indicators,
+            'generate_volume_features': self._add_volume_features,
+            'generate_custom_features': self._generate_custom_features,
+            'handle_missing_values': self._handle_missing_values,
+            'remove_outliers': self._remove_outliers,
+            'scale_features': self._scale_features,
+            'select_features': self._select_features,
+        }
 
-        # 2. Generate Bollinger Bands
-        df = self._add_bollinger_bands(df)
+        for step in self.pipeline:
+            func = step_map.get(step)
+            if func:
+                df = func(df)
 
-        # 3. Generate Volume-based Features
-        df = self._add_volume_features(df)
-
-        # 4. Generate Return-based Features
-        df = self._add_return_features(df)
-
-        # 5. Generate Custom Features
-        df = self._add_custom_features(df)
-
-        # 6. Clean up and validate
         df = self._clean_data(df)
 
         return df
@@ -247,6 +319,32 @@ class DataProcessor:
 
         return df
 
+    def _generate_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = self._add_momentum_indicators(df)
+        df = self._add_bollinger_bands(df)
+        df = self._add_return_features(df)
+        return df
+
+    def _generate_feature_combinations(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Create cross and ratio indicator features based on configuration."""
+        for pair in self.cross_indicators:
+            if len(pair) == 2 and pair[0] in df.columns and pair[1] in df.columns:
+                col_name = f"cross_{pair[0]}_{pair[1]}"
+                df[col_name] = ((df[pair[0]] > df[pair[1]]) & (df[pair[0]].shift(1) <= df[pair[1]].shift(1))).astype(int)
+
+        for pair in self.ratio_indicators:
+            if len(pair) == 2 and pair[0] in df.columns and pair[1] in df.columns:
+                col_name = f"ratio_{pair[0]}_{pair[1]}"
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    df[col_name] = df[pair[0]] / df[pair[1]]
+
+        return df
+
+    def _generate_custom_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = self._add_custom_features(df)
+        df = self._generate_feature_combinations(df)
+        return df
+
     def _add_custom_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add custom features unique to our strategy."""
         try:
@@ -280,6 +378,49 @@ class DataProcessor:
             raise
 
         return df
+
+    def _handle_missing_values(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Fill missing values using forward/backward fill."""
+        return df.ffill().bfill()
+
+    def _remove_outliers(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Remove or clip outliers based on configuration."""
+        lower, upper = self.outlier_limits
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        if self.outlier_method == 'winsorize':
+            for col in numeric_cols:
+                q_low = df[col].quantile(lower)
+                q_high = df[col].quantile(upper)
+                df[col] = df[col].clip(q_low, q_high)
+        elif self.outlier_method == 'clip':
+            for col in numeric_cols:
+                q_low = df[col].quantile(lower)
+                q_high = df[col].quantile(upper)
+                df[col] = df[col].clip(q_low, q_high)
+        return df
+
+    def _scale_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Scale numerical features using sklearn scalers."""
+        from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
+
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        scaler = None
+        if self.scaling_method == 'minmax':
+            scaler = MinMaxScaler(feature_range=tuple(self.scaling_range))
+        elif self.scaling_method == 'robust':
+            scaler = RobustScaler()
+        else:
+            scaler = StandardScaler()
+
+        df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
+        return df
+
+    def _select_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Simple feature selection keeping the first n features if specified."""
+        if self.n_features is None:
+            return df
+        selected_cols = list(df.columns[: self.n_features])
+        return df[selected_cols]
 
     def _clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """Clean and validate processed data."""
