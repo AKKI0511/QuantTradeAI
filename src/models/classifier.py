@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from utils.metrics import classification_metrics
 import xgboost as xgb
 import optuna
 import yaml
@@ -199,13 +199,7 @@ class MomentumClassifier:
             Dictionary of performance metrics
         """
         predictions = self.predict(X)
-        
-        return {
-            'accuracy': accuracy_score(y, predictions),
-            'precision': precision_score(y, predictions, average='weighted'),
-            'recall': recall_score(y, predictions, average='weighted'),
-            'f1': f1_score(y, predictions, average='weighted')
-        }
+        return classification_metrics(y, predictions)
     
     def save_model(self, path: str) -> None:
         """Save the trained model and scaler."""
