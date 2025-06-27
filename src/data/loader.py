@@ -2,7 +2,7 @@ import yfinance as yf
 import pandas as pd
 from typing import List, Dict, Optional
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import yaml
 import os
 
@@ -20,9 +20,20 @@ class DataLoader:
         self.symbols = data_cfg['symbols']
         self.start_date = data_cfg['start_date']
         self.end_date = data_cfg['end_date']
-        self.cache_dir = data_cfg.get('cache_dir', 'data/raw')
+        # allow both legacy 'cache_dir' and new 'cache_path' keys
+        self.cache_dir = data_cfg.get('cache_path', data_cfg.get('cache_dir', 'data/raw'))
+        self.cache_expiration_days = data_cfg.get('cache_expiration_days')
         self.use_cache = data_cfg.get('use_cache', True)
         self.default_refresh = data_cfg.get('refresh', False)
+
+    def _is_cache_valid(self, cache_file: str) -> bool:
+        """Return True if the cache file exists and is not expired."""
+        if not os.path.exists(cache_file):
+            return False
+        if self.cache_expiration_days is None:
+            return True
+        file_time = datetime.fromtimestamp(os.path.getmtime(cache_file))
+        return datetime.now() - file_time < timedelta(days=self.cache_expiration_days)
         
     def fetch_data(self, symbols: Optional[List[str]] = None, refresh: Optional[bool] = None) -> Dict[str, pd.DataFrame]:
         """
@@ -42,7 +53,7 @@ class DataLoader:
         for symbol in symbols:
             cache_file = os.path.join(self.cache_dir, f"{symbol}_data.parquet")
             try:
-                if self.use_cache and not refresh and os.path.exists(cache_file):
+                if self.use_cache and not refresh and self._is_cache_valid(cache_file):
                     logger.info(f"Loading cached data for {symbol} from {cache_file}")
                     df = pd.read_parquet(cache_file)
                 else:
