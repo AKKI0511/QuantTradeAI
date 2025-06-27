@@ -6,6 +6,8 @@ data:
   start_date: '2015-01-01'
   end_date: '2024-12-31'
   cache_dir: 'data/raw'
+  cache_path: 'data/raw'  # Directory to load/store cached OHLCV files
+  cache_expiration_days: 7  # Refresh cache after this many days
   use_cache: true
   refresh: false
   test_start: '2025-01-01'
