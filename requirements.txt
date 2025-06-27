@@ -16,3 +16,4 @@ PyYAML
 tqdm
 optuna
 joblib
+pydantic
