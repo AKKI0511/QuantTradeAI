@@ -109,8 +109,22 @@ network usage. Configure caching in `config/model_config.yaml`:
 data:
   cache_dir: 'data/raw'   # Storage location for cached files
   use_cache: true         # Toggle cache usage
-  refresh: false          # Force fresh download when true
+ refresh: false          # Force fresh download when true
 ```
+
+## Command Line Interface
+
+Use the CLI in `src/main.py` to run common tasks:
+
+```bash
+python -m src.main fetch-data -c config/model_config.yaml       # download data
+python -m src.main train -c config/model_config.yaml             # run pipeline
+python -m src.main evaluate -m models/trained/MY_MODEL           # evaluate
+```
+
+`fetch-data` saves raw data to the configured cache directory. `train` executes
+the full training pipeline. `evaluate` loads an existing model directory and
+generates evaluation metrics.
 
 ## Competition Evaluation Metrics
 
