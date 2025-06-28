@@ -6,10 +6,10 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 def classification_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
     """Return basic classification metrics."""
     return {
-        'accuracy': accuracy_score(y_true, y_pred),
-        'precision': precision_score(y_true, y_pred, average='weighted'),
-        'recall': recall_score(y_true, y_pred, average='weighted'),
-        'f1': f1_score(y_true, y_pred, average='weighted')
+        "accuracy": accuracy_score(y_true, y_pred),
+        "precision": precision_score(y_true, y_pred, average="weighted"),
+        "recall": recall_score(y_true, y_pred, average="weighted"),
+        "f1": f1_score(y_true, y_pred, average="weighted"),
     }
 
 

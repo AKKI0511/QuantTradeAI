@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, validator
+from pydantic import BaseModel
 
 
 class DataSection(BaseModel):

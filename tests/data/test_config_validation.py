@@ -8,8 +8,8 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", "src"))
 )
 
-from data.loader import DataLoader
-from data.processor import DataProcessor
+from data.loader import DataLoader  # noqa: E402
+from data.processor import DataProcessor  # noqa: E402
 
 
 class TestModelConfigValidation(unittest.TestCase):
