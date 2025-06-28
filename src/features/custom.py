@@ -1,9 +1,13 @@
 import pandas as pd
-import pandas_ta as ta
 
 
-def momentum_score(close: pd.Series, sma: pd.Series, rsi_series: pd.Series,
-                    macd: pd.Series, macd_signal: pd.Series) -> pd.Series:
+def momentum_score(
+    close: pd.Series,
+    sma: pd.Series,
+    rsi_series: pd.Series,
+    macd: pd.Series,
+    macd_signal: pd.Series,
+) -> pd.Series:
     """Compute a simple momentum score from multiple indicators."""
     score = (
         (close > sma).astype(int) * 0.3
@@ -13,8 +17,13 @@ def momentum_score(close: pd.Series, sma: pd.Series, rsi_series: pd.Series,
     return (score - score.mean()) / score.std()
 
 
-def volatility_breakout(high: pd.Series, low: pd.Series, close: pd.Series,
-                        lookback: int = 20, threshold: float = 2.0) -> pd.Series:
+def volatility_breakout(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    lookback: int = 20,
+    threshold: float = 2.0,
+) -> pd.Series:
     """Flag days when price breaks above the previous high plus a threshold."""
     rolling_high = high.shift(1).rolling(lookback).max()
     rolling_low = low.shift(1).rolling(lookback).min()

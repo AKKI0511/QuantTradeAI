@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Union
+
 import logging
 import yaml  # Added for YAML loading
 from pydantic import ValidationError
@@ -227,10 +227,12 @@ class DataProcessor:
         logger.info(f"DataProcessor initialized with bb_period: {self.bb_period}")
         logger.info(f"DataProcessor initialized with bb_std: {self.bb_std}")
         logger.info(
-            f"DataProcessor initialized with volume_sma_periods: {self.volume_sma_periods}"
+            "DataProcessor initialized with volume_sma_periods: "
+            f"{self.volume_sma_periods}"
         )
         logger.info(
-            f"DataProcessor initialized with volume_ema_periods: {self.volume_ema_periods}"
+            "DataProcessor initialized with volume_ema_periods: "
+            f"{self.volume_ema_periods}"
         )
         logger.info(f"DataProcessor initialized with sma_periods: {self.sma_periods}")
 

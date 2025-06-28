@@ -14,8 +14,8 @@ from data.processor import (
     DataProcessor,
 )  # Assuming DataProcessor is in src/data/processor.py
 
-# Mock pandas_ta for tests if its full import causes issues or if specific functions need mocking
-# We will mock specific pandas_ta functions like bbands and sma within test methods.
+# Mock pandas_ta functions if a full import causes issues during testing.
+# Specific functions like bbands and sma are mocked within test methods.
 
 # Default parameters from DataProcessor for comparison
 DEFAULT_SMA_PERIODS = [5, 10, 20, 50, 200]
@@ -45,7 +45,8 @@ class TestConfigLoading(unittest.TestCase):
                 "volume_ema": {"periods": [8, 15, 30]},  # Added for completeness
             },
             "pipeline": {"steps": ["generate_technical_indicators"]},
-            # Not including price_features or momentum_features to test fallback to defaults
+            # Exclude price_features and momentum_features
+            # to test fallback to defaults
         }
         with open(DUMMY_CONFIG_PATH, "w") as f:
             yaml.dump(self.dummy_config_data, f)
@@ -136,7 +137,8 @@ class TestFeatureGenerationMethods(unittest.TestCase):
         # DataProcessor will initialize with its defaults if config/features_config.yaml
         # (the real one) doesn't exist or is unparseable during tests,
         # or if patched (like in TestConfigLoading.test_load_parameters_file_not_found).
-        # For feature generation tests, we typically want a clean slate or direct override.
+        # For feature generation tests, we typically want a clean slate or
+        # direct override.
         if os.path.exists(
             DUMMY_CONFIG_PATH
         ):  # DUMMY_CONFIG_PATH is 'config/features_config.yaml'
@@ -240,13 +242,13 @@ class TestPipelineExecution(unittest.TestCase):
 
         with patch.object(
             processor, "_generate_technical_indicators", side_effect=record("tech")
-        ) as m_tech, patch.object(
+        ) as _m_tech, patch.object(
             processor, "_handle_missing_values", side_effect=record("missing")
-        ) as m_missing, patch.object(
+        ) as _m_missing, patch.object(
             processor, "_scale_features", side_effect=record("scale")
-        ) as m_scale, patch.object(
+        ) as _m_scale, patch.object(
             processor, "_clean_data", side_effect=record("clean")
-        ) as m_clean:
+        ) as _m_clean:
             processor.process_data(self.df.copy())
 
         self.assertEqual(call_sequence, ["tech", "missing", "scale", "clean"])
