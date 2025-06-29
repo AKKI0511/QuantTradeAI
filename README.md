@@ -100,6 +100,17 @@ pip install -r requirements.txt
 python setup.py develop
 ```
 
+## Development
+
+Install pre-commit hooks to run the same checks as the CI pipeline:
+
+```bash
+pre-commit install
+pre-commit run --all-files
+```
+
+The hooks will run `black --check`, `flake8`, and `pytest` before every commit.
+
 ## Data Caching
 
 The `DataLoader` caches downloaded OHLCV data in parquet format to reduce
