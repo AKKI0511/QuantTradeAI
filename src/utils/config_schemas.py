@@ -13,6 +13,7 @@ class DataSection(BaseModel):
     refresh: Optional[bool] = False
     test_start: Optional[str] = None
     test_end: Optional[str] = None
+    max_workers: Optional[int] = 1
 
 
 class ModelConfigSchema(BaseModel):

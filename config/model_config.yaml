@@ -10,6 +10,7 @@ data:
   cache_expiration_days: 7  # Refresh cache after this many days
   use_cache: true
   refresh: false
+  max_workers: 1
   test_start: '2025-01-01'
   test_end: '2025-01-31'
 
