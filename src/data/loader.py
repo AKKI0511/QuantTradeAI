@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta
 import yaml
 from pydantic import ValidationError
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from utils.config_schemas import ModelConfigSchema
 import os
@@ -36,6 +37,7 @@ class DataLoader:
         self.cache_expiration_days = data_cfg.cache_expiration_days
         self.use_cache = data_cfg.use_cache
         self.default_refresh = data_cfg.refresh
+        self.max_workers = data_cfg.max_workers or 1
 
     def _is_cache_valid(self, cache_file: str) -> bool:
         """Return True if the cache file exists and is not expired."""
@@ -45,6 +47,37 @@ class DataLoader:
             return True
         file_time = datetime.fromtimestamp(os.path.getmtime(cache_file))
         return datetime.now() - file_time < timedelta(days=self.cache_expiration_days)
+
+    def _fetch_single(self, symbol: str, refresh: bool) -> Optional[pd.DataFrame]:
+        """Fetch data for a single symbol and handle caching."""
+        cache_file = os.path.join(self.cache_dir, f"{symbol}_data.parquet")
+        try:
+            if self.use_cache and not refresh and self._is_cache_valid(cache_file):
+                logger.info(f"Loading cached data for {symbol} from {cache_file}")
+                df = pd.read_parquet(cache_file)
+            else:
+                logger.info(f"Fetching data for {symbol}")
+                ticker = yf.Ticker(symbol)
+                df = ticker.history(start=self.start_date, end=self.end_date)
+
+                if df.empty:
+                    logger.error(f"No data found for {symbol}")
+                    return None
+
+                if self.use_cache:
+                    os.makedirs(self.cache_dir, exist_ok=True)
+                    df.to_parquet(cache_file)
+                    logger.info(f"Cached data for {symbol} at {cache_file}")
+
+            missing_dates = self._check_missing_dates(df)
+            if missing_dates:
+                logger.warning(f"Missing dates for {symbol}: {len(missing_dates)} days")
+
+            logger.info(f"Successfully retrieved {len(df)} records for {symbol}")
+            return df
+        except Exception as e:
+            logger.error(f"Error fetching data for {symbol}: {str(e)}")
+            return None
 
     def fetch_data(
         self, symbols: Optional[List[str]] = None, refresh: Optional[bool] = None
@@ -61,42 +94,23 @@ class DataLoader:
         """
         symbols = symbols or self.symbols
         refresh = self.default_refresh if refresh is None else refresh
-        data_dict = {}
+        data_dict: Dict[str, pd.DataFrame] = {}
 
-        for symbol in symbols:
-            cache_file = os.path.join(self.cache_dir, f"{symbol}_data.parquet")
-            try:
-                if self.use_cache and not refresh and self._is_cache_valid(cache_file):
-                    logger.info(f"Loading cached data for {symbol} from {cache_file}")
-                    df = pd.read_parquet(cache_file)
-                else:
-                    logger.info(f"Fetching data for {symbol}")
-                    ticker = yf.Ticker(symbol)
-                    df = ticker.history(start=self.start_date, end=self.end_date)
-
-                    if df.empty:
-                        logger.error(f"No data found for {symbol}")
-                        continue
-
-                    # Save to cache if enabled
-                    if self.use_cache:
-                        os.makedirs(self.cache_dir, exist_ok=True)
-                        df.to_parquet(cache_file)
-                        logger.info(f"Cached data for {symbol} at {cache_file}")
-
-                # Validate data completeness
-                missing_dates = self._check_missing_dates(df)
-                if missing_dates:
-                    logger.warning(
-                        f"Missing dates for {symbol}: {len(missing_dates)} days"
-                    )
-
-                data_dict[symbol] = df
-                logger.info(f"Successfully retrieved {len(df)} records for {symbol}")
-
-            except Exception as e:
-                logger.error(f"Error fetching data for {symbol}: {str(e)}")
-                continue
+        if self.max_workers and self.max_workers > 1:
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                futures = {
+                    executor.submit(self._fetch_single, s, refresh): s for s in symbols
+                }
+                for future in as_completed(futures):
+                    symbol = futures[future]
+                    df = future.result()
+                    if df is not None:
+                        data_dict[symbol] = df
+        else:
+            for symbol in symbols:
+                df = self._fetch_single(symbol, refresh)
+                if df is not None:
+                    data_dict[symbol] = df
 
         return data_dict
 
