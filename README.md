@@ -137,6 +137,20 @@ python -m src.main evaluate -m models/trained/MY_MODEL           # evaluate
 the full training pipeline. `evaluate` loads an existing model directory and
 generates evaluation metrics.
 
+## Backtesting
+
+Use the backtester to evaluate label-based trading signals:
+
+```python
+from backtest.backtester import simulate_trades, compute_metrics
+import pandas as pd
+
+df = pd.read_parquet("data/processed/AAPL.parquet")
+df = simulate_trades(df)
+metrics = compute_metrics(df)
+print(metrics)
+```
+
 ## Competition Evaluation Metrics
 
 ### Trade-Level Analytics
