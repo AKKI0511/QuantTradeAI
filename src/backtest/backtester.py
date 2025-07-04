@@ -1,9 +1,14 @@
 import pandas as pd
 
 from utils.metrics import sharpe_ratio, max_drawdown
+from trading.risk import apply_stop_loss_take_profit
 
 
-def simulate_trades(df: pd.DataFrame) -> pd.DataFrame:
+def simulate_trades(
+    df: pd.DataFrame,
+    stop_loss_pct: float | None = None,
+    take_profit_pct: float | None = None,
+) -> pd.DataFrame:
     """Simulate trades using label signals.
 
     Parameters
@@ -19,6 +24,8 @@ def simulate_trades(df: pd.DataFrame) -> pd.DataFrame:
         ``equity_curve`` columns.
     """
     data = df.copy()
+    if stop_loss_pct is not None or take_profit_pct is not None:
+        data = apply_stop_loss_take_profit(data, stop_loss_pct, take_profit_pct)
     data["price_return"] = data["Close"].pct_change()
     data["strategy_return"] = data["price_return"].shift(-1) * data["label"]
     data["strategy_return"] = data["strategy_return"].fillna(0.0)
