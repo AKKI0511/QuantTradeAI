@@ -13,4 +13,4 @@ test:
 	poetry run pytest
 
 pipeline:
-	poetry run python -m src.main train -c config/model_config.yaml
+	poetry run quanttradeai train -c config/model_config.yaml

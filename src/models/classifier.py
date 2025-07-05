@@ -73,7 +73,7 @@ class MomentumClassifier:
         def objective(trial):
             # Logistic Regression parameters
             lr_params = {
-                "C": trial.suggest_loguniform("lr_C", 1e-5, 100),
+                "C": trial.suggest_float("lr_C", 1e-5, 100, log=True),
                 "max_iter": 1000,
                 "class_weight": "balanced",
             }
@@ -90,11 +90,11 @@ class MomentumClassifier:
             xgb_params = {
                 "n_estimators": trial.suggest_int("xgb_n_estimators", 50, 300),
                 "max_depth": trial.suggest_int("xgb_max_depth", 3, 15),
-                "learning_rate": trial.suggest_loguniform(
-                    "xgb_learning_rate", 1e-3, 0.1
+                "learning_rate": trial.suggest_float(
+                    "xgb_learning_rate", 1e-3, 0.1, log=True
                 ),
-                "subsample": trial.suggest_uniform("xgb_subsample", 0.6, 1.0),
-                "colsample_bytree": trial.suggest_uniform(
+                "subsample": trial.suggest_float("xgb_subsample", 0.6, 1.0),
+                "colsample_bytree": trial.suggest_float(
                     "xgb_colsample_bytree", 0.6, 1.0
                 ),
             }

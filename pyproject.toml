@@ -6,7 +6,7 @@ authors = [
     {name = "Akshat Joshi",email = "joshiakshat0511@gmail.com"}
 ]
 readme = "README.md"
-requires-python = "^3.11"
+requires-python = ">=3.11,<4.0"
 dependencies = [
     "numpy (>=2.3.1,<3.0.0)",
     "pandas (>=2.3.0,<3.0.0)",
@@ -31,8 +31,9 @@ packages = [
     { include = "src" }
 ]
 
-[tool.poetry.scripts]
+[project.scripts]
 quanttradeai = "src.main:main"
+quanttradeai-pipeline = "src.main:run_pipeline"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"
