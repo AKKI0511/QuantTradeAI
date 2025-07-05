@@ -1,20 +1,18 @@
 repos:
-  - repo: https://github.com/psf/black
-    rev: 24.3.0
-    hooks:
-      - id: black
-        language_version: python3.11
-        args: ["--check"]
-  - repo: https://github.com/pycqa/flake8
-    rev: 6.1.0
-    hooks:
-      - id: flake8
-        language_version: python3.11
   - repo: local
     hooks:
-      - id: pytest
-        name: pytest
-        entry: pytest
+      - id: format
+        name: format
+        entry: make format
         language: system
-        types: [python]
+        pass_filenames: false
+      - id: lint
+        name: lint
+        entry: make lint
+        language: system
+        pass_filenames: false
+      - id: test
+        name: test
+        entry: make test
+        language: system
         pass_filenames: false

@@ -84,20 +84,16 @@ git clone https://github.com/AKKI0511/QuantTradeAI.git
 cd QuantTradeAI
 ```
 
-2. Create and activate a virtual environment:
+2. Install Poetry and project dependencies:
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install poetry
+poetry install
 ```
 
-3. Install dependencies:
+Poetry will automatically create a virtual environment for the project. Activate
+it with:
 ```bash
-pip install -r requirements.txt
-```
-
-4. Run initial setup:
-```bash
-python setup.py develop
+poetry shell
 ```
 
 ## Development
@@ -109,7 +105,16 @@ pre-commit install
 pre-commit run --all-files
 ```
 
-The hooks will run `black --check`, `flake8`, and `pytest` before every commit.
+The hooks call `make` targets for formatting, linting and testing.
+
+Common development commands:
+
+```bash
+make format   # run black
+make lint     # run flake8
+make test     # run pytest
+make pipeline # execute training pipeline
+```
 
 ## Data Caching
 

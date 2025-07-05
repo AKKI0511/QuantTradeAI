@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch, mock_open, MagicMock
 import os
+import subprocess
 import yaml
 import pandas as pd
 import sys
@@ -38,6 +39,19 @@ class TestConfigLoading(unittest.TestCase):
         self.test_config_dir = "config"  # Should match DUMMY_CONFIG_PATH
         os.makedirs(self.test_config_dir, exist_ok=True)
 
+        # Backup existing config if present or fetch from git
+        self._original_config = None
+        if os.path.exists(DUMMY_CONFIG_PATH):
+            with open(DUMMY_CONFIG_PATH, "r") as f:
+                self._original_config = f.read()
+        else:
+            try:
+                self._original_config = subprocess.check_output(
+                    ["git", "show", f"HEAD:{DUMMY_CONFIG_PATH}"]
+                ).decode()
+            except Exception:
+                self._original_config = None
+
         self.dummy_config_data = {
             "volatility_features": {"bollinger_bands": {"period": 30, "std_dev": 3}},
             "volume_features": {
@@ -52,8 +66,11 @@ class TestConfigLoading(unittest.TestCase):
             yaml.dump(self.dummy_config_data, f)
 
     def tearDown(self):
-        # Remove the dummy config file created during setUp
-        if os.path.exists(DUMMY_CONFIG_PATH):
+        # Restore original config if it existed
+        if self._original_config is not None:
+            with open(DUMMY_CONFIG_PATH, "w") as f:
+                f.write(self._original_config)
+        elif os.path.exists(DUMMY_CONFIG_PATH):
             os.remove(DUMMY_CONFIG_PATH)
         # Do not remove the 'config' directory itself, as it's a source directory.
 
@@ -133,16 +150,21 @@ class TestFeatureGenerationMethods(unittest.TestCase):
         }
         self.dummy_df = pd.DataFrame(self.dummy_data)
 
-        # Ensure no dummy config file from TestConfigLoading interferes here.
-        # DataProcessor will initialize with its defaults if config/features_config.yaml
-        # (the real one) doesn't exist or is unparseable during tests,
-        # or if patched (like in TestConfigLoading.test_load_parameters_file_not_found).
-        # For feature generation tests, we typically want a clean slate or
-        # direct override.
-        if os.path.exists(
-            DUMMY_CONFIG_PATH
-        ):  # DUMMY_CONFIG_PATH is 'config/features_config.yaml'
+        # Backup and remove existing config
+        self._original_config = None
+        if os.path.exists(DUMMY_CONFIG_PATH):
+            with open(DUMMY_CONFIG_PATH, "r") as f:
+                self._original_config = f.read()
             os.remove(DUMMY_CONFIG_PATH)
+        else:
+            try:
+                self._original_config = subprocess.check_output(
+                    ["git", "show", f"HEAD:{DUMMY_CONFIG_PATH}"]
+                ).decode()
+            except Exception:
+                self._original_config = None
+
+        # Ensure no dummy config file from other tests interferes
 
     @patch("pandas_ta.bbands")
     def test_add_bollinger_bands_uses_config_params(self, mocked_bbands):
@@ -208,6 +230,13 @@ class TestFeatureGenerationMethods(unittest.TestCase):
         self.assertIn("volume_sma_15", processed_df.columns)
         self.assertIn("volume_sma_ratio_15", processed_df.columns)
         self.assertIn("obv", processed_df.columns)  # OBV is also added
+
+    def tearDown(self):
+        if self._original_config is not None:
+            with open(DUMMY_CONFIG_PATH, "w") as f:
+                f.write(self._original_config)
+        elif os.path.exists(DUMMY_CONFIG_PATH):
+            os.remove(DUMMY_CONFIG_PATH)
 
 
 class TestPipelineExecution(unittest.TestCase):
