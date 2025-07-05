@@ -6,7 +6,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
-from utils.metrics import classification_metrics
+from src.utils.metrics import classification_metrics
 import xgboost as xgb
 import optuna
 import yaml

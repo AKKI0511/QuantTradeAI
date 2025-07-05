@@ -1,10 +1,13 @@
-.PHONY: format lint test pipeline
+.PHONY: format format-check lint test pipeline
 
 format:
-	poetry run black .
+	poetry run black src/
+
+format-check:
+	poetry run black --check src/
 
 lint:
-	poetry run flake8
+	poetry run flake8 src/
 
 test:
 	poetry run pytest

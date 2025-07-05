@@ -1,8 +1,8 @@
 import logging
 from pathlib import Path
-from data.loader import DataLoader
-from data.processor import DataProcessor
-from models.classifier import MomentumClassifier
+from src.data.loader import DataLoader
+from src.data.processor import DataProcessor
+from src.models.classifier import MomentumClassifier
 from sklearn.model_selection import train_test_split
 import yaml
 import json

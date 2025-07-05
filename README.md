@@ -28,7 +28,8 @@ A comprehensive machine learning framework for quantitative trading strategies, 
   - Charting helpers in `utils/visualization.py`
 
 ## Tech Stack
-- Python 3.9+
+- Python 3.11+
+- Poetry (dependency management and packaging)
 - yfinance (data acquisition)
 - scikit-learn (ML models)
 - XGBoost (gradient boosting)
@@ -38,8 +39,10 @@ A comprehensive machine learning framework for quantitative trading strategies, 
 ## Project Structure
 ```
 QuantTradeAI/
-├── src/                      # Source code
-│   ├── data/                 # Data processing modules
+├── src/                      # Source code (Poetry package)
+│   ├── __init__.py
+│   ├── main.py              # CLI entry point
+│   ├── data/                # Data processing modules
 │   │   ├── __init__.py
 │   │   ├── loader.py        # Data fetching (yfinance integration)
 │   │   └── processor.py     # Data preprocessing
@@ -51,8 +54,15 @@ QuantTradeAI/
 │   │   ├── __init__.py
 │   │   ├── classifier.py    # Voting classifier implementation
 │   │   └── optimization.py  # Hyperparameter tuning
+│   ├── backtest/            # Backtesting framework
+│   │   ├── __init__.py
+│   │   └── backtester.py    # Trading simulation
+│   ├── trading/             # Trading utilities
+│   │   ├── __init__.py
+│   │   └── risk.py          # Risk management
 │   └── utils/               # Utility functions
 │       ├── __init__.py
+│       ├── config_schemas.py # Configuration validation
 │       ├── metrics.py       # Performance metrics
 │       └── visualization.py # Plotting functions
 ├── notebooks/               # Jupyter notebooks
@@ -90,19 +100,13 @@ pip install poetry
 poetry install
 ```
 
-Poetry will automatically create a virtual environment for the project. Activate
-it with:
-```bash
-poetry shell
-```
-
 ## Development
 
 Install pre-commit hooks to run the same checks as the CI pipeline:
 
 ```bash
-pre-commit install
-pre-commit run --all-files
+poetry run pre-commit install
+poetry run pre-commit run --all-files
 ```
 
 The hooks call `make` targets for formatting, linting and testing.
@@ -130,12 +134,22 @@ data:
 
 ## Command Line Interface
 
-Use the CLI in `src/main.py` to run common tasks:
+The package provides a convenient CLI through Poetry. Use any of these methods:
 
+### Method 1: Using the CLI entry point (Recommended)
 ```bash
-python -m src.main fetch-data -c config/model_config.yaml       # download data
-python -m src.main train -c config/model_config.yaml             # run pipeline
-python -m src.main evaluate -m models/trained/MY_MODEL           # evaluate
+poetry run quanttradeai --help                                   # show help
+poetry run quanttradeai fetch-data -c config/model_config.yaml  # download data
+poetry run quanttradeai train -c config/model_config.yaml       # run pipeline
+poetry run quanttradeai evaluate -m models/trained/MY_MODEL     # evaluate
+```
+
+### Method 2: Using module syntax
+```bash
+poetry run python -m src.main --help                            # show help
+poetry run python -m src.main fetch-data -c config/model_config.yaml
+poetry run python -m src.main train -c config/model_config.yaml
+poetry run python -m src.main evaluate -m models/trained/MY_MODEL
 ```
 
 `fetch-data` saves raw data to the configured cache directory. `train` executes
@@ -147,7 +161,7 @@ generates evaluation metrics.
 Use the backtester to evaluate label-based trading signals:
 
 ```python
-from backtest.backtester import simulate_trades, compute_metrics
+from src.backtest.backtester import simulate_trades, compute_metrics
 import pandas as pd
 
 df = pd.read_parquet("data/processed/AAPL.parquet")
