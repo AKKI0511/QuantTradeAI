@@ -7,7 +7,7 @@ import yaml
 from pydantic import ValidationError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from utils.config_schemas import ModelConfigSchema
+from src.utils.config_schemas import ModelConfigSchema
 import os
 
 logging.basicConfig(level=logging.INFO)

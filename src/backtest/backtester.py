@@ -1,7 +1,7 @@
 import pandas as pd
 
-from utils.metrics import sharpe_ratio, max_drawdown
-from trading.risk import apply_stop_loss_take_profit
+from src.utils.metrics import sharpe_ratio, max_drawdown
+from src.trading.risk import apply_stop_loss_take_profit
 
 
 def simulate_trades(
