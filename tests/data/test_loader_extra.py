@@ -105,8 +105,8 @@ class TestFetchDataParallel(unittest.TestCase):
 
     @patch("data.loader.as_completed", side_effect=lambda fs: fs)
     @patch("data.loader.ThreadPoolExecutor")
-    @patch("yfinance.Ticker")
-    def test_parallel_execution(self, mock_ticker, mock_executor, _mock_ac):
+    @patch("src.data.datasource.YFinanceDataSource.fetch")
+    def test_parallel_execution(self, mock_fetch, mock_executor, _mock_ac):
         class DummyFuture:
             def __init__(self, result):
                 self._result = result
@@ -132,7 +132,7 @@ class TestFetchDataParallel(unittest.TestCase):
             {"Open": [1], "High": [1], "Low": [1], "Close": [1], "Volume": [1]},
             index=pd.date_range("2020-01-01", periods=1),
         )
-        mock_ticker.return_value.history.return_value = mock_history
+        mock_fetch.return_value = mock_history
 
         loader = DataLoader(self.config_path)
         data = loader.fetch_data()

@@ -55,16 +55,16 @@ class TestDataLoaderCaching(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmpdir)
 
-    @patch("yfinance.Ticker")
-    def test_fetch_data_uses_cache(self, mock_ticker):
+    @patch("src.data.datasource.YFinanceDataSource.fetch")
+    def test_fetch_data_uses_cache(self, mock_fetch):
         loader = DataLoader(self.config_path)
         data_dict = loader.fetch_data()
-        mock_ticker.assert_not_called()
+        mock_fetch.assert_not_called()
         self.assertIn("TEST", data_dict)
         pd.testing.assert_frame_equal(data_dict["TEST"], self.df, check_freq=False)
 
-    @patch("yfinance.Ticker")
-    def test_fetch_data_refreshes_cache(self, mock_ticker):
+    @patch("src.data.datasource.YFinanceDataSource.fetch")
+    def test_fetch_data_refreshes_cache(self, mock_fetch):
         # remove cached file to force fetch
         os.remove(os.path.join(self.cache_dir, "TEST_data.parquet"))
 
@@ -72,31 +72,31 @@ class TestDataLoaderCaching(unittest.TestCase):
             {"Open": [1], "High": [1], "Low": [1], "Close": [1], "Volume": [1]},
             index=pd.date_range("2020-01-01", periods=1),
         )
-        mock_ticker.return_value.history.return_value = mock_history
+        mock_fetch.return_value = mock_history
 
         loader = DataLoader(self.config_path)
         data_dict = loader.fetch_data(refresh=True)
 
-        mock_ticker.assert_called_once()
+        mock_fetch.assert_called_once()
         self.assertTrue(
             os.path.exists(os.path.join(self.cache_dir, "TEST_data.parquet"))
         )
         pd.testing.assert_frame_equal(data_dict["TEST"], mock_history)
 
-    @patch("yfinance.Ticker")
-    def test_fetch_data_expired_cache(self, mock_ticker):
+    @patch("src.data.datasource.YFinanceDataSource.fetch")
+    def test_fetch_data_expired_cache(self, mock_fetch):
         self._write_config(expiration=0)
 
         mock_history = pd.DataFrame(
             {"Open": [1], "High": [1], "Low": [1], "Close": [1], "Volume": [1]},
             index=pd.date_range("2020-01-01", periods=1),
         )
-        mock_ticker.return_value.history.return_value = mock_history
+        mock_fetch.return_value = mock_history
 
         loader = DataLoader(self.config_path)
         data_dict = loader.fetch_data()
 
-        mock_ticker.assert_called_once()
+        mock_fetch.assert_called_once()
         pd.testing.assert_frame_equal(data_dict["TEST"], mock_history)
 
 
