@@ -1,4 +1,3 @@
-import yfinance as yf
 import pandas as pd
 from typing import List, Dict, Optional
 import logging
@@ -8,6 +7,7 @@ from pydantic import ValidationError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.utils.config_schemas import ModelConfigSchema
+from src.data.datasource import DataSource, YFinanceDataSource
 import os
 
 logging.basicConfig(level=logging.INFO)
@@ -17,7 +17,11 @@ logger = logging.getLogger(__name__)
 class DataLoader:
     """Data loader class for fetching and validating stock data."""
 
-    def __init__(self, config_path: str = "config/model_config.yaml"):
+    def __init__(
+        self,
+        config_path: str = "config/model_config.yaml",
+        data_source: Optional[DataSource] = None,
+    ):
         """Initialize DataLoader with configuration and validate it."""
         with open(config_path, "r") as file:
             raw_cfg = yaml.safe_load(file)
@@ -38,6 +42,7 @@ class DataLoader:
         self.use_cache = data_cfg.use_cache
         self.default_refresh = data_cfg.refresh
         self.max_workers = data_cfg.max_workers or 1
+        self.data_source = data_source or YFinanceDataSource()
 
     def _is_cache_valid(self, cache_file: str) -> bool:
         """Return True if the cache file exists and is not expired."""
@@ -57,10 +62,9 @@ class DataLoader:
                 df = pd.read_parquet(cache_file)
             else:
                 logger.info(f"Fetching data for {symbol}")
-                ticker = yf.Ticker(symbol)
-                df = ticker.history(start=self.start_date, end=self.end_date)
+                df = self.data_source.fetch(symbol, self.start_date, self.end_date)
 
-                if df.empty:
+                if df is None or df.empty:
                     logger.error(f"No data found for {symbol}")
                     return None
 
