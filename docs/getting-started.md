@@ -75,7 +75,7 @@ See the [Configuration Guide](configuration.md) for detailed settings.
 
 - **[Quick Reference](quick-reference.md)** - Common commands and patterns
 - **[API Reference](api/)** - Detailed API documentation
-- **[Examples](examples/)** - Usage examples and tutorials
+
 - **[Configuration](configuration.md)** - Configuration options
 
 ## 🆘 Troubleshooting
@@ -100,7 +100,7 @@ poetry run quanttradeai fetch-data --refresh
 
 - Check the [Quick Reference](quick-reference.md) for common patterns
 - Review the [API Reference](api/) for detailed function documentation
-- See [Examples](examples/) for complete workflow examples
+- See the [Quick Reference](quick-reference.md) for complete workflow examples
 - Open an [issue](https://github.com/AKKI0511/QuantTradeAI/issues) for bugs
 
 ## 🎉 Congratulations!

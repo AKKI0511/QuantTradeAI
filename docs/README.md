@@ -5,8 +5,8 @@ Welcome to the QuantTradeAI documentation! This comprehensive machine learning f
 ## 📚 Documentation Index
 
 ### Core Documentation
-- **[API Documentation](API_DOCUMENTATION.md)** - Comprehensive reference for all public APIs, functions, and components
-- **[Quick Reference Guide](QUICK_REFERENCE.md)** - Common usage patterns and examples
+- **[API Documentation](api/)** - Comprehensive reference for all public APIs, functions, and components
+- **[Quick Reference Guide](quick-reference.md)** - Common usage patterns and examples
 - **[Main README](../README.md)** - Project overview and getting started guide
 
 ## 🚀 Quick Start
@@ -37,7 +37,7 @@ poetry run quanttradeai evaluate -c config/model_config.yaml -m models/trained/A
 ## 📖 Documentation Structure
 
 ### 1. API Documentation
-The [API Documentation](API_DOCUMENTATION.md) provides comprehensive coverage of:
+The [API Documentation](api/) provides comprehensive coverage of:
 
 - **Command Line Interface** - CLI commands and entry points
 - **Data Loading and Processing** - DataLoader, DataProcessor, and DataSource classes
@@ -49,7 +49,7 @@ The [API Documentation](API_DOCUMENTATION.md) provides comprehensive coverage of
 - **Configuration** - Model and feature configuration examples
 
 ### 2. Quick Reference Guide
-The [Quick Reference Guide](QUICK_REFERENCE.md) includes:
+The [Quick Reference Guide](quick-reference.md) includes:
 
 - **Quick Start** - Basic setup and usage
 - **Common Patterns** - Data loading, feature engineering, model training, backtesting
@@ -92,8 +92,8 @@ QuantTradeAI/
 │   ├── model_config.yaml    # Model parameters
 │   └── features_config.yaml # Feature engineering settings
 └── docs/                    # Documentation
-    ├── API_DOCUMENTATION.md # Comprehensive API reference
-    ├── QUICK_REFERENCE.md   # Quick reference guide
+    ├── api/                 # API documentation
+    ├── quick-reference.md   # Quick reference guide
     └── README.md            # This file
 ```
 
@@ -176,29 +176,28 @@ The framework is currently configured for:
 ## 🔍 Finding Information
 
 ### By Component
-- **Data Loading**: See [DataLoader API](API_DOCUMENTATION.md#dataloader-class)
-- **Feature Engineering**: See [Feature Engineering API](API_DOCUMENTATION.md#feature-engineering)
-- **Model Training**: See [Machine Learning Models API](API_DOCUMENTATION.md#machine-learning-models)
-- **Backtesting**: See [Backtesting Framework API](API_DOCUMENTATION.md#backtesting-framework)
-- **Risk Management**: See [Trading Utilities API](API_DOCUMENTATION.md#trading-utilities)
+- **Data Loading**: See [DataLoader API](api/data.md#dataloader-class)
+- **Feature Engineering**: See [Feature Engineering API](api/features.md)
+- **Model Training**: See [Machine Learning Models API](api/models.md)
+- **Backtesting**: See [Backtesting Framework API](api/backtesting.md)
+- **Risk Management**: See [Trading Utilities API](api/trading.md)
 
 ### By Task
-- **Getting Started**: See [Quick Reference Guide](QUICK_REFERENCE.md#quick-start)
-- **Configuration**: See [Configuration Examples](QUICK_REFERENCE.md#configuration-examples)
-- **Error Handling**: See [Troubleshooting](QUICK_REFERENCE.md#troubleshooting)
-- **Best Practices**: See [Best Practices](QUICK_REFERENCE.md#best-practices)
+- **Getting Started**: See [Quick Reference Guide](quick-reference.md#-cli-commands)
+- **Configuration**: See [Configuration Examples](quick-reference.md#-configuration-examples)
+- **Error Handling**: See [Troubleshooting](quick-reference.md#-troubleshooting)
 
 ### By Function
-- **Technical Indicators**: See [Technical Indicators API](API_DOCUMENTATION.md#technical-indicators-srcfeaturestechnical)
-- **Performance Metrics**: See [Utility Functions API](API_DOCUMENTATION.md#utility-functions)
-- **Visualization**: See [Visualization API](API_DOCUMENTATION.md#visualization)
+- **Technical Indicators**: See [Technical Indicators API](api/features.md#technical-indicators)
+- **Performance Metrics**: See [Data Loading API](api/data.md)
+- **Visualization**: See [Data Loading API](api/data.md)
 
 ## 🤝 Contributing
 
 When contributing to the documentation:
 
-1. **Update API Documentation** - Add new functions and classes to `API_DOCUMENTATION.md`
-2. **Add Examples** - Include usage examples in `QUICK_REFERENCE.md`
+1. **Update API Documentation** - Add new functions and classes to the appropriate files in `api/`
+2. **Add Examples** - Include usage examples in `quick-reference.md`
 3. **Update Configuration** - Document new configuration options
 4. **Add Troubleshooting** - Include solutions for common issues
 
@@ -241,4 +240,4 @@ For questions and support:
 
 ---
 
-This documentation provides comprehensive coverage of the QuantTradeAI framework. Start with the [Quick Reference Guide](QUICK_REFERENCE.md) for common usage patterns, then refer to the [API Documentation](API_DOCUMENTATION.md) for detailed function references.
+This documentation provides comprehensive coverage of the QuantTradeAI framework. Start with the [Quick Reference Guide](quick-reference.md) for common usage patterns, then refer to the [API Documentation](api/) for detailed function references.

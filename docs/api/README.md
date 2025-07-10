@@ -10,10 +10,6 @@ Complete API documentation for QuantTradeAI.
 - **[Machine Learning](models.md)** - MomentumClassifier and training utilities
 - **[Backtesting](backtesting.md)** - Trade simulation and performance metrics
 - **[Trading Utilities](trading.md)** - Risk management and position sizing
-- **[Utilities](utils.md)** - Metrics, visualization, and configuration schemas
-
-### Command Line Interface
-- **[CLI Reference](cli.md)** - Command line interface documentation
 
 ## 🚀 Quick Navigation
 
@@ -23,7 +19,6 @@ Complete API documentation for QuantTradeAI.
 - **Model Training**: [Machine Learning](models.md)
 - **Strategy Testing**: [Backtesting](backtesting.md)
 - **Risk Management**: [Trading Utilities](trading.md)
-- **Performance Analysis**: [Utilities](utils.md)
 
 ### By Component
 - **DataLoader**: [Data Loading](data.md#dataloader-class)

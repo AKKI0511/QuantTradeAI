@@ -233,5 +233,5 @@ print(df.index.dtype)
 
 - **[Getting Started](getting-started.md)** - Installation and first steps
 - **[API Reference](api/)** - Complete API documentation
-- **[Examples](examples/)** - Usage examples and tutorials
+
 - **[Configuration](configuration.md)** - Configuration guide

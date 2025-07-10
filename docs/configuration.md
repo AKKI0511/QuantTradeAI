@@ -295,4 +295,3 @@ data:
 - **[Getting Started](getting-started.md)** - Installation and first steps
 - **[Quick Reference](quick-reference.md)** - Common patterns and commands
 - **[API Reference](api/)** - Complete API documentation
-- **[Examples](examples/)** - Usage examples and tutorials
