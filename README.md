@@ -170,7 +170,39 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [XGBoost](https://xgboost.readthedocs.io/) for gradient boosting
 - [Optuna](https://optuna.org/) for hyperparameter optimization
 
-## 📞 Support
+## �️ Roadmap & Future Enhancements
+
+### 🚀 Phase 1: Core Infrastructure (Q2 2024)
+- **Real-time Data Streaming** - WebSocket integration for live market data
+- **Advanced Risk Management** - Portfolio-level risk controls and position sizing
+- **Multi-timeframe Support** - Intraday, daily, weekly, monthly analysis
+- **Enhanced Backtesting** - Transaction costs, slippage, market impact modeling
+
+### 🤖 Phase 2: AI & LLM Integration (Q3 2024)
+- **LLM-Powered Analysis** - OpenAI, Anthropic, Gemini integration for market sentiment
+- **Natural Language Processing** - News sentiment analysis and earnings call transcripts
+- **AI-Driven Feature Engineering** - Automated feature selection and generation
+- **Intelligent Portfolio Allocation** - LLM-based asset allocation strategies
+
+### ⚡ Phase 3: Performance & Latency (Q4 2024)
+- **C++ Core Components** - Low-latency data processing and signal generation
+- **GPU Acceleration** - CUDA/OpenCL for parallel model training
+- **Real-time Trading** - Direct exchange connectivity and order execution
+- **Microservices Architecture** - Scalable, containerized deployment
+
+### 🌐 Phase 4: Advanced AI & Cloud (Q1 2025)
+- **Multi-Modal AI** - Vision models for chart pattern recognition
+- **Reinforcement Learning** - RL agents for dynamic strategy adaptation
+- **Cloud-Native Deployment** - Kubernetes orchestration and auto-scaling
+- **Federated Learning** - Privacy-preserving model training across institutions
+
+### 🔮 Phase 5: Next-Generation Features (Q2 2025)
+- **Quantum Computing Integration** - Quantum algorithms for optimization
+- **Blockchain Integration** - DeFi protocol connectivity and token trading
+- **Advanced NLP** - Real-time news analysis and social sentiment
+- **Autonomous Trading** - Self-optimizing strategies with minimal human intervention
+
+## �📞 Support
 
 - **📚 Documentation**: [docs/](docs/)
 - **🐛 Issues**: [GitHub Issues](https://github.com/AKKI0511/QuantTradeAI/issues)
