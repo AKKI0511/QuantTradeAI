@@ -1,8 +1,8 @@
 import sys
 import os
 
-# Add package path for direct execution
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "./quanttradeai")))
+# Add project root to import path for direct execution
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from quanttradeai.data.processor import DataProcessor
 import logging
