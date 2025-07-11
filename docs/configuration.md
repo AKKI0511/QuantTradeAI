@@ -238,7 +238,7 @@ features:
 The framework validates configuration files using Pydantic schemas:
 
 ```python
-from src.utils.config_schemas import ModelConfigSchema, FeaturesConfigSchema
+from quanttradeai.utils.config_schemas import ModelConfigSchema, FeaturesConfigSchema
 import yaml
 
 # Validate model config

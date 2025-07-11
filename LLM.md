@@ -7,12 +7,12 @@ QuantTradeAI is a comprehensive machine learning framework for quantitative trad
 ## Core Architecture
 
 ### Key Components
-- **Data Layer**: `src/data/` - Data fetching, caching, validation
-- **Feature Engineering**: `src/features/` - Technical indicators, custom features
-- **ML Models**: `src/models/` - Ensemble classifiers, hyperparameter optimization
-- **Backtesting**: `src/backtest/` - Trade simulation, performance metrics
-- **Risk Management**: `src/trading/` - Stop-loss, position sizing
-- **Utilities**: `src/utils/` - Metrics, visualization, configuration
+- **Data Layer**: `quanttradeai/data/` - Data fetching, caching, validation
+- **Feature Engineering**: `quanttradeai/features/` - Technical indicators, custom features
+- **ML Models**: `quanttradeai/models/` - Ensemble classifiers, hyperparameter optimization
+- **Backtesting**: `quanttradeai/backtest/` - Trade simulation, performance metrics
+- **Risk Management**: `quanttradeai/trading/` - Stop-loss, position sizing
+- **Utilities**: `quanttradeai/utils/` - Metrics, visualization, configuration
 
 ### Data Flow
 1. Fetch OHLCV data (YFinance/AlphaVantage)
@@ -72,8 +72,8 @@ make test     # pytest testing
 
 ### Data Loading
 ```python
-from src.data.loader import DataLoader
-from src.data.processor import DataProcessor
+from quanttradeai.data.loader import DataLoader
+from quanttradeai.data.processor import DataProcessor
 
 # Initialize components
 loader = DataLoader("config/model_config.yaml")
@@ -87,7 +87,7 @@ df_labeled = processor.generate_labels(df_processed)
 
 ### Model Training
 ```python
-from src.models.classifier import MomentumClassifier
+from quanttradeai.models.classifier import MomentumClassifier
 
 # Initialize and train
 classifier = MomentumClassifier("config/model_config.yaml")
@@ -97,7 +97,7 @@ classifier.train(X, y)
 
 ### Backtesting
 ```python
-from src.backtest.backtester import simulate_trades, compute_metrics
+from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
 
 # Simulate trades
 df_trades = simulate_trades(df_labeled)
@@ -139,7 +139,7 @@ except ValueError as e:
 
 ### Configuration Validation
 ```python
-from src.utils.config_schemas import ModelConfigSchema
+from quanttradeai.utils.config_schemas import ModelConfigSchema
 ModelConfigSchema(**config)  # Validates configuration
 ```
 
@@ -203,7 +203,7 @@ def test_complete_pipeline():
 
 ### Feature Engineering
 ```python
-from src.features.technical import sma, ema, rsi, macd
+from quanttradeai.features.technical import sma, ema, rsi, macd
 
 # Generate technical indicators
 df['sma_20'] = sma(df['Close'], 20)
@@ -213,7 +213,7 @@ macd_df = macd(df['Close'])
 
 ### Risk Management
 ```python
-from src.trading.risk import apply_stop_loss_take_profit
+from quanttradeai.trading.risk import apply_stop_loss_take_profit
 
 # Apply risk rules
 df_with_risk = apply_stop_loss_take_profit(df, stop_loss_pct=0.02)
@@ -221,7 +221,7 @@ df_with_risk = apply_stop_loss_take_profit(df, stop_loss_pct=0.02)
 
 ### Performance Metrics
 ```python
-from src.utils.metrics import classification_metrics, sharpe_ratio
+from quanttradeai.utils.metrics import classification_metrics, sharpe_ratio
 
 # Calculate metrics
 metrics = classification_metrics(y_true, y_pred)

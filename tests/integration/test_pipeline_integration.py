@@ -1,17 +1,13 @@
 import unittest
 import os
-import sys
 import tempfile
 import yaml
 import pandas as pd
 from unittest.mock import patch
 
-# add src to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src")))
-
-from backtest.backtester import simulate_trades, compute_metrics  # noqa: E402
-from data.processor import DataProcessor  # noqa: E402
-from main import run_pipeline  # noqa: E402
+from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
+from quanttradeai.data.processor import DataProcessor
+from quanttradeai.main import run_pipeline
 
 
 class TestPipelineIntegration(unittest.TestCase):

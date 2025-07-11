@@ -2,15 +2,9 @@ import unittest
 from unittest.mock import patch
 import pandas as pd
 import os
-import sys
 
-# add src to path
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-)
-
-from features import technical as ft  # noqa: E402
-from features import custom as cf  # noqa: E402
+from quanttradeai.features import technical as ft
+from quanttradeai.features import custom as cf
 
 
 class TestTechnicalFunctions(unittest.TestCase):

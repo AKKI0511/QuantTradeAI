@@ -32,9 +32,9 @@ Complete API documentation for QuantTradeAI.
 
 ### Basic Workflow
 ```python
-from src.data.loader import DataLoader
-from src.data.processor import DataProcessor
-from src.models.classifier import MomentumClassifier
+from quanttradeai.data.loader import DataLoader
+from quanttradeai.data.processor import DataProcessor
+from quanttradeai.models.classifier import MomentumClassifier
 
 # Initialize components
 loader = DataLoader("config/model_config.yaml")
@@ -54,8 +54,8 @@ classifier.train(X, y)
 
 ### Advanced Usage
 ```python
-from src.backtest.backtester import simulate_trades, compute_metrics
-from src.trading.risk import apply_stop_loss_take_profit
+from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
+from quanttradeai.trading.risk import apply_stop_loss_take_profit
 
 # Backtest with risk management
 df_with_risk = apply_stop_loss_take_profit(df_labeled, stop_loss_pct=0.02)

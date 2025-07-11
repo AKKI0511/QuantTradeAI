@@ -4,16 +4,8 @@ import os
 import subprocess
 import yaml
 import pandas as pd
-import sys
 
-# Add src to Python path to allow direct import of DataProcessor
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
-)
-
-from data.processor import (
-    DataProcessor,
-)  # Assuming DataProcessor is in src/data/processor.py
+from quanttradeai.data.processor import DataProcessor
 
 # Mock pandas_ta functions if a full import causes issues during testing.
 # Specific functions like bbands and sma are mocked within test methods.

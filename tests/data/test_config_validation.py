@@ -2,14 +2,9 @@ import unittest
 import os
 import yaml
 import tempfile
-import sys
 
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", "src"))
-)
-
-from data.loader import DataLoader  # noqa: E402
-from data.processor import DataProcessor  # noqa: E402
+from quanttradeai.data.loader import DataLoader
+from quanttradeai.data.processor import DataProcessor
 
 
 class TestModelConfigValidation(unittest.TestCase):

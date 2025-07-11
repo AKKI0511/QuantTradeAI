@@ -5,7 +5,7 @@ import logging
 import yaml  # Added for YAML loading
 from pydantic import ValidationError
 
-from src.utils.config_schemas import FeaturesConfigSchema
+from quanttradeai.utils.config_schemas import FeaturesConfigSchema
 
 # ---------------------------------------------------------------------------
 # pandas_ta relies on the deprecated ``numpy.NaN`` constant which was removed
@@ -17,8 +17,8 @@ if not hasattr(np, "NaN"):
     np.NaN = np.nan  # pragma: no cover - simple compatibility shim
 
 import pandas_ta as ta  # For efficient technical analysis calculations
-from src.features import technical as ft
-from src.features import custom as cf
+from quanttradeai.features import technical as ft
+from quanttradeai.features import custom as cf
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

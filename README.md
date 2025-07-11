@@ -45,7 +45,7 @@ poetry run quanttradeai evaluate -m models/trained/AAPL
 
 ```
 QuantTradeAI/
-├── src/                    # Core framework
+├── quanttradeai/           # Core framework
 │   ├── data/              # Data loading & processing
 │   ├── features/          # Technical indicators
 │   ├── models/            # ML models & training
@@ -111,9 +111,9 @@ poetry run quanttradeai evaluate -m models/trained/AAPL
 ### Python API
 
 ```python
-from src.data.loader import DataLoader
-from src.data.processor import DataProcessor
-from src.models.classifier import MomentumClassifier
+from quanttradeai.data.loader import DataLoader
+from quanttradeai.data.processor import DataProcessor
+from quanttradeai.models.classifier import MomentumClassifier
 
 # Initialize components
 loader = DataLoader("config/model_config.yaml")
@@ -153,10 +153,10 @@ poetry install --with dev
 poetry run pytest
 
 # Format code
-poetry run black src/
+poetry run black quanttradeai/
 
 # Lint code
-poetry run flake8 src/
+poetry run flake8 quanttradeai/
 ```
 
 ## 📄 License

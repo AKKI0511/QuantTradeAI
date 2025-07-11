@@ -17,7 +17,7 @@ Calculates Simple Moving Average.
 
 **Example:**
 ```python
-from src.features.technical import sma
+from quanttradeai.features.technical import sma
 
 # Calculate 20-period SMA
 sma_20 = sma(df['Close'], 20)
@@ -36,7 +36,7 @@ Calculates Exponential Moving Average.
 
 **Example:**
 ```python
-from src.features.technical import ema
+from quanttradeai.features.technical import ema
 
 # Calculate 20-period EMA
 ema_20 = ema(df['Close'], 20)
@@ -55,7 +55,7 @@ Calculates Relative Strength Index.
 
 **Example:**
 ```python
-from src.features.technical import rsi
+from quanttradeai.features.technical import rsi
 
 # Calculate 14-period RSI
 rsi_14 = rsi(df['Close'], 14)
@@ -76,7 +76,7 @@ Calculates MACD indicator.
 
 **Example:**
 ```python
-from src.features.technical import macd
+from quanttradeai.features.technical import macd
 
 # Calculate MACD
 macd_df = macd(df['Close'])
@@ -101,7 +101,7 @@ Calculates Stochastic Oscillator.
 
 **Example:**
 ```python
-from src.features.technical import stochastic
+from quanttradeai.features.technical import stochastic
 
 # Calculate Stochastic Oscillator
 stoch_df = stochastic(df['High'], df['Low'], df['Close'])
@@ -127,7 +127,7 @@ Computes a simple momentum score from multiple indicators.
 
 **Example:**
 ```python
-from src.features.custom import momentum_score
+from quanttradeai.features.custom import momentum_score
 
 # Calculate momentum score
 score = momentum_score(df['Close'], df['sma_20'], df['rsi'], df['macd'], df['macd_signal'])
@@ -149,7 +149,7 @@ Flags days when price breaks above the previous high plus a threshold.
 
 **Example:**
 ```python
-from src.features.custom import volatility_breakout
+from quanttradeai.features.custom import volatility_breakout
 
 # Calculate volatility breakout signals
 breakout = volatility_breakout(df['High'], df['Low'], df['Close'])
@@ -159,7 +159,7 @@ breakout = volatility_breakout(df['High'], df['Low'], df['Close'])
 
 ### Moving Averages
 ```python
-from src.features.technical import sma, ema
+from quanttradeai.features.technical import sma, ema
 
 # Generate multiple moving averages
 periods = [5, 10, 20, 50, 200]
@@ -170,7 +170,7 @@ for period in periods:
 
 ### Momentum Indicators
 ```python
-from src.features.technical import rsi, macd, stochastic
+from quanttradeai.features.technical import rsi, macd, stochastic
 
 # Generate momentum indicators
 df['rsi'] = rsi(df['Close'], 14)
@@ -185,7 +185,7 @@ df['stoch_d'] = stoch_df['stoch_d']
 
 ### Custom Features
 ```python
-from src.features.custom import momentum_score, volatility_breakout
+from quanttradeai.features.custom import momentum_score, volatility_breakout
 
 # Generate custom features
 df['momentum_score'] = momentum_score(
