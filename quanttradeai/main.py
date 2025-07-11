@@ -5,9 +5,9 @@ warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
 
 import logging
 from pathlib import Path
-from src.data.loader import DataLoader
-from src.data.processor import DataProcessor
-from src.models.classifier import MomentumClassifier
+from quanttradeai.data.loader import DataLoader
+from quanttradeai.data.processor import DataProcessor
+from quanttradeai.models.classifier import MomentumClassifier
 from sklearn.model_selection import train_test_split
 import yaml
 import json

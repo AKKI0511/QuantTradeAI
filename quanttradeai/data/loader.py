@@ -6,8 +6,8 @@ import yaml
 from pydantic import ValidationError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from src.utils.config_schemas import ModelConfigSchema
-from src.data.datasource import DataSource, YFinanceDataSource
+from quanttradeai.utils.config_schemas import ModelConfigSchema
+from quanttradeai.data.datasource import DataSource, YFinanceDataSource
 import os
 
 logging.basicConfig(level=logging.INFO)

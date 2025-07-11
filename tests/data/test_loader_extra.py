@@ -5,15 +5,9 @@ import os
 import yaml
 import shutil
 import tempfile
-import sys
 import time
 
-# Add src to Python path
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", "src"))
-)
-
-from data.loader import DataLoader  # noqa: E402
+from quanttradeai.data.loader import DataLoader
 
 
 class TestCheckMissingDates(unittest.TestCase):
@@ -103,9 +97,9 @@ class TestFetchDataParallel(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmpdir)
 
-    @patch("data.loader.as_completed", side_effect=lambda fs: fs)
-    @patch("data.loader.ThreadPoolExecutor")
-    @patch("src.data.datasource.YFinanceDataSource.fetch")
+    @patch("quanttradeai.data.loader.as_completed", side_effect=lambda fs: fs)
+    @patch("quanttradeai.data.loader.ThreadPoolExecutor")
+    @patch("quanttradeai.data.datasource.YFinanceDataSource.fetch")
     def test_parallel_execution(self, mock_fetch, mock_executor, _mock_ac):
         class DummyFuture:
             def __init__(self, result):

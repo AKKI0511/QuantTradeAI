@@ -5,15 +5,8 @@ import os
 import yaml
 import shutil
 import tempfile
-import sys
 
-
-# Add src to Python path to allow direct import of DataLoader
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
-)
-
-from data.loader import DataLoader  # noqa: E402
+from quanttradeai.data.loader import DataLoader
 
 
 class TestDataLoaderCaching(unittest.TestCase):
@@ -55,7 +48,7 @@ class TestDataLoaderCaching(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmpdir)
 
-    @patch("src.data.datasource.YFinanceDataSource.fetch")
+    @patch("quanttradeai.data.datasource.YFinanceDataSource.fetch")
     def test_fetch_data_uses_cache(self, mock_fetch):
         loader = DataLoader(self.config_path)
         data_dict = loader.fetch_data()
@@ -63,7 +56,7 @@ class TestDataLoaderCaching(unittest.TestCase):
         self.assertIn("TEST", data_dict)
         pd.testing.assert_frame_equal(data_dict["TEST"], self.df, check_freq=False)
 
-    @patch("src.data.datasource.YFinanceDataSource.fetch")
+    @patch("quanttradeai.data.datasource.YFinanceDataSource.fetch")
     def test_fetch_data_refreshes_cache(self, mock_fetch):
         # remove cached file to force fetch
         os.remove(os.path.join(self.cache_dir, "TEST_data.parquet"))
@@ -83,7 +76,7 @@ class TestDataLoaderCaching(unittest.TestCase):
         )
         pd.testing.assert_frame_equal(data_dict["TEST"], mock_history)
 
-    @patch("src.data.datasource.YFinanceDataSource.fetch")
+    @patch("quanttradeai.data.datasource.YFinanceDataSource.fetch")
     def test_fetch_data_expired_cache(self, mock_fetch):
         self._write_config(expiration=0)
 

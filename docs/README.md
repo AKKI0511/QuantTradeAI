@@ -69,7 +69,7 @@ The [Quick Reference Guide](quick-reference.md) includes:
 
 ```
 QuantTradeAI/
-├── src/
+├── quanttradeai/
 │   ├── main.py              # CLI entry point
 │   ├── data/                # Data processing
 │   │   ├── loader.py        # Data fetching and caching

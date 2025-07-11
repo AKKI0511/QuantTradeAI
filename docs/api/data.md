@@ -14,7 +14,7 @@ Handles data fetching, caching, and validation for multiple financial instrument
 
 **Example:**
 ```python
-from src.data.loader import DataLoader
+from quanttradeai.data.loader import DataLoader
 
 # Initialize with default configuration
 loader = DataLoader("config/model_config.yaml")
@@ -97,7 +97,7 @@ DataSource implementation using the yfinance package.
 
 **Example:**
 ```python
-from src.data.datasource import YFinanceDataSource
+from quanttradeai.data.datasource import YFinanceDataSource
 
 # Initialize YFinance data source
 data_source = YFinanceDataSource()
@@ -115,7 +115,7 @@ DataSource implementation for AlphaVantage API.
 
 **Example:**
 ```python
-from src.data.datasource import AlphaVantageDataSource
+from quanttradeai.data.datasource import AlphaVantageDataSource
 
 # Initialize with API key
 data_source = AlphaVantageDataSource("YOUR_API_KEY")
@@ -135,7 +135,7 @@ Processes raw OHLCV data and generates required features for the trading strateg
 
 **Example:**
 ```python
-from src.data.processor import DataProcessor
+from quanttradeai.data.processor import DataProcessor
 
 # Initialize processor
 processor = DataProcessor("config/features_config.yaml")

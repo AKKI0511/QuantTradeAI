@@ -29,12 +29,12 @@ dependencies = [
 
 [tool.poetry]
 packages = [
-    { include = "src" }
+    { include = "quanttradeai" }
 ]
 
 [project.scripts]
-quanttradeai = "src.main:main"
-quanttradeai-pipeline = "src.main:run_pipeline"
+quanttradeai = "quanttradeai.main:main"
+quanttradeai-pipeline = "quanttradeai.main:run_pipeline"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"

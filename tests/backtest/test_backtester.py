@@ -1,15 +1,7 @@
 import unittest
-import os
-import sys
 import pandas as pd
 
-# add src to path
-sys.path.insert(
-    0,
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src")),
-)
-
-from backtest.backtester import simulate_trades, compute_metrics  # noqa: E402
+from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
 
 
 class TestBacktester(unittest.TestCase):

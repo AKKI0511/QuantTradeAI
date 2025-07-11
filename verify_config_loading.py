@@ -1,11 +1,10 @@
 import sys
 import os
 
-# Add src to Python path to allow direct import of DataProcessor
-# This assumes the script is run from the root of the repository
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "./src")))
+# Add project root to import path for direct execution
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-from data.processor import DataProcessor  # noqa: E402
+from quanttradeai.data.processor import DataProcessor
 import logging
 
 logging.basicConfig(level=logging.INFO)  # Ensure logging is configured to see output

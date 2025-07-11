@@ -2,13 +2,8 @@ import unittest
 import pandas as pd
 import numpy as np
 import os
-import sys
 
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-)
-
-from data.processor import DataProcessor  # noqa: E402
+from quanttradeai.data.processor import DataProcessor
 
 
 class TestProcessorSteps(unittest.TestCase):

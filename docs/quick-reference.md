@@ -23,7 +23,7 @@ poetry run quanttradeai evaluate -m models/trained/AAPL
 
 ### Data Loading
 ```python
-from src.data.loader import DataLoader
+from quanttradeai.data.loader import DataLoader
 
 # Initialize and fetch data
 loader = DataLoader("config/model_config.yaml")
@@ -35,7 +35,7 @@ is_valid = loader.validate_data(data)
 
 ### Feature Engineering
 ```python
-from src.data.processor import DataProcessor
+from quanttradeai.data.processor import DataProcessor
 
 # Process raw data
 processor = DataProcessor("config/features_config.yaml")
@@ -47,7 +47,7 @@ df_labeled = processor.generate_labels(df_processed, forward_returns=5, threshol
 
 ### Model Training
 ```python
-from src.models.classifier import MomentumClassifier
+from quanttradeai.models.classifier import MomentumClassifier
 
 # Initialize and train
 classifier = MomentumClassifier("config/model_config.yaml")
@@ -60,7 +60,7 @@ classifier.save_model("models/trained/AAPL")
 
 ### Backtesting
 ```python
-from src.backtest.backtester import simulate_trades, compute_metrics
+from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
 
 # Simulate trades
 df_trades = simulate_trades(df_labeled, stop_loss_pct=0.02, take_profit_pct=0.04)
@@ -72,7 +72,7 @@ metrics = compute_metrics(df_trades, risk_free_rate=0.02)
 ## 🔧 Technical Indicators
 
 ```python
-from src.features.technical import sma, ema, rsi, macd, stochastic
+from quanttradeai.features.technical import sma, ema, rsi, macd, stochastic
 
 # Moving averages
 sma_20 = sma(df['Close'], 20)
@@ -87,7 +87,7 @@ stoch_df = stochastic(df['High'], df['Low'], df['Close'])
 ## 🛡️ Risk Management
 
 ```python
-from src.trading.risk import apply_stop_loss_take_profit, position_size
+from quanttradeai.trading.risk import apply_stop_loss_take_profit, position_size
 
 # Apply risk rules
 df_with_risk = apply_stop_loss_take_profit(df, stop_loss_pct=0.02, take_profit_pct=0.04)
@@ -99,7 +99,7 @@ qty = position_size(capital=10000, risk_per_trade=0.02, stop_loss_pct=0.05, pric
 ## 📈 Performance Metrics
 
 ```python
-from src.utils.metrics import classification_metrics, sharpe_ratio, max_drawdown
+from quanttradeai.utils.metrics import classification_metrics, sharpe_ratio, max_drawdown
 
 # Classification metrics
 metrics = classification_metrics(y_true, y_pred)
@@ -112,7 +112,7 @@ mdd = max_drawdown(equity_curve)
 ## 📊 Visualization
 
 ```python
-from src.utils.visualization import plot_price, plot_performance
+from quanttradeai.utils.visualization import plot_price, plot_performance
 
 # Plot charts
 plot_price(df, title="AAPL Price Chart")

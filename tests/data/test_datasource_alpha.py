@@ -5,12 +5,9 @@ import os
 import yaml
 import shutil
 import tempfile
-import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src")))
-
-from data.loader import DataLoader  # noqa: E402
-from src.data.datasource import AlphaVantageDataSource  # noqa: E402
+from quanttradeai.data.loader import DataLoader
+from quanttradeai.data.datasource import AlphaVantageDataSource
 
 
 class TestAlphaVantageAdapter(unittest.TestCase):
@@ -32,7 +29,7 @@ class TestAlphaVantageAdapter(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmpdir)
 
-    @patch("src.data.datasource.AlphaVantageDataSource.fetch")
+    @patch("quanttradeai.data.datasource.AlphaVantageDataSource.fetch")
     def test_fetch_with_alpha_vantage(self, mock_fetch):
         df = pd.DataFrame(
             {"Open": [1], "High": [1], "Low": [1], "Close": [1], "Volume": [1]},

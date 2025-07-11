@@ -1,13 +1,8 @@
 import unittest
 import os
-import sys
 import pandas as pd
 
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-)
-
-from backtest.backtester import simulate_trades  # noqa: E402
+from quanttradeai.backtest.backtester import simulate_trades
 
 
 class TestRiskManagement(unittest.TestCase):
