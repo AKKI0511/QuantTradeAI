@@ -5,6 +5,7 @@ data:
   symbols: ['AAPL', 'META', 'TSLA', 'JPM', 'AMZN']
   start_date: '2015-01-01'
   end_date: '2024-12-31'
+  timeframe: '1d'  # Data interval: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo
   cache_dir: 'data/raw'
   cache_path: 'data/raw'  # Directory to load/store cached OHLCV files
   cache_expiration_days: 7  # Refresh cache after this many days

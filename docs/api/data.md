@@ -28,7 +28,7 @@ data_dict = loader.fetch_data(symbols=['AAPL', 'META'], refresh=True)
 
 ### `fetch_data(symbols: Optional[List[str]] = None, refresh: Optional[bool] = None) -> Dict[str, pd.DataFrame]`
 
-Fetches OHLCV data for specified symbols with caching support.
+Fetches OHLCV data for specified symbols with caching support. The data interval is determined by the `timeframe` configuration in the model config.
 
 **Parameters:**
 - `symbols` (List[str], optional): List of stock symbols. If None, uses symbols from config
@@ -93,7 +93,7 @@ Abstract interface for price data providers.
 
 ### `YFinanceDataSource`
 
-DataSource implementation using the yfinance package.
+DataSource implementation using the yfinance package. Supports various timeframes including intraday and daily data.
 
 **Example:**
 ```python
@@ -102,13 +102,25 @@ from quanttradeai.data.datasource import YFinanceDataSource
 # Initialize YFinance data source
 data_source = YFinanceDataSource()
 
-# Fetch data for a symbol
+# Fetch daily data (default)
 df = data_source.fetch("AAPL", "2023-01-01", "2023-12-31")
+
+# Fetch hourly data
+df = data_source.fetch("AAPL", "2023-01-01", "2023-12-31", interval="1h")
+
+# Fetch 5-minute data
+df = data_source.fetch("AAPL", "2023-01-01", "2023-12-31", interval="5m")
 ```
+
+**Supported Intervals:**
+- `1m`, `2m`, `5m`, `15m`, `30m`, `60m`, `90m` (intraday)
+- `1h` (hourly)
+- `1d`, `5d` (daily)
+- `1wk`, `1mo`, `3mo` (weekly, monthly, quarterly)
 
 ### `AlphaVantageDataSource(api_key: Optional[str] = None)`
 
-DataSource implementation for AlphaVantage API.
+DataSource implementation for AlphaVantage API. Currently supports daily data only.
 
 **Parameters:**
 - `api_key` (str, optional): AlphaVantage API key. If None, reads from environment variable
@@ -120,9 +132,15 @@ from quanttradeai.data.datasource import AlphaVantageDataSource
 # Initialize with API key
 data_source = AlphaVantageDataSource("YOUR_API_KEY")
 
-# Fetch data
+# Fetch daily data (only supported interval)
 df = data_source.fetch("AAPL", "2023-01-01", "2023-12-31")
+
+# Note: Intraday intervals are not yet supported
+# df = data_source.fetch("AAPL", "2023-01-01", "2023-12-31", interval="1h")  # Raises NotImplementedError
 ```
+
+**Supported Intervals:**
+- `1d` (daily) - only supported interval currently
 
 ## DataProcessor Class
 
@@ -193,6 +211,7 @@ data:
   symbols: ['AAPL', 'META', 'TSLA', 'JPM', 'AMZN']
   start_date: '2015-01-01'
   end_date: '2024-12-31'
+  timeframe: '1d'  # Data interval: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo
   cache_dir: 'data/raw'
   cache_expiration_days: 7
   use_cache: true

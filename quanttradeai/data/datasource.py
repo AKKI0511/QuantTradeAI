@@ -10,7 +10,7 @@ class DataSource(ABC):
     """Abstract interface for price data providers."""
 
     @abstractmethod
-    def fetch(self, symbol: str, start: str, end: str) -> pd.DataFrame:
+    def fetch(self, symbol: str, start: str, end: str, interval: Optional[str] = None) -> pd.DataFrame:
         """Retrieve OHLCV data for a single symbol."""
         raise NotImplementedError
 
@@ -18,11 +18,13 @@ class DataSource(ABC):
 class YFinanceDataSource(DataSource):
     """DataSource implementation using the yfinance package."""
 
-    def fetch(self, symbol: str, start: str, end: str) -> pd.DataFrame:
+    def fetch(self, symbol: str, start: str, end: str, interval: Optional[str] = None) -> pd.DataFrame:
         import yfinance as yf
 
         ticker = yf.Ticker(symbol)
-        return ticker.history(start=start, end=end)
+        # Default to daily data if no interval specified
+        interval = interval or "1d"
+        return ticker.history(start=start, end=end, interval=interval)
 
 
 class AlphaVantageDataSource(DataSource):
@@ -36,7 +38,14 @@ class AlphaVantageDataSource(DataSource):
 
         self.ts = TimeSeries(key=self.api_key, output_format="pandas")
 
-    def fetch(self, symbol: str, start: str, end: str) -> pd.DataFrame:
+    def fetch(self, symbol: str, start: str, end: str, interval: Optional[str] = None) -> pd.DataFrame:
+        # AlphaVantage supports different intervals: 1min, 5min, 15min, 30min, 60min, daily, weekly, monthly
+        # For now, we'll use daily as default since intraday requires different API calls
+        if interval and interval != "1d":
+            # For intraday data, we'd need to use different AlphaVantage endpoints
+            # This is a simplified implementation
+            raise NotImplementedError(f"Interval {interval} not yet supported for AlphaVantage")
+        
         data, _ = self.ts.get_daily_adjusted(symbol=symbol, outputsize="full")
         data.index = pd.to_datetime(data.index)
         data = data.loc[start:end]

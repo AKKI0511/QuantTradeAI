@@ -27,7 +27,7 @@ from quanttradeai.data.loader import DataLoader
 
 # Initialize and fetch data
 loader = DataLoader("config/model_config.yaml")
-data = loader.fetch_data(symbols=['AAPL', 'TSLA'], refresh=True)
+data = loader.fetch_data(symbols=['AAPL', 'TSLA'], refresh=True)  # Uses timeframe from config
 
 # Validate data
 is_valid = loader.validate_data(data)
@@ -127,6 +127,7 @@ data:
   symbols: ['AAPL', 'META', 'TSLA']
   start_date: '2020-01-01'
   end_date: '2024-12-31'
+  timeframe: '1d'  # Data interval: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo
   cache_dir: 'data/raw'
   use_cache: true
 

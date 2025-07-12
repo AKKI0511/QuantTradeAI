@@ -18,6 +18,7 @@ data:
   symbols: ['AAPL', 'META', 'TSLA', 'JPM', 'AMZN']
   start_date: '2015-01-01'
   end_date: '2024-12-31'
+  timeframe: '1d'  # Data interval: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo
   cache_dir: 'data/raw'
   cache_path: 'data/raw'
   cache_expiration_days: 7
@@ -31,6 +32,7 @@ data:
 **Key Parameters:**
 - `symbols`: List of stock symbols to process
 - `start_date`/`end_date`: Data date range
+- `timeframe`: Data interval (1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo)
 - `cache_dir`: Directory for cached data
 - `use_cache`: Enable/disable caching
 - `refresh`: Force fresh data download

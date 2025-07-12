@@ -24,7 +24,7 @@ poetry run quanttradeai evaluate -m models/trained/AAPL
 
 ## ✨ Features
 
-- **📊 Multi-source Data Fetching** - YFinance, AlphaVantage with intelligent caching
+- **📊 Multi-source Data Fetching** - YFinance, AlphaVantage with intelligent caching and multi-timeframe support
 - **🔧 Advanced Feature Engineering** - 20+ technical indicators and custom features
 - **🤖 Ensemble ML Models** - Voting Classifier with LR, RF, XGBoost
 - **⚡ Hyperparameter Optimization** - Optuna-based automatic tuning
@@ -120,8 +120,8 @@ loader = DataLoader("config/model_config.yaml")
 processor = DataProcessor("config/features_config.yaml")
 classifier = MomentumClassifier("config/model_config.yaml")
 
-# Fetch and process data
-data_dict = loader.fetch_data()
+# Fetch and process data (supports multiple timeframes)
+data_dict = loader.fetch_data()  # Uses timeframe from config
 df = data_dict['AAPL']
 df_processed = processor.process_data(df)
 df_labeled = processor.generate_labels(df_processed)

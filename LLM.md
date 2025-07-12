@@ -79,8 +79,8 @@ from quanttradeai.data.processor import DataProcessor
 loader = DataLoader("config/model_config.yaml")
 processor = DataProcessor("config/features_config.yaml")
 
-# Fetch and process data
-data_dict = loader.fetch_data()
+# Fetch and process data (supports multiple timeframes)
+data_dict = loader.fetch_data()  # Uses timeframe from config
 df_processed = processor.process_data(df)
 df_labeled = processor.generate_labels(df_processed)
 ```
@@ -107,7 +107,7 @@ metrics = compute_metrics(df_trades)
 ## Configuration Files
 
 ### Model Configuration (`config/model_config.yaml`)
-- Data parameters (symbols, date ranges, caching)
+- Data parameters (symbols, date ranges, timeframe, caching)
 - Model hyperparameters (LR, RF, XGBoost)
 - Training settings (test size, CV folds)
 - Trading parameters (position sizing, risk)
@@ -247,7 +247,7 @@ sharpe = sharpe_ratio(returns, risk_free_rate=0.02)
 ### High Priority
 - Real-time data streaming
 - Advanced risk management
-- Multi-timeframe support
+- Enhanced multi-timeframe support
 - LLM integration for sentiment analysis
 
 ### Medium Priority
