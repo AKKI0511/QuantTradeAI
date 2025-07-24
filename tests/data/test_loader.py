@@ -28,7 +28,7 @@ class TestDataLoaderCaching(unittest.TestCase):
             },
             index=pd.date_range("2020-01-01", periods=1),
         )
-        self.df.to_parquet(os.path.join(self.cache_dir, "TEST_data.parquet"))
+        self.df.to_parquet(os.path.join(self.cache_dir, "TEST_1d_data.parquet"))
 
     def _write_config(self, expiration):
         config = {
@@ -37,6 +37,7 @@ class TestDataLoaderCaching(unittest.TestCase):
                 "start_date": "2020-01-01",
                 "end_date": "2020-01-10",
                 "cache_path": self.cache_dir,
+                "timeframe": "1d",
                 "cache_expiration_days": expiration,
                 "use_cache": True,
                 "refresh": False,
@@ -59,7 +60,7 @@ class TestDataLoaderCaching(unittest.TestCase):
     @patch("quanttradeai.data.datasource.YFinanceDataSource.fetch")
     def test_fetch_data_refreshes_cache(self, mock_fetch):
         # remove cached file to force fetch
-        os.remove(os.path.join(self.cache_dir, "TEST_data.parquet"))
+        os.remove(os.path.join(self.cache_dir, "TEST_1d_data.parquet"))
 
         mock_history = pd.DataFrame(
             {"Open": [1], "High": [1], "Low": [1], "Close": [1], "Volume": [1]},
@@ -72,7 +73,7 @@ class TestDataLoaderCaching(unittest.TestCase):
 
         mock_fetch.assert_called_once()
         self.assertTrue(
-            os.path.exists(os.path.join(self.cache_dir, "TEST_data.parquet"))
+            os.path.exists(os.path.join(self.cache_dir, "TEST_1d_data.parquet"))
         )
         pd.testing.assert_frame_equal(data_dict["TEST"], mock_history)
 

@@ -36,6 +36,7 @@ class DataLoader:
         self.symbols = data_cfg.symbols
         self.start_date = data_cfg.start_date
         self.end_date = data_cfg.end_date
+        self.timeframe = data_cfg.timeframe or "1d"
         # allow both legacy 'cache_dir' and new 'cache_path' keys
         self.cache_dir = data_cfg.cache_path or data_cfg.cache_dir or "data/raw"
         self.cache_expiration_days = data_cfg.cache_expiration_days
@@ -55,14 +56,18 @@ class DataLoader:
 
     def _fetch_single(self, symbol: str, refresh: bool) -> Optional[pd.DataFrame]:
         """Fetch data for a single symbol and handle caching."""
-        cache_file = os.path.join(self.cache_dir, f"{symbol}_data.parquet")
+        cache_file = os.path.join(
+            self.cache_dir, f"{symbol}_{self.timeframe}_data.parquet"
+        )
         try:
             if self.use_cache and not refresh and self._is_cache_valid(cache_file):
                 logger.info(f"Loading cached data for {symbol} from {cache_file}")
                 df = pd.read_parquet(cache_file)
             else:
                 logger.info(f"Fetching data for {symbol}")
-                df = self.data_source.fetch(symbol, self.start_date, self.end_date)
+                df = self.data_source.fetch(
+                    symbol, self.start_date, self.end_date, self.timeframe
+                )
 
                 if df is None or df.empty:
                     logger.error(f"No data found for {symbol}")
