@@ -6,6 +6,7 @@ class DataSection(BaseModel):
     symbols: List[str]
     start_date: str
     end_date: str
+    timeframe: Optional[str] = "1d"
     cache_path: Optional[str] = None
     cache_dir: Optional[str] = None
     cache_expiration_days: Optional[int] = None

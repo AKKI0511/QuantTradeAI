@@ -21,6 +21,7 @@ class TestAlphaVantageAdapter(unittest.TestCase):
                 "end_date": "2020-01-10",
                 "cache_path": self.tmpdir,
                 "use_cache": False,
+                "timeframe": "1d",
             }
         }
         with open(self.config_path, "w") as f:
@@ -39,7 +40,7 @@ class TestAlphaVantageAdapter(unittest.TestCase):
         source = AlphaVantageDataSource(api_key="demo")
         loader = DataLoader(self.config_path, data_source=source)
         data = loader.fetch_data(refresh=True)
-        mock_fetch.assert_called_once_with("TEST", "2020-01-01", "2020-01-10")
+        mock_fetch.assert_called_once_with("TEST", "2020-01-01", "2020-01-10", "1d")
         pd.testing.assert_frame_equal(data["TEST"], df)
 
 

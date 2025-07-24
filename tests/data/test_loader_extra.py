@@ -44,7 +44,7 @@ class TestCheckMissingDates(unittest.TestCase):
 class TestIsCacheValid(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
-        self.cache_file = os.path.join(self.tmpdir, "TEST_data.parquet")
+        self.cache_file = os.path.join(self.tmpdir, "TEST_1d_data.parquet")
         df = pd.DataFrame({"a": [1]}, index=pd.date_range("2020-01-01", periods=1))
         df.to_parquet(self.cache_file)
         self.config_path = os.path.join(self.tmpdir, "config.yaml")
@@ -56,6 +56,7 @@ class TestIsCacheValid(unittest.TestCase):
                 "cache_path": self.tmpdir,
                 "cache_expiration_days": 1,
                 "use_cache": True,
+                "timeframe": "1d",
             }
         }
         with open(self.config_path, "w") as f:

@@ -11,18 +11,19 @@ Handles data fetching, caching, and validation for multiple financial instrument
 **Parameters:**
 - `config_path` (str): Path to configuration file
 - `data_source` (DataSource, optional): Custom data source implementation
+- `timeframe` (str, optional): Interval defined in `config/model_config.yaml` (default `'1d'`)
 
 **Example:**
 ```python
 from quanttradeai.data.loader import DataLoader
 
-# Initialize with default configuration
+# Initialize with default configuration (daily timeframe)
 loader = DataLoader("config/model_config.yaml")
 
 # Fetch data for all symbols
 data_dict = loader.fetch_data()
 
-# Fetch data for specific symbols
+# Fetch hourly data for specific symbols
 data_dict = loader.fetch_data(symbols=['AAPL', 'META'], refresh=True)
 ```
 
@@ -102,8 +103,8 @@ from quanttradeai.data.datasource import YFinanceDataSource
 # Initialize YFinance data source
 data_source = YFinanceDataSource()
 
-# Fetch data for a symbol
-df = data_source.fetch("AAPL", "2023-01-01", "2023-12-31")
+# Fetch daily data for a symbol
+df = data_source.fetch("AAPL", "2023-01-01", "2023-12-31", interval="1d")
 ```
 
 ### `AlphaVantageDataSource(api_key: Optional[str] = None)`
@@ -120,8 +121,8 @@ from quanttradeai.data.datasource import AlphaVantageDataSource
 # Initialize with API key
 data_source = AlphaVantageDataSource("YOUR_API_KEY")
 
-# Fetch data
-df = data_source.fetch("AAPL", "2023-01-01", "2023-12-31")
+# Fetch hourly data
+df = data_source.fetch("AAPL", "2023-01-01", "2023-12-31", interval="1h")
 ```
 
 ## DataProcessor Class
@@ -193,6 +194,7 @@ data:
   symbols: ['AAPL', 'META', 'TSLA', 'JPM', 'AMZN']
   start_date: '2015-01-01'
   end_date: '2024-12-31'
+  timeframe: '1d'
   cache_dir: 'data/raw'
   cache_expiration_days: 7
   use_cache: true
