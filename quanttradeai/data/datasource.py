@@ -80,10 +80,10 @@ class AlphaVantageDataSource(DataSource):
             )
 
         data.index = pd.to_datetime(data.index)
-        
+
         # Determine if this is intraday data by checking available columns
         is_intraday = "5. volume" in data.columns
-        
+
         # Use appropriate column mapping based on data type
         if is_intraday:
             column_mapping = {
@@ -101,14 +101,14 @@ class AlphaVantageDataSource(DataSource):
                 "4. close": "Close",
                 "6. volume": "Volume",
             }
-        
+
         data = data.rename(columns=column_mapping)
-        
+
         # Fix date filtering for intraday data by converting to datetime if needed
         if is_intraday and isinstance(start, str):
             start = pd.to_datetime(start)
         if is_intraday and isinstance(end, str):
             end = pd.to_datetime(end)
-        
+
         data = data.loc[start:end]
         return data[["Open", "High", "Low", "Close", "Volume"]]
