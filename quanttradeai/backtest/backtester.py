@@ -8,6 +8,8 @@ def simulate_trades(
     df: pd.DataFrame,
     stop_loss_pct: float | None = None,
     take_profit_pct: float | None = None,
+    transaction_cost: float = 0.0,
+    slippage: float = 0.0,
 ) -> pd.DataFrame:
     """Simulate trades using label signals.
 
@@ -16,6 +18,11 @@ def simulate_trades(
     df : pd.DataFrame
         DataFrame containing ``Close`` prices and a ``label`` column where
         1 indicates a long position, -1 a short position and 0 no position.
+
+    transaction_cost : float, optional
+        Fixed cost applied every time a position is opened or closed.
+    slippage : float, optional
+        Additional cost applied on each trade to model slippage.
 
     Returns
     -------
@@ -29,6 +36,13 @@ def simulate_trades(
     data["price_return"] = data["Close"].pct_change()
     data["strategy_return"] = data["price_return"].shift(-1) * data["label"]
     data["strategy_return"] = data["strategy_return"].fillna(0.0)
+
+    trade_cost = transaction_cost + slippage
+    if trade_cost > 0:
+        trades = data["label"].diff().abs()
+        trades.iloc[0] = abs(data["label"].iloc[0])
+        data["strategy_return"] -= trades * trade_cost
+
     data["equity_curve"] = (1 + data["strategy_return"]).cumprod()
     return data
 
