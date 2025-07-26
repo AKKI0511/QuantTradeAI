@@ -34,6 +34,16 @@ class TestPipelineIntegration(unittest.TestCase):
         self.assertIn("sharpe_ratio", metrics)
         self.assertIn("max_drawdown", metrics)
 
+    def test_transaction_costs_and_slippage(self):
+        processor = DataProcessor()
+        processor.pipeline = []
+        with patch.object(processor, "_clean_data", lambda x: x):
+            processed = processor.process_data(self.df)
+            labeled = processor.generate_labels(processed, forward_returns=1, threshold=0.05)
+        without_cost = simulate_trades(labeled)
+        with_cost = simulate_trades(labeled, transaction_cost=0.01, slippage=0.01)
+        self.assertLess(with_cost["equity_curve"].iloc[-1], without_cost["equity_curve"].iloc[-1])
+
     def test_stop_loss_trigger(self):
         df = pd.DataFrame({"Close": [100, 95, 96], "label": [1, 1, 1]})
         res = simulate_trades(df, stop_loss_pct=0.05)
