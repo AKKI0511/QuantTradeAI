@@ -53,11 +53,15 @@ print(model_schema.algorithms)  # ['random_forest', 'gradient_boosting']
 ### PipelineConfig
 **Class**: `PipelineConfig`
 Validates end-to-end pipeline configuration.
-
 ## Performance Metrics (metrics.py)
-
 This module provides evaluation metrics for classification and trading strategies.
-
 - `classification_metrics(y_true, y_pred)`: Basic classification metrics (accuracy, precision, recall, F1).
 - `sharpe_ratio(returns, risk_free_rate=0.0)`: Annualized Sharpe ratio.
 - `max_drawdown(equity_curve)`: Compute maximum drawdown.
+
+## Data Visualization (visualization.py)
+
+This module provides simple utilities for displaying price and performance: 
+
+- `plot_price(data, title="Price Chart")`: Line plot of closing prices.
+- `plot_performance(equity_curve, title="Equity Curve")`: Line plot of portfolio equity or cumulative returns.
