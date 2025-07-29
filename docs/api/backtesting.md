@@ -4,17 +4,20 @@ API documentation for trade simulation and performance metrics.
 
 ## Trade Simulation
 
-### `simulate_trades(df: pd.DataFrame, stop_loss_pct: float | None = None, take_profit_pct: float | None = None) -> pd.DataFrame`
+### `simulate_trades(df: pd.DataFrame | dict[str, pd.DataFrame], stop_loss_pct: float | None = None, take_profit_pct: float | None = None, transaction_cost: float = 0.0, slippage: float = 0.0, portfolio: PortfolioManager | None = None) -> pd.DataFrame | dict[str, pd.DataFrame]`
 
 Simulates trades using label signals.
 
 **Parameters:**
-- `df` (pd.DataFrame): DataFrame containing Close prices and label column
+- `df` (pd.DataFrame or dict[str, pd.DataFrame]): Single DataFrame or mapping of symbol to DataFrame with Close prices and label column
 - `stop_loss_pct` (float, optional): Stop-loss percentage as decimal
 - `take_profit_pct` (float, optional): Take-profit percentage as decimal
+- `transaction_cost` (float, optional): Fixed transaction fee per trade
+- `slippage` (float, optional): Additional cost per trade to model slippage
+- `portfolio` (PortfolioManager, optional): Portfolio manager required when `df` is a dictionary
 
 **Returns:**
-- `pd.DataFrame`: DataFrame with additional strategy_return and equity_curve columns
+- `pd.DataFrame` or `dict[str, pd.DataFrame]`: Trade results with strategy_return and equity_curve columns. When multiple symbols are provided, a `"portfolio"` key contains the aggregated results.
 
 **Example:**
 ```python
