@@ -1,7 +1,5 @@
 # Utility Modules
-
 This section documents utility modules in quanttradeai/utils/ which were previously under-documented.
-
 # Utilities API
 Utility functions and classes for QuantTradeAI configuration, metrics, and visualization.
 ## 📋 Overview
@@ -55,3 +53,11 @@ print(model_schema.algorithms)  # ['random_forest', 'gradient_boosting']
 ### PipelineConfig
 **Class**: `PipelineConfig`
 Validates end-to-end pipeline configuration.
+
+## Performance Metrics (metrics.py)
+
+This module provides evaluation metrics for classification and trading strategies.
+
+- `classification_metrics(y_true, y_pred)`: Basic classification metrics (accuracy, precision, recall, F1).
+- `sharpe_ratio(returns, risk_free_rate=0.0)`: Annualized Sharpe ratio.
+- `max_drawdown(equity_curve)`: Compute maximum drawdown.
