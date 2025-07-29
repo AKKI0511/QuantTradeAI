@@ -52,6 +52,27 @@ qty = position_size(capital=10000, risk_per_trade=0.02, stop_loss_pct=0.05, pric
 print(f"Position size: {qty} shares")
 ```
 
+### `PortfolioManager(capital: float, max_risk_per_trade: float = 0.02, max_portfolio_risk: float = 0.1)`
+
+Manages capital allocation and risk across multiple symbols.
+
+**Parameters:**
+- `capital` (float): Initial portfolio capital
+- `max_risk_per_trade` (float, optional): Risk per trade as a fraction of portfolio value
+- `max_portfolio_risk` (float, optional): Maximum overall portfolio risk exposure
+
+**Example:**
+```python
+from quanttradeai.trading.portfolio import PortfolioManager
+
+# Create portfolio manager with $10,000 starting capital
+pm = PortfolioManager(10000, max_risk_per_trade=0.02, max_portfolio_risk=0.10)
+
+# Open a position without a stop loss
+qty = pm.open_position("AAPL", price=150)
+print(f"AAPL position: {qty} shares")
+```
+
 ## Risk Management Workflows
 
 ### Basic Risk Management
@@ -88,28 +109,17 @@ for capital, risk, sl, price in scenarios:
 
 ### Portfolio Risk Management
 ```python
-from quanttradeai.trading.risk import apply_stop_loss_take_profit, position_size
+from quanttradeai.trading.portfolio import PortfolioManager
 
-# Manage risk across multiple positions
-portfolio = {
-    'AAPL': {'price': 150.0, 'signal': 1},
-    'TSLA': {'price': 250.0, 'signal': 1},
-    'META': {'price': 300.0, 'signal': -1}
-}
+# Manage risk across multiple positions using PortfolioManager
+pm = PortfolioManager(50000, max_risk_per_trade=0.02, max_portfolio_risk=0.10)
 
-total_capital = 50000
-max_risk_per_position = 0.02
+# Open positions
+pm.open_position('AAPL', price=150.0, stop_loss_pct=0.05)
+pm.open_position('TSLA', price=250.0, stop_loss_pct=0.05)
+pm.open_position('META', price=300.0, stop_loss_pct=0.05)
 
-for symbol, data in portfolio.items():
-    if data['signal'] != 0:
-        # Calculate position size
-        qty = position_size(
-            capital=total_capital * 0.1,  # 10% per position
-            risk_per_trade=max_risk_per_position,
-            stop_loss_pct=0.05,
-            price=data['price']
-        )
-        print(f"{symbol}: {qty} shares at ${data['price']}")
+print(f"Current exposure: {pm.risk_exposure:.2%}")
 ```
 
 ## Risk Analysis

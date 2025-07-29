@@ -2,34 +2,17 @@ import pandas as pd
 
 from quanttradeai.utils.metrics import sharpe_ratio, max_drawdown
 from quanttradeai.trading.risk import apply_stop_loss_take_profit
+from quanttradeai.trading.portfolio import PortfolioManager
 
 
-def simulate_trades(
+def _simulate_single(
     df: pd.DataFrame,
     stop_loss_pct: float | None = None,
     take_profit_pct: float | None = None,
     transaction_cost: float = 0.0,
     slippage: float = 0.0,
 ) -> pd.DataFrame:
-    """Simulate trades using label signals.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        DataFrame containing ``Close`` prices and a ``label`` column where
-        1 indicates a long position, -1 a short position and 0 no position.
-
-    transaction_cost : float, optional
-        Fixed cost applied every time a position is opened or closed.
-    slippage : float, optional
-        Additional cost applied on each trade to model slippage.
-
-    Returns
-    -------
-    pd.DataFrame
-        Input DataFrame with additional ``strategy_return`` and
-        ``equity_curve`` columns.
-    """
+    """Simulate trades for a single symbol."""
     data = df.copy()
     if stop_loss_pct is not None or take_profit_pct is not None:
         data = apply_stop_loss_take_profit(data, stop_loss_pct, take_profit_pct)
@@ -45,6 +28,82 @@ def simulate_trades(
 
     data["equity_curve"] = (1 + data["strategy_return"]).cumprod()
     return data
+
+
+def simulate_trades(
+    df: pd.DataFrame | dict[str, pd.DataFrame],
+    stop_loss_pct: float | None = None,
+    take_profit_pct: float | None = None,
+    transaction_cost: float = 0.0,
+    slippage: float = 0.0,
+    portfolio: PortfolioManager | None = None,
+) -> pd.DataFrame | dict[str, pd.DataFrame]:
+    """Simulate trades using label signals.
+
+    Parameters
+    ----------
+    df : pd.DataFrame or dict[str, pd.DataFrame]
+        Single DataFrame or mapping of symbol to DataFrame containing ``Close``
+        prices and a ``label`` column where ``1`` indicates a long position,
+        ``-1`` a short position and ``0`` no position.
+    stop_loss_pct : float or None, optional
+        Stop loss percentage applied to each trade. ``None`` disables stop
+        losses.
+    take_profit_pct : float or None, optional
+        Take profit percentage applied to each trade. ``None`` disables take
+        profits.
+    transaction_cost : float, optional
+        Fixed cost applied every time a position is opened or closed.
+    slippage : float, optional
+        Additional cost applied on each trade to model slippage.
+    portfolio : PortfolioManager or None, optional
+        Portfolio manager used to allocate capital when backtesting multiple
+        symbols. Required if ``df`` is a dictionary.
+
+    Returns
+    -------
+    pd.DataFrame or dict[str, pd.DataFrame]
+        If ``df`` is a single DataFrame, returns that DataFrame with additional
+        ``strategy_return`` and ``equity_curve`` columns. If ``df`` is a
+        dictionary, returns a dictionary with per-symbol results as well as an
+        aggregated ``"portfolio"`` entry containing the combined equity curve.
+    """
+    if isinstance(df, dict):
+        if portfolio is None:
+            raise ValueError("portfolio manager required for multiple symbols")
+        combined = None
+        results: dict[str, pd.DataFrame] = {}
+        for symbol, data in df.items():
+            res = _simulate_single(
+                data,
+                stop_loss_pct=stop_loss_pct,
+                take_profit_pct=take_profit_pct,
+                transaction_cost=transaction_cost,
+                slippage=slippage,
+            )
+            results[symbol] = res
+            qty = portfolio.open_position(symbol, data["Close"].iloc[0], stop_loss_pct)
+            weight = (
+                (qty * data["Close"].iloc[0]) / portfolio.initial_capital
+                if portfolio.initial_capital
+                else 0
+            )
+            ret = res["strategy_return"] * weight
+            combined = ret if combined is None else combined.add(ret, fill_value=0.0)
+        combined = combined.fillna(0.0)
+        portfolio_curve = (1 + combined).cumprod()
+        results["portfolio"] = pd.DataFrame(
+            {"strategy_return": combined, "equity_curve": portfolio_curve}
+        )
+        return results
+    else:
+        return _simulate_single(
+            df,
+            stop_loss_pct=stop_loss_pct,
+            take_profit_pct=take_profit_pct,
+            transaction_cost=transaction_cost,
+            slippage=slippage,
+        )
 
 
 def compute_metrics(data: pd.DataFrame, risk_free_rate: float = 0.0) -> dict:

@@ -96,6 +96,16 @@ df_with_risk = apply_stop_loss_take_profit(df, stop_loss_pct=0.02, take_profit_p
 qty = position_size(capital=10000, risk_per_trade=0.02, stop_loss_pct=0.05, price=150.0)
 ```
 
+```python
+from quanttradeai.trading.portfolio import PortfolioManager
+
+# Allocate capital across multiple symbols
+pm = PortfolioManager(10000)
+pm.open_position('AAPL', price=150, stop_loss_pct=0.05)
+pm.open_position('TSLA', price=250, stop_loss_pct=0.05)
+print(f"Portfolio exposure: {pm.risk_exposure:.2%}")
+```
+
 ## 📈 Performance Metrics
 
 ```python
