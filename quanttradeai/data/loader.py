@@ -174,3 +174,38 @@ class DataLoader:
             file_path = f"{path}/{symbol}_data.parquet"
             df.to_parquet(file_path)
             logger.info(f"Saved data for {symbol} to {file_path}")
+
+    async def stream_data(
+        self,
+        processor,
+        symbols: Optional[List[str]] = None,
+        callback=None,
+    ) -> None:
+        """Stream real-time data and dispatch to the processing pipeline.
+
+        Parameters
+        ----------
+        processor : DataProcessor
+            Processor instance used to transform incoming data.
+        symbols : Optional[List[str]], optional
+            Symbols to subscribe to. Defaults to the loader's configured symbols.
+        callback : Callable, optional
+            Optional function or coroutine invoked with each processed batch.
+        """
+
+        from quanttradeai.data.datasource import WebSocketDataSource
+        import asyncio
+
+        if not isinstance(self.data_source, WebSocketDataSource):
+            raise TypeError("Streaming requires WebSocketDataSource")
+
+        symbols = symbols or self.symbols
+        await self.data_source.subscribe(symbols)
+
+        async for msg in self.data_source.stream():
+            df = pd.DataFrame([msg])
+            processed = processor.process_data(df)
+            if callback:
+                res = callback(processed)
+                if asyncio.iscoroutine(res):
+                    await res

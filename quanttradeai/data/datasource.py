@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, List, AsyncIterator
 import os
 import pandas as pd
+import json
 
 
 class DataSource(ABC):
@@ -112,3 +113,54 @@ class AlphaVantageDataSource(DataSource):
 
         data = data.loc[start:end]
         return data[["Open", "High", "Low", "Close", "Volume"]]
+
+
+class WebSocketDataSource(DataSource):
+    """Asynchronous data source using a WebSocket streaming API."""
+
+    def __init__(self, url: str) -> None:
+        """Initialize the WebSocket data source.
+
+        Parameters
+        ----------
+        url : str
+            WebSocket endpoint provided by the data vendor.
+        """
+        self.url = url
+        self.connection = None
+
+    def fetch(
+        self, symbol: str, start: str, end: str, interval: str = "1d"
+    ) -> pd.DataFrame:  # pragma: no cover - not used
+        raise NotImplementedError("WebSocketDataSource does not support fetch")
+
+    async def connect(self) -> None:
+        """Establish the WebSocket connection."""
+        import websockets
+
+        self.connection = await websockets.connect(self.url)
+
+    async def subscribe(self, symbols: List[str]) -> None:
+        """Subscribe to real-time updates for given symbols.
+
+        Parameters
+        ----------
+        symbols : List[str]
+            Ticker symbols to receive updates for.
+        """
+        if self.connection is None:
+            await self.connect()
+        message = json.dumps({"type": "subscribe", "symbols": symbols})
+        await self.connection.send(message)
+
+    async def stream(self) -> AsyncIterator[dict]:
+        """Yield messages from the WebSocket connection."""
+        if self.connection is None:
+            raise RuntimeError("Connection not established")
+        async for message in self.connection:
+            yield json.loads(message)
+
+    async def close(self) -> None:
+        """Close the WebSocket connection if open."""
+        if self.connection is not None:
+            await self.connection.close()
