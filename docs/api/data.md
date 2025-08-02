@@ -86,6 +86,31 @@ loader.save_data(data_dict)
 loader.save_data(data_dict, "data/custom_cache")
 ```
 
+### `stream_data(processor, symbols: Optional[List[str]] = None, callback=None)`
+
+Streams real-time data from a `WebSocketDataSource` and processes each update.
+
+**Parameters:**
+- `processor` (DataProcessor): Processor instance used to transform incoming data
+- `symbols` (List[str], optional): Symbols to subscribe to. Defaults to configured symbols
+- `callback` (Callable, optional): Optional function or coroutine invoked with each processed batch
+
+**Example:**
+```python
+from quanttradeai.data.loader import DataLoader
+from quanttradeai.data.processor import DataProcessor
+from quanttradeai.data.datasource import WebSocketDataSource
+
+loader = DataLoader(data_source=WebSocketDataSource("wss://example"))
+processor = DataProcessor()
+
+# Print each processed update
+async def handle_update(df):
+    print(df)
+
+await loader.stream_data(processor, callback=handle_update)
+```
+
 ## DataSource Classes
 
 ### `DataSource` (Abstract Base Class)
@@ -123,6 +148,24 @@ data_source = AlphaVantageDataSource("YOUR_API_KEY")
 
 # Fetch hourly data
 df = data_source.fetch("AAPL", "2023-01-01", "2023-12-31", interval="1h")
+```
+
+### `WebSocketDataSource(url: str)`
+
+Asynchronous data source for streaming market data over WebSocket.
+
+**Parameters:**
+- `url` (str): WebSocket endpoint provided by the data vendor
+
+**Example:**
+```python
+from quanttradeai.data.datasource import WebSocketDataSource
+
+ws_source = WebSocketDataSource("wss://example")
+await ws_source.connect()
+await ws_source.subscribe(["AAPL"])
+async for msg in ws_source.stream():
+    print(msg)
 ```
 
 ## DataProcessor Class

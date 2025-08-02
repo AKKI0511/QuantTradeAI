@@ -7,6 +7,8 @@ import logging
 from pathlib import Path
 from quanttradeai.data.loader import DataLoader
 from quanttradeai.data.processor import DataProcessor
+from quanttradeai.data.datasource import WebSocketDataSource
+import pandas as pd
 from quanttradeai.models.classifier import MomentumClassifier
 from sklearn.model_selection import train_test_split
 import yaml
@@ -143,6 +145,18 @@ def evaluate_model(config_path: str, model_path: str) -> None:
         json.dump(results, f, indent=4)
 
 
+async def run_live_pipeline(config_path: str, url: str) -> None:
+    """Run the real-time trading pipeline using a streaming data source."""
+
+    processor = DataProcessor()
+    loader = DataLoader(config_path, data_source=WebSocketDataSource(url))
+
+    def handle(df: pd.DataFrame) -> None:
+        logger.info("Received update:\n%s", df.tail(1))
+
+    await loader.stream_data(processor, callback=handle)
+
+
 def main():
     parser = argparse.ArgumentParser(description="QuantTradeAI command line interface")
     subparsers = parser.add_subparsers(dest="command")
@@ -168,6 +182,16 @@ def main():
         "-m", "--model-path", required=True, help="Directory containing saved model"
     )
 
+    live_parser = subparsers.add_parser(
+        "live-trade", help="Run real-time trading pipeline"
+    )
+    live_parser.add_argument(
+        "-c", "--config", default="config/model_config.yaml", help="Path to config file"
+    )
+    live_parser.add_argument(
+        "--url", required=True, help="WebSocket URL for streaming data"
+    )
+
     args = parser.parse_args()
 
     if args.command == "fetch-data":
@@ -176,6 +200,10 @@ def main():
         run_pipeline(args.config)
     elif args.command == "evaluate":
         evaluate_model(args.config, args.model_path)
+    elif args.command == "live-trade":
+        import asyncio
+
+        asyncio.run(run_live_pipeline(args.config, args.url))
     else:
         parser.print_help()
 
