@@ -4,7 +4,7 @@ import os
 # Add project root to import path for direct execution
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-from quanttradeai.data.processor import DataProcessor
+from quanttradeai import DataProcessor
 import logging
 
 logging.basicConfig(level=logging.INFO)  # Ensure logging is configured to see output

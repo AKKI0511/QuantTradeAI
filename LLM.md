@@ -72,8 +72,7 @@ make test     # pytest testing
 
 ### Data Loading
 ```python
-from quanttradeai.data.loader import DataLoader
-from quanttradeai.data.processor import DataProcessor
+from quanttradeai import DataLoader, DataProcessor
 
 # Initialize components
 loader = DataLoader("config/model_config.yaml")
@@ -87,7 +86,7 @@ df_labeled = processor.generate_labels(df_processed)
 
 ### Model Training
 ```python
-from quanttradeai.models.classifier import MomentumClassifier
+from quanttradeai import MomentumClassifier
 
 # Initialize and train
 classifier = MomentumClassifier("config/model_config.yaml")
@@ -97,7 +96,7 @@ classifier.train(X, y)
 
 ### Backtesting
 ```python
-from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
+from quanttradeai import simulate_trades, compute_metrics
 
 # Simulate trades
 df_trades = simulate_trades(df_labeled)
@@ -203,17 +202,17 @@ def test_complete_pipeline():
 
 ### Feature Engineering
 ```python
-from quanttradeai.features.technical import sma, ema, rsi, macd
+from quanttradeai.features import technical as ta
 
 # Generate technical indicators
-df['sma_20'] = sma(df['Close'], 20)
-df['rsi'] = rsi(df['Close'], 14)
-macd_df = macd(df['Close'])
+df['sma_20'] = ta.sma(df['Close'], 20)
+df['rsi'] = ta.rsi(df['Close'], 14)
+macd_df = ta.macd(df['Close'])
 ```
 
 ### Risk Management
 ```python
-from quanttradeai.trading.risk import apply_stop_loss_take_profit
+from quanttradeai import apply_stop_loss_take_profit
 
 # Apply risk rules
 df_with_risk = apply_stop_loss_take_profit(df, stop_loss_pct=0.02)

@@ -21,7 +21,7 @@ Simulates trades using label signals.
 
 **Example:**
 ```python
-from quanttradeai.backtest.backtester import simulate_trades
+from quanttradeai import simulate_trades
 
 # Simulate trades with stop-loss and take-profit
 df_with_trades = simulate_trades(df, stop_loss_pct=0.02, take_profit_pct=0.04)
@@ -43,7 +43,7 @@ Calculates basic performance metrics for a strategy.
 
 **Example:**
 ```python
-from quanttradeai.backtest.backtester import compute_metrics
+from quanttradeai import compute_metrics
 
 # Calculate performance metrics
 metrics = compute_metrics(df_with_trades, risk_free_rate=0.02)
@@ -56,7 +56,7 @@ print(f"Max Drawdown: {metrics['max_drawdown']:.4f}")
 
 ### Basic Backtesting
 ```python
-from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
+from quanttradeai import simulate_trades, compute_metrics
 
 # Simulate trades
 df_trades = simulate_trades(df_labeled)
@@ -71,8 +71,7 @@ print(f"Max Drawdown: {metrics['max_drawdown']:.2%}")
 
 ### Backtesting with Risk Management
 ```python
-from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
-from quanttradeai.trading.risk import apply_stop_loss_take_profit
+from quanttradeai import simulate_trades, compute_metrics, apply_stop_loss_take_profit
 
 # Apply risk management rules
 df_with_risk = apply_stop_loss_take_profit(
@@ -94,7 +93,7 @@ print(f"Max Drawdown: {metrics['max_drawdown']:.2%}")
 
 ### Multi-Asset Backtesting
 ```python
-from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
+from quanttradeai import simulate_trades, compute_metrics
 
 # Backtest multiple assets
 results = {}
@@ -169,7 +168,7 @@ print(f"Average Loss: {losing_trades['strategy_return'].mean():.2%}")
 
 ### Stop-Loss and Take-Profit
 ```python
-from quanttradeai.trading.risk import apply_stop_loss_take_profit
+from quanttradeai import apply_stop_loss_take_profit
 
 # Apply different risk management scenarios
 scenarios = [

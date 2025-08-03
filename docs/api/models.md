@@ -13,7 +13,7 @@ Voting Classifier for momentum trading strategy using Logistic Regression, Rando
 
 **Example:**
 ```python
-from quanttradeai.models.classifier import MomentumClassifier
+from quanttradeai import MomentumClassifier
 
 # Initialize classifier
 classifier = MomentumClassifier("config/model_config.yaml")
@@ -178,7 +178,7 @@ xgb_params = {
 
 ### Complete Training Example
 ```python
-from quanttradeai.models.classifier import MomentumClassifier
+from quanttradeai import MomentumClassifier
 from sklearn.model_selection import train_test_split
 
 # Initialize classifier
