@@ -1,3 +1,22 @@
+"""Technical indicator wrappers.
+
+Thin wrappers around ``pandas-ta`` functions used by the project.  These
+helpers provide a consistent namespace for commonly used indicators.
+
+Key Components:
+    - :func:`sma`
+    - :func:`ema`
+    - :func:`rsi`
+    - :func:`macd`
+    - :func:`stochastic`
+
+Typical Usage:
+    ```python
+    from quanttradeai.features import technical as ta
+    sma_fast = ta.sma(close, 20)
+    ```
+"""
+
 import pandas as pd
 import pandas_ta as ta
 

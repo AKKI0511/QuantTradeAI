@@ -1,3 +1,19 @@
+"""Custom feature engineering helpers.
+
+Provides bespoke indicator calculations that supplement the technical
+analysis functions available in :mod:`quanttradeai.features.technical`.
+
+Key Components:
+    - :func:`momentum_score`: combine multiple indicators into a score
+    - :func:`volatility_breakout`: flag volatility based breakout days
+
+Typical Usage:
+    ```python
+    from quanttradeai.features import custom
+    score = custom.momentum_score(close, sma, rsi, macd, signal)
+    ```
+"""
+
 import pandas as pd
 
 

@@ -1,3 +1,20 @@
+"""Data processing and feature engineering.
+
+The :class:`DataProcessor` transforms raw OHLCV data into a rich feature
+set used by models.  It supports a configurable pipeline described in a
+YAML file.
+
+Key Components:
+    - :class:`DataProcessor`: main entry point for feature generation
+
+Typical Usage:
+    ```python
+    from quanttradeai.data import DataProcessor
+    processor = DataProcessor()
+    features = processor.process_data(df)
+    ```
+"""
+
 import pandas as pd
 import numpy as np
 
