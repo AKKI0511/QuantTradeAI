@@ -18,7 +18,7 @@ Applies stop-loss and take-profit rules to trading signals.
 
 **Example:**
 ```python
-from quanttradeai.trading.risk import apply_stop_loss_take_profit
+from quanttradeai import apply_stop_loss_take_profit
 
 # Apply 2% stop-loss and 4% take-profit
 df_with_risk = apply_stop_loss_take_profit(df, stop_loss_pct=0.02, take_profit_pct=0.04)
@@ -45,7 +45,7 @@ Calculates position size based on account risk parameters.
 
 **Example:**
 ```python
-from quanttradeai.trading.risk import position_size
+from quanttradeai import position_size
 
 # Calculate position size
 qty = position_size(capital=10000, risk_per_trade=0.02, stop_loss_pct=0.05, price=150.0)
@@ -63,7 +63,7 @@ Manages capital allocation and risk across multiple symbols.
 
 **Example:**
 ```python
-from quanttradeai.trading.portfolio import PortfolioManager
+from quanttradeai import PortfolioManager
 
 # Create portfolio manager with $10,000 starting capital
 pm = PortfolioManager(10000, max_risk_per_trade=0.02, max_portfolio_risk=0.10)
@@ -77,7 +77,7 @@ print(f"AAPL position: {qty} shares")
 
 ### Basic Risk Management
 ```python
-from quanttradeai.trading.risk import apply_stop_loss_take_profit
+from quanttradeai import apply_stop_loss_take_profit
 
 # Apply risk management to trading signals
 df_with_risk = apply_stop_loss_take_profit(
@@ -93,7 +93,7 @@ print(f"Risk-adjusted signals: {risk_adjusted_signals}")
 
 ### Dynamic Position Sizing
 ```python
-from quanttradeai.trading.risk import position_size
+from quanttradeai import position_size
 
 # Calculate position sizes for different scenarios
 scenarios = [
@@ -109,7 +109,7 @@ for capital, risk, sl, price in scenarios:
 
 ### Portfolio Risk Management
 ```python
-from quanttradeai.trading.portfolio import PortfolioManager
+from quanttradeai import PortfolioManager
 
 # Manage risk across multiple positions using PortfolioManager
 pm = PortfolioManager(50000, max_risk_per_trade=0.02, max_portfolio_risk=0.10)

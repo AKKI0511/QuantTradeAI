@@ -15,7 +15,7 @@ Handles data fetching, caching, and validation for multiple financial instrument
 
 **Example:**
 ```python
-from quanttradeai.data.loader import DataLoader
+from quanttradeai import DataLoader
 
 # Initialize with default configuration (daily timeframe)
 loader = DataLoader("config/model_config.yaml")
@@ -97,9 +97,7 @@ Streams real-time data from a `WebSocketDataSource` and processes each update.
 
 **Example:**
 ```python
-from quanttradeai.data.loader import DataLoader
-from quanttradeai.data.processor import DataProcessor
-from quanttradeai.data.datasource import WebSocketDataSource
+from quanttradeai import DataLoader, DataProcessor, WebSocketDataSource
 
 loader = DataLoader(data_source=WebSocketDataSource("wss://example"))
 processor = DataProcessor()
@@ -123,7 +121,7 @@ DataSource implementation using the yfinance package.
 
 **Example:**
 ```python
-from quanttradeai.data.datasource import YFinanceDataSource
+from quanttradeai import YFinanceDataSource
 
 # Initialize YFinance data source
 data_source = YFinanceDataSource()
@@ -141,7 +139,7 @@ DataSource implementation for AlphaVantage API.
 
 **Example:**
 ```python
-from quanttradeai.data.datasource import AlphaVantageDataSource
+from quanttradeai import AlphaVantageDataSource
 
 # Initialize with API key
 data_source = AlphaVantageDataSource("YOUR_API_KEY")
@@ -159,7 +157,7 @@ Asynchronous data source for streaming market data over WebSocket.
 
 **Example:**
 ```python
-from quanttradeai.data.datasource import WebSocketDataSource
+from quanttradeai import WebSocketDataSource
 
 ws_source = WebSocketDataSource("wss://example")
 await ws_source.connect()
@@ -179,7 +177,7 @@ Processes raw OHLCV data and generates required features for the trading strateg
 
 **Example:**
 ```python
-from quanttradeai.data.processor import DataProcessor
+from quanttradeai import DataProcessor
 
 # Initialize processor
 processor = DataProcessor("config/features_config.yaml")

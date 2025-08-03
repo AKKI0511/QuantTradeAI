@@ -23,7 +23,7 @@ poetry run quanttradeai evaluate -m models/trained/AAPL
 
 ### Data Loading
 ```python
-from quanttradeai.data.loader import DataLoader
+from quanttradeai import DataLoader
 
 # Initialize and fetch data
 loader = DataLoader("config/model_config.yaml")
@@ -35,7 +35,7 @@ is_valid = loader.validate_data(data)
 
 ### Feature Engineering
 ```python
-from quanttradeai.data.processor import DataProcessor
+from quanttradeai import DataProcessor
 
 # Process raw data
 processor = DataProcessor("config/features_config.yaml")
@@ -47,7 +47,7 @@ df_labeled = processor.generate_labels(df_processed, forward_returns=5, threshol
 
 ### Model Training
 ```python
-from quanttradeai.models.classifier import MomentumClassifier
+from quanttradeai import MomentumClassifier
 
 # Initialize and train
 classifier = MomentumClassifier("config/model_config.yaml")
@@ -60,7 +60,7 @@ classifier.save_model("models/trained/AAPL")
 
 ### Backtesting
 ```python
-from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
+from quanttradeai import simulate_trades, compute_metrics
 
 # Simulate trades
 df_trades = simulate_trades(df_labeled, stop_loss_pct=0.02, take_profit_pct=0.04)
@@ -72,22 +72,22 @@ metrics = compute_metrics(df_trades, risk_free_rate=0.02)
 ## 🔧 Technical Indicators
 
 ```python
-from quanttradeai.features.technical import sma, ema, rsi, macd, stochastic
+from quanttradeai.features import technical as ta
 
 # Moving averages
-sma_20 = sma(df['Close'], 20)
-ema_20 = ema(df['Close'], 20)
+sma_20 = ta.sma(df['Close'], 20)
+ema_20 = ta.ema(df['Close'], 20)
 
 # Momentum indicators
-rsi_14 = rsi(df['Close'], 14)
-macd_df = macd(df['Close'])
-stoch_df = stochastic(df['High'], df['Low'], df['Close'])
+rsi_14 = ta.rsi(df['Close'], 14)
+macd_df = ta.macd(df['Close'])
+stoch_df = ta.stochastic(df['High'], df['Low'], df['Close'])
 ```
 
 ## 🛡️ Risk Management
 
 ```python
-from quanttradeai.trading.risk import apply_stop_loss_take_profit, position_size
+from quanttradeai import apply_stop_loss_take_profit, position_size
 
 # Apply risk rules
 df_with_risk = apply_stop_loss_take_profit(df, stop_loss_pct=0.02, take_profit_pct=0.04)
@@ -97,7 +97,7 @@ qty = position_size(capital=10000, risk_per_trade=0.02, stop_loss_pct=0.05, pric
 ```
 
 ```python
-from quanttradeai.trading.portfolio import PortfolioManager
+from quanttradeai import PortfolioManager
 
 # Allocate capital across multiple symbols
 pm = PortfolioManager(10000)

@@ -111,9 +111,7 @@ poetry run quanttradeai evaluate -m models/trained/AAPL
 ### Python API
 
 ```python
-from quanttradeai.data.loader import DataLoader
-from quanttradeai.data.processor import DataProcessor
-from quanttradeai.models.classifier import MomentumClassifier
+from quanttradeai import DataLoader, DataProcessor, MomentumClassifier
 
 # Initialize components
 loader = DataLoader("config/model_config.yaml")
