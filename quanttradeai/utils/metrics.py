@@ -1,3 +1,14 @@
+"""Metric helper functions.
+
+Convenience wrappers around common evaluation metrics used by the
+framework.
+
+Key Components:
+    - :func:`classification_metrics`
+    - :func:`sharpe_ratio`
+    - :func:`max_drawdown`
+"""
+
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score

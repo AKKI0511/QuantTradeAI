@@ -1,3 +1,21 @@
+"""Machine learning models for trading signals.
+
+Currently the package offers a single :class:`MomentumClassifier` which
+combines several algorithms into a voting ensemble.
+
+Key Components:
+    - :class:`MomentumClassifier`: orchestrates training and evaluation
+
+Typical Usage:
+    ```python
+    from quanttradeai.models import MomentumClassifier
+    model = MomentumClassifier()
+    X, y = model.prepare_data(df)
+    model.train(X, y)
+    predictions = model.predict(X)
+    ```
+"""
+
 import pandas as pd
 import numpy as np
 from typing import Dict, Tuple, Any

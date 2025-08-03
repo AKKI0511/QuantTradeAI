@@ -1,4 +1,18 @@
-"""Simple portfolio management utilities."""
+"""Portfolio management helpers.
+
+Provides the :class:`PortfolioManager` class which tracks cash, positions
+and risk exposure for multiple symbols.
+
+Key Components:
+    - :class:`PortfolioManager`
+
+Typical Usage:
+    ```python
+    from quanttradeai.trading import PortfolioManager
+    pm = PortfolioManager(capital=100000)
+    qty = pm.open_position("AAPL", price=150, stop_loss_pct=0.02)
+    ```
+"""
 
 from __future__ import annotations
 

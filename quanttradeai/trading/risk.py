@@ -1,3 +1,19 @@
+"""Risk management utilities.
+
+Contains helpers for applying stop-loss / take-profit rules and
+calculating position sizes.
+
+Key Components:
+    - :func:`apply_stop_loss_take_profit`
+    - :func:`position_size`
+
+Typical Usage:
+    ```python
+    from quanttradeai.trading import apply_stop_loss_take_profit
+    df = apply_stop_loss_take_profit(df, 0.02, 0.04)
+    ```
+"""
+
 import pandas as pd
 
 

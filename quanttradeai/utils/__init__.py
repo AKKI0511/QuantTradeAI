@@ -1,6 +1,12 @@
-"""Utility modules for metrics and visualization."""
+"""Miscellaneous utilities.
 
-from . import metrics
-from . import visualization
+Expose common metrics and visualization helpers used across the project.
+
+Public API:
+    - :mod:`metrics`
+    - :mod:`visualization`
+"""
+
+from . import metrics, visualization
 
 __all__ = ["metrics", "visualization"]

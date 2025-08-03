@@ -1,3 +1,22 @@
+"""Backtester: vectorised trade simulation utilities.
+
+This module implements simple helpers for running trading strategy
+simulations based on pre-generated labels and for calculating basic
+performance statistics.
+
+Key Components:
+    - :func:`simulate_trades`: run a labelled backtest for one or more symbols
+    - :func:`compute_metrics`: derive Sharpe ratio and drawdown statistics
+
+Typical Usage:
+    ```python
+    from quanttradeai.backtest import simulate_trades, compute_metrics
+
+    results = simulate_trades(df)
+    metrics = compute_metrics(results)
+    ```
+"""
+
 import pandas as pd
 
 from quanttradeai.utils.metrics import sharpe_ratio, max_drawdown

@@ -1,3 +1,24 @@
+"""Market data sources.
+
+This module defines the :class:`DataSource` interface along with concrete
+implementations for Yahoo! Finance, Alpha Vantage and generic WebSocket
+feeds.
+
+Key Components:
+    - :class:`DataSource`: abstract base for all data providers
+    - :class:`YFinanceDataSource`: wrapper around ``yfinance``
+    - :class:`AlphaVantageDataSource`: uses the Alpha Vantage REST API
+    - :class:`WebSocketDataSource`: asynchronous streaming interface
+
+Typical Usage:
+    ```python
+    from quanttradeai.data import YFinanceDataSource
+
+    source = YFinanceDataSource()
+    df = source.fetch("AAPL", "2024-01-01", "2024-06-01")
+    ```
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

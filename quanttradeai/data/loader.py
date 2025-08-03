@@ -1,3 +1,19 @@
+"""Historical market data loader.
+
+The :class:`DataLoader` class retrieves, validates and caches OHLCV data
+from a configurable :class:`~quanttradeai.data.datasource.DataSource`.
+
+Key Components:
+    - :class:`DataLoader`: orchestrates data downloading and caching
+
+Typical Usage:
+    ```python
+    from quanttradeai.data import DataLoader
+    loader = DataLoader("config/model_config.yaml")
+    frames = loader.fetch_data()
+    ```
+"""
+
 import pandas as pd
 from typing import List, Dict, Optional
 import logging

@@ -3,6 +3,12 @@ import warnings
 # Suppress pandas_ta pkg_resources deprecation warning
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
 
+"""Command line interface entry points.
+
+Provides convenience functions and CLI commands to run the end-to-end
+pipeline, fetch data or evaluate models.
+"""
+
 import logging
 from pathlib import Path
 from quanttradeai.data.loader import DataLoader

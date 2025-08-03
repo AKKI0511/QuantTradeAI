@@ -1,3 +1,13 @@
+"""Visualization helpers.
+
+Simple plotting utilities for exploratory analysis of price series and
+strategy performance.
+
+Key Components:
+    - :func:`plot_price`
+    - :func:`plot_performance`
+"""
+
 import matplotlib.pyplot as plt
 import pandas as pd
 

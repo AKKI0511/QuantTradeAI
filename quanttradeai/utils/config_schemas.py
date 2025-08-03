@@ -1,3 +1,14 @@
+"""Pydantic configuration schemas.
+
+Defines validation models for data and feature configuration files used
+throughout the project.
+
+Key Components:
+    - :class:`DataSection`
+    - :class:`ModelConfigSchema`
+    - :class:`FeaturesConfigSchema`
+"""
+
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 
