@@ -241,13 +241,34 @@ sharpe = sharpe_ratio(returns, risk_free_rate=0.02)
 3. Test individual components
 4. Verify configuration parameters
 
+## LLM Sentiment Analysis
+
+LiteLLM provides a unified interface for scoring text sentiment. Enable it through `config/features_config.yaml`:
+
+```yaml
+sentiment:
+  enabled: true
+  provider: openai
+  model: gpt-3.5-turbo
+  api_key_env_var: OPENAI_API_KEY
+```
+
+Set the corresponding API key:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+Switch providers by editing `provider`, `model`, and `api_key_env_var`. The data pipeline automatically adds a `sentiment_score` column during the `generate_sentiment` step.
+
+For CLI and Python examples see [docs/llm-sentiment.md](docs/llm-sentiment.md).
+
 ## Future Development Areas
 
 ### High Priority
 - Real-time data streaming
 - Advanced risk management
 - Multi-timeframe support
-- LLM integration for sentiment analysis
 
 ### Medium Priority
 - GPU acceleration

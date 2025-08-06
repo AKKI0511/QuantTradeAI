@@ -7,6 +7,7 @@ Welcome to the QuantTradeAI documentation! This comprehensive machine learning f
 ### Core Documentation
 - **[API Documentation](api/)** - Comprehensive reference for all public APIs, functions, and components
 - **[Quick Reference Guide](quick-reference.md)** - Common usage patterns and examples
+- **[LLM Sentiment Analysis](llm-sentiment.md)** - Configure LLM-based sentiment scoring
 - **[Main README](../README.md)** - Project overview and getting started guide
 
 ## 🚀 Quick Start
