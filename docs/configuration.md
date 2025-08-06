@@ -140,6 +140,23 @@ feature_combinations:
     - ['high', 'low']
 ```
 
+### Sentiment Features
+
+```yaml
+sentiment:
+  enabled: true
+  provider: openai  # e.g. openai, anthropic, huggingface, ollama
+  model: gpt-3.5-turbo
+  api_key_env_var: OPENAI_API_KEY
+  extra: {}
+```
+
+Set the API key before running:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
 ### Preprocessing
 
 ```yaml
@@ -170,6 +187,7 @@ pipeline:
     - generate_technical_indicators
     - generate_volume_features
     - generate_custom_features
+    - generate_sentiment
     - handle_missing_values
     - remove_outliers
     - scale_features

@@ -27,6 +27,7 @@ poetry run quanttradeai evaluate -m models/trained/AAPL
 - **📊 Multi-source Data Fetching** - YFinance, AlphaVantage with intelligent caching
 - **🔧 Advanced Feature Engineering** - 20+ technical indicators and custom features
 - **🤖 Ensemble ML Models** - Voting Classifier with LR, RF, XGBoost
+- **🗞️ LLM Sentiment Analysis** - Swapable provider/model via LiteLLM
 - **⚡ Hyperparameter Optimization** - Optuna-based automatic tuning
 - **📈 Comprehensive Backtesting** - Risk management and performance metrics
 - **🎯 Production Ready** - Model persistence, CLI interface, configuration management
@@ -128,6 +129,26 @@ df_labeled = processor.generate_labels(df_processed)
 X, y = classifier.prepare_data(df_labeled)
 classifier.train(X, y)
 ```
+
+### Sentiment Analysis
+
+LiteLLM powers provider-agnostic sentiment scoring. Configure it in
+`config/features_config.yaml` and set the API key in your environment:
+
+```yaml
+sentiment:
+  enabled: true
+  provider: openai
+  model: gpt-3.5-turbo
+  api_key_env_var: OPENAI_API_KEY
+```
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+Switching providers is as simple as updating the YAML config to point to a
+different `provider`/`model` pair supported by LiteLLM.
 
 ## 📊 Performance Metrics
 

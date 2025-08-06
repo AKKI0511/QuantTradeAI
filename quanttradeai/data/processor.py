@@ -36,6 +36,7 @@ if not hasattr(np, "NaN"):
 import pandas_ta as ta  # For efficient technical analysis calculations
 from quanttradeai.features import technical as ft
 from quanttradeai.features import custom as cf
+from quanttradeai.features.sentiment import SentimentAnalyzer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -56,6 +57,8 @@ class DataProcessor:
         default_bb_std = 2
         default_volume_sma_periods = [5, 10, 20]
         default_volume_ema_periods = [5, 10, 20]
+        self.sentiment_enabled = False
+        self.sentiment_analyzer: SentimentAnalyzer | None = None
 
         try:
             with open(config_path, "r") as f:
@@ -122,6 +125,21 @@ class DataProcessor:
                             vol_sma_cfg = item["volume_sma"]
                         if "volume_ema" in item:
                             vol_ema_cfg = item["volume_ema"]
+
+            # Sentiment configuration
+            sentiment_cfg = config.get("sentiment", {}) or {}
+            self.sentiment_enabled = sentiment_cfg.get("enabled", False)
+            if self.sentiment_enabled:
+                try:
+                    self.sentiment_analyzer = SentimentAnalyzer(
+                        provider=sentiment_cfg.get("provider", ""),
+                        model=sentiment_cfg.get("model", ""),
+                        api_key_env_var=sentiment_cfg.get("api_key_env_var", ""),
+                        extra=sentiment_cfg.get("extra", {}),
+                    )
+                except Exception as exc:
+                    logger.error(f"Error initializing sentiment analyzer: {exc}")
+                    raise
             self.volume_sma_periods = vol_sma_cfg.get(
                 "periods", default_volume_sma_periods
             )
@@ -269,6 +287,7 @@ class DataProcessor:
             "generate_technical_indicators": self._generate_technical_indicators,
             "generate_volume_features": self._add_volume_features,
             "generate_custom_features": self._generate_custom_features,
+            "generate_sentiment": self._add_sentiment_features,
             "handle_missing_values": self._handle_missing_values,
             "remove_outliers": self._remove_outliers,
             "scale_features": self._scale_features,
@@ -282,6 +301,22 @@ class DataProcessor:
 
         df = self._clean_data(df)
 
+        return df
+
+    def _add_sentiment_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add sentiment score using configured LLM if enabled."""
+
+        if not self.sentiment_enabled or not self.sentiment_analyzer:
+            return df
+        if "text" not in df.columns:
+            logger.warning("Sentiment enabled but 'text' column not found.")
+            return df
+
+        try:
+            df["sentiment_score"] = df["text"].apply(self.sentiment_analyzer.score)
+        except Exception as exc:
+            logger.error(f"Error generating sentiment scores: {exc}")
+            raise
         return df
 
     def _add_momentum_indicators(self, df: pd.DataFrame) -> pd.DataFrame:

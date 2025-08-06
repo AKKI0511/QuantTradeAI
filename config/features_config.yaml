@@ -52,6 +52,17 @@ feature_combinations:
       - ['close', 'sma_20']
       - ['high', 'low']
 
+# Sentiment Analysis (LLM-based)
+# Configure LiteLLM provider/model and API key env var. Set `enabled: true` to
+# generate a numeric sentiment score (-1 negative, 1 positive) for any text
+# column named "text".
+sentiment:
+  enabled: false
+  provider: openai        # e.g., openai, anthropic, huggingface, ollama
+  model: gpt-3.5-turbo    # model name for the chosen provider
+  api_key_env_var: OPENAI_API_KEY  # environment variable holding the API key
+  extra: {}               # Additional LiteLLM params (e.g., base_url, temperature)
+
 # Feature Selection
 feature_selection:
   method: 'recursive'  # Options: recursive, lasso, random_forest
@@ -74,6 +85,7 @@ pipeline:
     - generate_technical_indicators
     - generate_volume_features
     - generate_custom_features
+    - generate_sentiment
     - handle_missing_values
     - remove_outliers
     - scale_features

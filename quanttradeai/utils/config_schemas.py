@@ -36,6 +36,16 @@ class PipelineConfig(BaseModel):
     steps: List[str]
 
 
+class SentimentConfig(BaseModel):
+    """Configuration for LLM-based sentiment analysis."""
+
+    enabled: bool = False
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    api_key_env_var: Optional[str] = None
+    extra: Optional[Dict[str, Any]] = None
+
+
 class FeaturesConfigSchema(BaseModel):
     pipeline: PipelineConfig
     price_features: Optional[Any] = None
@@ -43,5 +53,6 @@ class FeaturesConfigSchema(BaseModel):
     volatility_features: Optional[Any] = None
     custom_features: Optional[Any] = None
     feature_combinations: Optional[Any] = None
+    sentiment: Optional[SentimentConfig] = None
     feature_selection: Optional[Dict[str, Any]] = None
     preprocessing: Optional[Dict[str, Any]] = None
