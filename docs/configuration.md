@@ -9,12 +9,6 @@ The framework uses two main configuration files:
 - **`config/model_config.yaml`** - Model parameters and data settings
 - **`config/features_config.yaml`** - Feature engineering settings
 
-LiteLLM is bundled for sentiment analysis. To install manually:
-
-```bash
-poetry add litellm  # or pip install litellm
-```
-
 ## 🔧 Model Configuration
 
 ### Data Settings
