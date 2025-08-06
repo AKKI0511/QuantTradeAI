@@ -14,6 +14,6 @@ Quick Start:
     ```
 """
 
-from . import technical, custom
+from . import technical, custom, sentiment
 
-__all__ = ["technical", "custom"]
+__all__ = ["technical", "custom", "sentiment"]
