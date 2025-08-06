@@ -4,9 +4,9 @@ QuantTradeAI can attach numeric sentiment scores to any dataset that includes a 
 
 ## Setup
 
-1. **Install LiteLLM (if not already installed)**
+1. **Install QuantTradeAI (if not already installed)**
    ```bash
-   poetry add litellm  # or pip install litellm
+   poetry install
    ```
 2. **Configure `features_config.yaml`**
    ```yaml
@@ -67,5 +67,3 @@ print(features[["text", "sentiment_score"]])
 | Unsupported provider/model | Verify the provider/model pair is supported by LiteLLM |
 | `sentiment enabled but 'text' column not found` | Provide a `text` column in your input DataFrame |
 | Network/API errors | Check connectivity, credentials, or provider status |
-
-For more details see [`LLM.md`](../LLM.md).
