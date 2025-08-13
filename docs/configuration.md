@@ -4,10 +4,11 @@ Learn how to configure QuantTradeAI for your specific needs.
 
 ## 📁 Configuration Files
 
-The framework uses two main configuration files:
+The framework uses several configuration files:
 
 - **`config/model_config.yaml`** - Model parameters and data settings
 - **`config/features_config.yaml`** - Feature engineering settings
+- **`config/backtest_config.yaml`** - Execution settings for backtests
 
 ## 🔧 Model Configuration
 
@@ -81,6 +82,26 @@ trading:
   take_profit: 0.04
   max_positions: 5
   transaction_cost: 0.001
+```
+
+### Backtest Execution
+
+```yaml
+execution:
+  transaction_costs:
+    enabled: true
+    mode: bps         # bps or fixed
+    value: 5          # 5 bps = 0.05%
+    apply_on: notional
+  slippage:
+    enabled: true
+    mode: bps
+    value: 10
+    reference_price: close  # or mid if available
+  liquidity:
+    enabled: false
+    max_participation: 0.1
+    volume_source: bar_volume
 ```
 
 ## 🔧 Feature Configuration

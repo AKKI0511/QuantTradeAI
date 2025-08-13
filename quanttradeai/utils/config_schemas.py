@@ -9,7 +9,7 @@ Key Components:
     - :class:`FeaturesConfigSchema`
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel
 
 
@@ -56,3 +56,34 @@ class FeaturesConfigSchema(BaseModel):
     sentiment: Optional[SentimentConfig] = None
     feature_selection: Optional[Dict[str, Any]] = None
     preprocessing: Optional[Dict[str, Any]] = None
+
+
+class TransactionCostConfig(BaseModel):
+    enabled: bool = False
+    mode: Literal["bps", "fixed"] = "bps"
+    value: float = 0.0
+    apply_on: Literal["notional", "shares"] = "notional"
+
+
+class SlippageConfig(BaseModel):
+    enabled: bool = False
+    mode: Literal["bps", "fixed"] = "bps"
+    value: float = 0.0
+    reference_price: Literal["close", "mid"] = "close"
+
+
+class LiquidityConfig(BaseModel):
+    enabled: bool = False
+    max_participation: float = 0.1
+    volume_source: str = "bar_volume"
+
+
+class ExecutionConfig(BaseModel):
+    transaction_costs: TransactionCostConfig = TransactionCostConfig()
+    slippage: SlippageConfig = SlippageConfig()
+    liquidity: LiquidityConfig = LiquidityConfig()
+
+
+class BacktestConfigSchema(BaseModel):
+    data_path: str
+    execution: ExecutionConfig = ExecutionConfig()

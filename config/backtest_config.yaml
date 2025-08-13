@@ -1,0 +1,17 @@
+execution:
+  transaction_costs:
+    enabled: false
+    mode: bps
+    value: 0
+    apply_on: notional
+  slippage:
+    enabled: false
+    mode: bps
+    value: 0
+    reference_price: close
+  liquidity:
+    enabled: false
+    max_participation: 0.1
+    volume_source: bar_volume
+# sample data path for CLI backtest
+data_path: data/backtest_sample.csv

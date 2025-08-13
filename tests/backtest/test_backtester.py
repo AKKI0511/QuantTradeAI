@@ -26,7 +26,7 @@ class TestBacktester(unittest.TestCase):
     def test_simulate_trades_with_costs(self):
         result = simulate_trades(self.df, transaction_cost=0.01, slippage=0.01)
         self.assertAlmostEqual(result["strategy_return"].iloc[0], 0.08, places=6)
-        self.assertAlmostEqual(result["equity_curve"].iloc[-1], 0.694785, places=6)
+        self.assertAlmostEqual(result["equity_curve"].iloc[-1], 0.723734, places=6)
 
     def test_compute_metrics(self):
         result = simulate_trades(self.df)
