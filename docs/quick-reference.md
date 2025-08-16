@@ -17,6 +17,10 @@ poetry run quanttradeai train
 
 # Evaluate model
 poetry run quanttradeai evaluate -m models/trained/AAPL
+
+# Run backtest
+poetry run quanttradeai backtest --config config/backtest_config.yaml
+poetry run quanttradeai backtest --cost-bps 5 --slippage-bps 10
 ```
 
 ## 📊 Python API Patterns

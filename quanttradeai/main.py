@@ -15,6 +15,7 @@ from quanttradeai.data.loader import DataLoader
 from quanttradeai.data.processor import DataProcessor
 from quanttradeai.data.datasource import WebSocketDataSource
 import pandas as pd
+from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
 from quanttradeai.models.classifier import MomentumClassifier
 from sklearn.model_selection import train_test_split
 import yaml
@@ -188,6 +189,25 @@ def main():
         "-m", "--model-path", required=True, help="Directory containing saved model"
     )
 
+    backtest_parser = subparsers.add_parser("backtest", help="Run backtest")
+    backtest_parser.add_argument(
+        "-c",
+        "--config",
+        default="config/backtest_config.yaml",
+        help="Path to backtest config",
+    )
+    grp_cost = backtest_parser.add_mutually_exclusive_group()
+    grp_cost.add_argument("--cost-bps", type=float, help="Transaction cost in bps")
+    grp_cost.add_argument("--cost-fixed", type=float, help="Fixed transaction cost")
+    grp_slip = backtest_parser.add_mutually_exclusive_group()
+    grp_slip.add_argument("--slippage-bps", type=float, help="Slippage in bps")
+    grp_slip.add_argument("--slippage-fixed", type=float, help="Fixed slippage amount")
+    backtest_parser.add_argument(
+        "--liquidity-max-participation",
+        type=float,
+        help="Override liquidity max participation",
+    )
+
     live_parser = subparsers.add_parser(
         "live-trade", help="Run real-time trading pipeline"
     )
@@ -206,6 +226,39 @@ def main():
         run_pipeline(args.config)
     elif args.command == "evaluate":
         evaluate_model(args.config, args.model_path)
+    elif args.command == "backtest":
+        with open(args.config, "r") as f:
+            cfg = yaml.safe_load(f)
+        exec_cfg = cfg.get("execution", {})
+        if args.cost_bps is not None:
+            exec_cfg.setdefault("transaction_costs", {})
+            exec_cfg["transaction_costs"].update(
+                {"enabled": True, "mode": "bps", "value": args.cost_bps}
+            )
+        if args.cost_fixed is not None:
+            exec_cfg.setdefault("transaction_costs", {})
+            exec_cfg["transaction_costs"].update(
+                {"enabled": True, "mode": "fixed", "value": args.cost_fixed}
+            )
+        if args.slippage_bps is not None:
+            exec_cfg.setdefault("slippage", {})
+            exec_cfg["slippage"].update(
+                {"enabled": True, "mode": "bps", "value": args.slippage_bps}
+            )
+        if args.slippage_fixed is not None:
+            exec_cfg.setdefault("slippage", {})
+            exec_cfg["slippage"].update(
+                {"enabled": True, "mode": "fixed", "value": args.slippage_fixed}
+            )
+        if args.liquidity_max_participation is not None:
+            exec_cfg.setdefault("liquidity", {})
+            exec_cfg["liquidity"].update(
+                {"enabled": True, "max_participation": args.liquidity_max_participation}
+            )
+        df = pd.read_csv(cfg["data_path"])
+        result = simulate_trades(df, execution=exec_cfg)
+        metrics = compute_metrics(result)
+        print(metrics)
     elif args.command == "live-trade":
         import asyncio
 
