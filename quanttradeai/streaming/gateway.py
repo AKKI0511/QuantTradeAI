@@ -14,6 +14,7 @@ from .adapters.alpaca_adapter import AlpacaAdapter
 from .adapters.ib_adapter import IBAdapter
 from .processors import MessageProcessor
 from .monitoring.metrics import Metrics
+from .logging import logger
 
 AdapterMap = {
     "alpaca": AlpacaAdapter,
@@ -51,7 +52,12 @@ class StreamingGateway:
             if adapter_cls is None:
                 raise ValueError(f"Unknown provider: {name}")
             adapter = adapter_cls(websocket_url=url)
-            self.websocket_manager.add_adapter(adapter)
+            self.websocket_manager.add_adapter(
+                adapter,
+                circuit_breaker_cfg=provider_cfg.get("circuit_breaker", {}),
+                rate_limit_cfg=provider_cfg.get("rate_limit"),
+                auth_method=provider_cfg.get("auth_method", "api_key"),
+            )
 
     # Subscription API -------------------------------------------------
     def subscribe_to_trades(self, symbols: List[str], callback: Callback) -> None:
@@ -68,10 +74,14 @@ class StreamingGateway:
 
     # Runtime ----------------------------------------------------------
     async def _dispatch(self, provider: str, message: Dict) -> None:
-        self.metrics.increment()
+        symbol = message.get("symbol", "")
+        self.metrics.record_message(provider, symbol)
         processed = self.message_processor.process(message)
         await self.buffer.put(processed)
         msg_type = message.get("type", "trades")
+        logger.debug(
+            "dispatch_message", provider=provider, type=msg_type, symbol=symbol
+        )
         for cb in self._callbacks.get(msg_type, []):
             res = cb(processed)
             if asyncio.iscoroutine(res):

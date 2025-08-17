@@ -1,6 +1,9 @@
 import asyncio
 import json
 import tempfile
+import asyncio
+import json
+import tempfile
 from unittest.mock import patch
 
 import yaml
@@ -31,7 +34,7 @@ class FakeConnection:
 def test_gateway_streaming():
     msg = json.dumps({"type": "trades", "symbol": "TEST", "price": 1})
 
-    async def connect(_):
+    async def connect(url, *_, **__):
         return FakeConnection([msg])
 
     async def run_test():
