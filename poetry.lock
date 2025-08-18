@@ -321,6 +321,18 @@ files = [
 ]
 
 [[package]]
+name = "asyncio-throttle"
+version = "1.0.2"
+description = "Simple, easy-to-use throttler for asyncio"
+optional = false
+python-versions = ">=3.6"
+groups = ["main"]
+files = [
+    {file = "asyncio-throttle-1.0.2.tar.gz", hash = "sha256:2675282e99d9129ecc446f917e174bc205c65e36c602aa18603b4948567fcbd4"},
+    {file = "asyncio_throttle-1.0.2-py3-none-any.whl", hash = "sha256:4d4c1eb3250f735f59ce842d8d92cd2927c008bd52008797ba030b5787c41f3b"},
+]
+
+[[package]]
 name = "attrs"
 version = "25.3.0"
 description = "Classes Without Boilerplate"
@@ -3501,6 +3513,21 @@ files = [
 test = ["cffi", "hypothesis", "pandas", "pytest", "pytz"]
 
 [[package]]
+name = "pybreaker"
+version = "1.4.0"
+description = "Python implementation of the Circuit Breaker pattern"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "pybreaker-1.4.0-py3-none-any.whl", hash = "sha256:98b3324575293ba5e62be0098041481eda603a934c4d59857bb724ecfbea4a4c"},
+    {file = "pybreaker-1.4.0.tar.gz", hash = "sha256:82910927d504aca596b5266964eaeabf41361aff30feb31d568d3e530fcc6f2b"},
+]
+
+[package.extras]
+test = ["fakeredis", "mock", "pytest", "redis", "tornado", "types-mock", "types-redis"]
+
+[[package]]
 name = "pycodestyle"
 version = "2.14.0"
 description = "Python style guide checker"
@@ -4614,6 +4641,18 @@ pure-eval = "*"
 tests = ["cython", "littleutils", "pygments", "pytest", "typeguard"]
 
 [[package]]
+name = "structlog"
+version = "25.4.0"
+description = "Structured Logging for Python"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "structlog-25.4.0-py3-none-any.whl", hash = "sha256:fe809ff5c27e557d14e613f45ca441aabda051d119ee5a0102aaba6ce40eed2c"},
+    {file = "structlog-25.4.0.tar.gz", hash = "sha256:186cd1b0a8ae762e29417095664adf1d6a31702160a46dacb7796ea82f7409e4"},
+]
+
+[[package]]
 name = "terminado"
 version = "0.18.1"
 description = "Tornado websocket backend for the Xterm.js Javascript terminal emulator library."
@@ -5258,4 +5297,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4.0"
-content-hash = "7d9bc59426832e598f300136c7c5b548534b2ba2c18ec0d643e957a8bc956d4a"
+content-hash = "2c9c432e7e7ebdbf3ccad97624c6a7257be0c672a9dd970490c2d25cc5c79291"

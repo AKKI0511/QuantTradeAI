@@ -1,0 +1,15 @@
+streaming:
+  providers:
+    - name: "alpaca"
+      websocket_url: "wss://stream.data.alpaca.markets/v2/iex"
+      auth_method: "api_key"
+      subscriptions: ["trades", "quotes"]
+      rate_limit:
+        default_rate: 100
+        burst_allowance: 50
+      circuit_breaker:
+        failure_threshold: 5
+        timeout: 30
+  buffer_size: 10000
+  reconnect_attempts: 5
+  health_check_interval: 30
