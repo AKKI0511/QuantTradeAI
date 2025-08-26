@@ -53,8 +53,30 @@ def macd(
 def stochastic(
     high: pd.Series, low: pd.Series, close: pd.Series, k: int = 14, d: int = 3
 ) -> pd.DataFrame:
-    """Stochastic Oscillator"""
+    """Stochastic Oscillator with parameter-agnostic column selection.
+
+    ``pandas_ta.stoch`` encodes the parameters in its column names
+    (e.g. ``STOCHk_14_3_3``). This helper renames the first two returned
+    columns to a stable ``stoch_k`` and ``stoch_d`` regardless of the
+    ``k``/``d`` values used.
+
+    Example
+    -------
+    >>> import pandas as pd
+    >>> h = pd.Series([2, 3, 4, 5, 6])
+    >>> l = pd.Series([1, 1, 2, 2, 3])
+    >>> c = pd.Series([1.5, 2.5, 3.5, 4.5, 5.5])
+    >>> out = stochastic(h, l, c, k=10, d=3)
+    >>> set(["stoch_k", "stoch_d"]).issubset(out.columns)
+    True
+    """
     df = ta.stoch(high, low, close, k=k, d=d)
-    return pd.DataFrame(
-        {"stoch_k": df["STOCHk_14_3_3"], "stoch_d": df["STOCHd_14_3_3"]}
+    # Be resilient to pandas-ta naming: pick the first k/d columns returned
+    k_col = next(
+        (c for c in df.columns if c.lower().startswith("stochk")), df.columns[0]
     )
+    d_col = next(
+        (c for c in df.columns if c.lower().startswith("stochd")),
+        df.columns[min(1, len(df.columns) - 1)],
+    )
+    return pd.DataFrame({"stoch_k": df[k_col], "stoch_d": df[d_col]})

@@ -7,8 +7,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, List, Optional
 
-import websockets
-
 from ..auth_manager import AuthManager
 from ..rate_limiter import AdaptiveRateLimiter
 
@@ -19,15 +17,15 @@ class DataProviderAdapter(ABC):
 
     websocket_url: str
     name: str
-    connection: Optional[websockets.WebSocketClientProtocol] = field(
-        default=None, init=False
-    )
+    connection: Optional[Any] = field(default=None, init=False)
     circuit_breaker: Any = field(default=None, init=False)
     rate_limiter: Optional[AdaptiveRateLimiter] = field(default=None, init=False)
     auth_manager: Optional[AuthManager] = field(default=None, init=False)
 
     async def connect(self) -> None:
         """Establish a WebSocket connection to the provider."""
+        # Lazy import to avoid hard dependency at import time
+        import websockets
 
         headers = None
         if self.auth_manager:

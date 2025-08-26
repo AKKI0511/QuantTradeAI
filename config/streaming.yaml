@@ -1,4 +1,6 @@
 streaming:
+  # Global list of symbols to subscribe (can be overridden per-provider)
+  symbols: ["AAPL"]
   providers:
     - name: "alpaca"
       websocket_url: "wss://stream.data.alpaca.markets/v2/iex"

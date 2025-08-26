@@ -25,9 +25,26 @@ def classification_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
 
 
 def sharpe_ratio(returns: pd.Series, risk_free_rate: float = 0.0) -> float:
-    """Calculate annualized Sharpe ratio."""
+    """Calculate the annualized Sharpe ratio.
+
+    The function guards against divisions by zero and empty inputs by
+    returning ``0.0`` when the input has no variance or no observations.
+
+    Example
+    -------
+    >>> import pandas as pd
+    >>> r = pd.Series([0.01, -0.005, 0.0, 0.007])
+    >>> round(sharpe_ratio(r), 3) > 0
+    True
+    """
+    if returns is None or len(returns) == 0:
+        return 0.0
     excess = returns - risk_free_rate / 252
-    return np.sqrt(252) * excess.mean() / excess.std()
+    std = float(excess.std())
+    if std == 0 or np.isnan(std):
+        return 0.0
+    mean = float(excess.mean())
+    return float(np.sqrt(252) * mean / std)
 
 
 def max_drawdown(equity_curve: pd.Series) -> float:

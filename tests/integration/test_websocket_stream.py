@@ -45,9 +45,11 @@ def test_streaming_dispatch():
     async def run_test():
         with patch("websockets.connect", new=connect):
             cfg = {"data": {"symbols": ["TEST"], "start_date": "2020-01-01", "end_date": "2020-01-01"}}
-            with tempfile.NamedTemporaryFile("w+") as f:
+            f = tempfile.NamedTemporaryFile("w+", delete=False)
+            try:
                 yaml.dump(cfg, f)
                 f.flush()
+                f.close()
                 processor = DataProcessor()
                 processor.process_data = lambda df: df  # type: ignore
                 loader = DataLoader(f.name, data_source=WebSocketDataSource("ws://test"))
@@ -55,6 +57,12 @@ def test_streaming_dispatch():
                 await loader.stream_data(processor, callback=lambda df: out.append(df))
                 assert len(out) == 1
                 pd.testing.assert_frame_equal(out[0], pd.DataFrame([json.loads(msg)]))
+            finally:
+                try:
+                    import os
+                    os.unlink(f.name)
+                except Exception:
+                    pass
 
     asyncio.run(run_test())
 

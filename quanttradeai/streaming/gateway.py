@@ -1,4 +1,21 @@
-"""High-level streaming gateway orchestrator."""
+"""High-level streaming gateway orchestrator.
+
+Example
+-------
+>>> # Basic usage with YAML-only configuration
+>>> # config/streaming.yaml defines providers, subscriptions and symbols
+>>> from quanttradeai.streaming import StreamingGateway
+>>> gw = StreamingGateway("config/streaming.yaml")
+>>> # Register a simple callback for trade messages
+>>> gw.subscribe_to_trades(["AAPL"], callback=lambda m: print(m))
+>>> # Start the event loop (blocking)
+>>> # gw.start_streaming()
+
+>>> # Programmatic subscriptions (no YAML changes needed)
+>>> gw = StreamingGateway("config/streaming.yaml")
+>>> gw.subscribe_to_quotes(["MSFT", "TSLA"], callback=lambda m: print(m))
+>>> # gw.start_streaming()
+"""
 
 from __future__ import annotations
 
@@ -35,16 +52,20 @@ class StreamingGateway:
     metrics: Metrics = field(init=False)
     _subscriptions: List[Tuple[str, List[str]]] = field(default_factory=list)
     _callbacks: Dict[str, List[Callback]] = field(default_factory=dict)
+    _config_symbols: List[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         with open(self.config_path, "r") as f:
-            cfg = yaml.safe_load(f)["streaming"]
+            cfg_all = yaml.safe_load(f)
+            cfg = cfg_all.get("streaming", {})
         self.websocket_manager = WebSocketManager(
             reconnect_attempts=cfg.get("reconnect_attempts", 5)
         )
         self.message_processor = MessageProcessor()
         self.buffer = StreamBuffer(cfg.get("buffer_size", 1000))
         self.metrics = Metrics()
+        # Top-level symbol list for convenience
+        self._config_symbols = cfg.get("symbols", []) or []
         for provider_cfg in cfg.get("providers", []):
             name = provider_cfg["name"]
             url = provider_cfg["websocket_url"]
@@ -58,6 +79,12 @@ class StreamingGateway:
                 rate_limit_cfg=provider_cfg.get("rate_limit"),
                 auth_method=provider_cfg.get("auth_method", "api_key"),
             )
+            # Config-driven subscriptions (optional)
+            subs = provider_cfg.get("subscriptions", []) or []
+            prov_symbols = provider_cfg.get("symbols", self._config_symbols) or []
+            for channel in subs:
+                # Store once; adapters subscribe per provider in _start
+                self._subscriptions.append((channel, prov_symbols))
 
     # Subscription API -------------------------------------------------
     def subscribe_to_trades(self, symbols: List[str], callback: Callback) -> None:
@@ -83,12 +110,26 @@ class StreamingGateway:
             "dispatch_message", provider=provider, type=msg_type, symbol=symbol
         )
         for cb in self._callbacks.get(msg_type, []):
-            res = cb(processed)
-            if asyncio.iscoroutine(res):
-                await res
+            try:
+                res = cb(processed)
+                if asyncio.iscoroutine(res):
+                    await res
+            except Exception as exc:  # keep streaming robust to callback errors
+                logger.error("callback_error", error=str(exc))
 
     async def _start(self) -> None:
         await self.websocket_manager.connect_all()
+        # Optional health monitoring loop in the background
+        try:
+            with open(self.config_path, "r") as f:
+                cfg = yaml.safe_load(f).get("streaming", {})
+            interval = int(cfg.get("health_check_interval", 0))
+        except Exception:
+            interval = 0
+        if interval and interval > 0:
+            asyncio.create_task(
+                self.websocket_manager.connection_pool.health_check_loop(interval)
+            )
         for channel, symbols in self._subscriptions:
             for adapter in self.websocket_manager.adapters:
                 await adapter.subscribe(channel, symbols)

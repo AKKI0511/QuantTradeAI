@@ -189,6 +189,31 @@ preprocessing:
     limits: [0.01, 0.99]
 ```
 
+## 🔌 Streaming
+
+```python
+from quanttradeai.streaming import StreamingGateway
+
+gw = StreamingGateway("config/streaming.yaml")
+gw.subscribe_to_trades(["AAPL"], callback=lambda m: print(m))
+# gw.start_streaming()  # blocking
+```
+
+`config/streaming.yaml` example:
+
+```yaml
+streaming:
+  symbols: ["AAPL"]
+  providers:
+    - name: "alpaca"
+      websocket_url: "wss://stream.data.alpaca.markets/v2/iex"
+      auth_method: "api_key"
+      subscriptions: ["trades", "quotes"]
+  buffer_size: 1000
+  reconnect_attempts: 3
+  health_check_interval: 30
+```
+
 ## 🚨 Error Handling
 
 ```python

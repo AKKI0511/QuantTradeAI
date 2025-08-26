@@ -469,11 +469,7 @@ class DataProcessor:
                 df["Close"],
             )
 
-            # Normalize features
-            df["momentum_score"] = (
-                df["momentum_score"] - df["momentum_score"].mean()
-            ) / df["momentum_score"].std()
-            df["vpt"] = (df["vpt"] - df["vpt"].mean()) / df["vpt"].std()
+            # Keep features in native scale; normalization handled by scaler
 
         except Exception as e:
             logger.error(f"Error calculating custom features: {str(e)}")

@@ -29,7 +29,13 @@ logger = logging.getLogger(__name__)
 
 
 def setup_directories(cache_dir: str = "data/raw"):
-    """Create necessary directories if they don't exist."""
+    """Create project directories used for caching and artifacts.
+
+    Example
+    -------
+    >>> setup_directories("data/raw")
+    # Ensures data/, models/, and reports/ subfolders exist
+    """
     dirs = [
         cache_dir,
         "data/processed",
@@ -42,7 +48,18 @@ def setup_directories(cache_dir: str = "data/raw"):
 
 
 def run_pipeline(config_path: str = "config/model_config.yaml"):
-    """Run the complete trading strategy pipeline."""
+    """Run the end-to-end training pipeline.
+
+    Loads data, generates features and labels, tunes hyperparameters,
+    trains the ensemble model per symbol, evaluates, and persists artifacts.
+
+    Example
+    -------
+    >>> # CLI equivalent: `poetry run quanttradeai train -c config/model_config.yaml`
+    >>> results = run_pipeline("config/model_config.yaml")
+    >>> sorted(results.keys())  # doctest: +ELLIPSIS
+    ...
+    """
 
     # Load configuration
     with open(config_path, "r") as file:
@@ -125,14 +142,24 @@ def run_pipeline(config_path: str = "config/model_config.yaml"):
 
 
 def fetch_data_only(config_path: str, refresh: bool = False) -> None:
-    """Fetch data using DataLoader and store it in the cache directory."""
+    """Fetch and cache historical data.
+
+    Example
+    -------
+    >>> fetch_data_only("config/model_config.yaml", refresh=True)
+    """
     data_loader = DataLoader(config_path)
     data = data_loader.fetch_data(refresh=refresh)
     data_loader.save_data(data)
 
 
 def evaluate_model(config_path: str, model_path: str) -> None:
-    """Load a saved model and evaluate it on the configured dataset."""
+    """Evaluate a persisted model on current config’s dataset.
+
+    Example
+    -------
+    >>> evaluate_model("config/model_config.yaml", "models/experiments/20250101_000000/AAPL")
+    """
     data_loader = DataLoader(config_path)
     data_processor = DataProcessor()
     model = MomentumClassifier(config_path)
@@ -153,7 +180,12 @@ def evaluate_model(config_path: str, model_path: str) -> None:
 
 
 async def run_live_pipeline(config_path: str, url: str) -> None:
-    """Run the real-time trading pipeline using a streaming data source."""
+    """Run a minimal real-time pipeline using WebSocket input.
+
+    Example
+    -------
+    >>> # asyncio.run(run_live_pipeline("config/model_config.yaml", "wss://example"))
+    """
 
     processor = DataProcessor()
     loader = DataLoader(config_path, data_source=WebSocketDataSource(url))

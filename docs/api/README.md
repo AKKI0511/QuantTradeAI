@@ -10,6 +10,7 @@ Complete API documentation for QuantTradeAI.
 - **[Machine Learning](models.md)** - MomentumClassifier and training utilities
 - **[Backtesting](backtesting.md)** - Trade simulation and performance metrics
 - **[Trading Utilities](trading.md)** - Risk management and position sizing
+ - **[Streaming](streaming.md)** - Real-time WebSocket gateway, adapters, monitoring
 
 ## 🚀 Quick Navigation
 
@@ -19,6 +20,7 @@ Complete API documentation for QuantTradeAI.
 - **Model Training**: [Machine Learning](models.md)
 - **Strategy Testing**: [Backtesting](backtesting.md)
 - **Risk Management**: [Trading Utilities](trading.md)
+ - **Real-time Data**: [Streaming](streaming.md)
 
 ### By Component
 - **DataLoader**: [Data Loading](data.md#dataloader-class)
@@ -27,6 +29,7 @@ Complete API documentation for QuantTradeAI.
 - **Technical Indicators**: [Feature Engineering](features.md#technical-indicators)
 - **Backtesting Functions**: [Backtesting](backtesting.md)
 - **Risk Management**: [Trading Utilities](trading.md)
+ - **StreamingGateway**: [Streaming](streaming.md)
 
 ## 📖 Usage Examples
 

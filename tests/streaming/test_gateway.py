@@ -51,13 +51,21 @@ def test_gateway_streaming():
                     ]
                 }
             }
-            with tempfile.NamedTemporaryFile("w+") as f:
+            f = tempfile.NamedTemporaryFile("w+", delete=False)
+            try:
                 yaml.safe_dump(cfg, f)
                 f.flush()
+                f.close()
                 gateway = StreamingGateway(f.name)
                 out = []
                 gateway.subscribe_to_trades(["TEST"], callback=lambda data: out.append(data))
                 await gateway._start()
                 assert out == [{"type": "trades", "symbol": "TEST", "price": 1}]
+            finally:
+                try:
+                    import os
+                    os.unlink(f.name)
+                except Exception:
+                    pass
 
     asyncio.run(run_test())
