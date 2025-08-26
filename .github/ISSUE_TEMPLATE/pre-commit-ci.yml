@@ -1,0 +1,67 @@
+name: "CI: Run pre-commit on PRs"
+description: Add GitHub Actions workflow to run pre-commit checks on pull requests.
+title: "CI: run pre-commit on PRs"
+labels: ["ci", "enhancement"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This task adds a GitHub Actions workflow that runs `pre-commit` on every pull request to ensure formatting, linting, and tests (as configured) pass before merge.
+
+  - type: checkboxes
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      options:
+        - label: Workflow triggers on `pull_request` and `push` to default branch
+          required: false
+        - label: Uses Python 3.11 and Poetry to install dependencies
+          required: false
+        - label: Runs `poetry run pre-commit run --all-files`
+          required: false
+        - label: Fails the job on any hook failure
+          required: false
+
+  - type: textarea
+    id: plan
+    attributes:
+      label: Implementation Plan
+      description: Suggested steps to implement the workflow.
+      value: |
+        1. Create `.github/workflows/pre-commit.yml` with the following:
+           ```yaml
+           name: pre-commit
+           on:
+             pull_request:
+             push:
+               branches: [ main, master ]
+           jobs:
+             run:
+               runs-on: ubuntu-latest
+               steps:
+                 - uses: actions/checkout@v4
+                 - uses: actions/setup-python@v5
+                   with:
+                     python-version: '3.11'
+                 - name: Install Poetry
+                   run: |
+                     pipx install poetry
+                 - name: Install dependencies
+                   run: |
+                     poetry install --with dev
+                 - name: Run pre-commit
+                   run: |
+                     poetry run pre-commit run --all-files
+           ```
+        2. Verify the workflow passes on an example PR.
+        3. Optionally add a status badge to `README.md`.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Link related PRs or notes.
+    validations:
+      required: false
+

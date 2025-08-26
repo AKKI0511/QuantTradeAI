@@ -161,7 +161,7 @@ different `provider`/`model` pair supported by LiteLLM.
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](docs/contributing.md) for details.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ### Development Setup
 ```bash
