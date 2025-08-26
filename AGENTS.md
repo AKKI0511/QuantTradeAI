@@ -37,3 +37,9 @@
 - Centralize knobs in YAML under `config/`; validate changes with `verify_config_loading.py`.
 - Write outputs to `data/`, `models/`, `reports/` (these paths are gitignored by default).
 
+## Evaluation & Splitting (Important)
+- Train/test splits are time-aware:
+  - Prefer `data.test_start` and optional `data.test_end` in `config/model_config.yaml`.
+  - If unset, the last `training.test_size` fraction is used as test chronologically (no shuffle).
+- Hyperparameter tuning uses `TimeSeriesSplit(n_splits=training.cv_folds)` to avoid leakage.
+- Ensure any configured test window falls within `data.start_date`/`data.end_date`.

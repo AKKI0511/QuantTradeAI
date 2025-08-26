@@ -12,6 +12,7 @@ data:
   use_cache: true
   refresh: false
   max_workers: 1
+  # Time-aware test window used by CLI training
   test_start: '2025-01-01'
   test_end: '2025-01-31'
 

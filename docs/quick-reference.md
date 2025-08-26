@@ -143,6 +143,12 @@ data:
   end_date: '2024-12-31'
   cache_dir: 'data/raw'
   use_cache: true
+  # Optional time-aware test window
+  test_start: '2024-10-01'
+  test_end: '2024-12-31'
+
+training:
+  cv_folds: 5  # TimeSeriesSplit folds for hyperparameter tuning
 
 models:
   voting_classifier:
@@ -188,6 +194,14 @@ preprocessing:
     method: 'winsorize'
     limits: [0.01, 0.99]
 ```
+
+## 🕒 Time-Aware Splitting
+
+- Train/test splits respect `data.test_start`/`data.test_end` in the model config.
+- If only `test_start` is provided: train = dates < `test_start`; test = dates ≥ `test_start`.
+- If neither is provided: a chronological split uses the last `training.test_size` fraction as test (default 0.2).
+
+Hyperparameter tuning uses `TimeSeriesSplit(n_splits=training.cv_folds)` to avoid future leakage during CV.
 
 ## 🔌 Streaming
 

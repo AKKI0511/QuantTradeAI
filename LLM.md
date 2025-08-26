@@ -94,6 +94,10 @@ X, y = classifier.prepare_data(df_labeled)
 classifier.train(X, y)
 ```
 
+### Evaluation & Splitting
+- CLI training performs time‑aware splits using `data.test_start` and optional `data.test_end` in `config/model_config.yaml`. If unset, the last `training.test_size` fraction is used chronologically (no shuffle).
+- Hyperparameter tuning uses `TimeSeriesSplit(n_splits=training.cv_folds)` to prevent look‑ahead bias during CV.
+
 ### Backtesting
 ```python
 from quanttradeai import simulate_trades, compute_metrics
