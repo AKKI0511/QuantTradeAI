@@ -17,7 +17,7 @@ from quanttradeai.data.datasource import WebSocketDataSource
 import pandas as pd
 from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
 from quanttradeai.models.classifier import MomentumClassifier
-from sklearn.model_selection import train_test_split
+from typing import Tuple
 import yaml
 import json
 from datetime import datetime
@@ -45,6 +45,73 @@ def setup_directories(cache_dir: str = "data/raw"):
     ]
     for dir_path in dirs:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
+
+
+def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure the DataFrame index is a DatetimeIndex.
+
+    If the index is not datetime-like, try common fallbacks such as a
+    'Date'/'Datetime' column. Raise a clear error if conversion fails.
+    """
+    if isinstance(df.index, pd.DatetimeIndex):
+        return df
+    # Try to promote a Date/Datetime column
+    for col in ("Datetime", "Date", "timestamp", "time"):
+        if col in df.columns:
+            out = df.copy()
+            out.index = pd.to_datetime(out[col])
+            return out
+    # Try to parse current index
+    try:
+        out = df.copy()
+        out.index = pd.to_datetime(out.index)
+        return out
+    except Exception as exc:  # pragma: no cover - defensive path
+        raise ValueError(
+            "DataFrame must have a DatetimeIndex or a Date/Datetime column"
+        ) from exc
+
+
+def time_aware_split(
+    df_labeled: pd.DataFrame,
+    cfg: dict,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Return chronological train/test splits using config windows.
+
+    Rules
+    -----
+    - If data.test_start and data.test_end are provided:
+      train = idx < test_start; test = test_start <= idx <= test_end
+    - If only data.test_start: train = idx < test_start; test = idx >= test_start
+    - Else: fallback to last `training.test_size` fraction as test (no shuffle).
+    """
+    df = _ensure_datetime_index(df_labeled)
+    data_cfg = (cfg or {}).get("data", {})
+    train_cfg = (cfg or {}).get("training", {})
+    test_start = data_cfg.get("test_start")
+    test_end = data_cfg.get("test_end")
+
+    if test_start:
+        start_dt = pd.to_datetime(test_start)
+        if test_end:
+            end_dt = pd.to_datetime(test_end)
+            train_df = df[df.index < start_dt]
+            test_df = df[(df.index >= start_dt) & (df.index <= end_dt)]
+        else:
+            train_df = df[df.index < start_dt]
+            test_df = df[df.index >= start_dt]
+    else:
+        test_size = float(train_cfg.get("test_size", 0.2))
+        n = len(df)
+        split_idx = max(1, int(n * (1 - test_size)))
+        train_df = df.iloc[:split_idx]
+        test_df = df.iloc[split_idx:]
+
+    if len(train_df) == 0 or len(test_df) == 0:
+        raise ValueError(
+            "Invalid train/test window produced empty split. Adjust test_start/test_end or test_size."
+        )
+    return train_df, test_df
 
 
 def run_pipeline(config_path: str = "config/model_config.yaml"):
@@ -95,10 +162,20 @@ def run_pipeline(config_path: str = "config/model_config.yaml"):
             # 3. Generate Labels
             df_labeled = data_processor.generate_labels(df_processed)
 
-            # 4. Split Data
-            X, y = model.prepare_data(df_labeled)
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42
+            # 4. Time-aware Split
+            train_df, test_df = time_aware_split(df_labeled, config)
+            X_train, y_train = model.prepare_data(train_df)
+            X_test, y_test = model.prepare_data(test_df)
+            # Log split summary
+            logger.info(
+                "Split %s -> train[%s..%s]=%d, test[%s..%s]=%d",
+                symbol,
+                str(train_df.index.min()),
+                str(train_df.index.max()),
+                len(train_df),
+                str(test_df.index.min()),
+                str(test_df.index.max()),
+                len(test_df),
             )
 
             # 5. Optimize Hyperparameters

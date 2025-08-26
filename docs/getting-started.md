@@ -47,6 +47,8 @@ This will:
 - Optimize hyperparameters automatically
 - Save trained models
 
+Tip: To control the test window, set `data.test_start` (and optional `data.test_end`) in `config/model_config.yaml`. Hyperparameter tuning uses time‑series cross‑validation (`cv_folds`).
+
 ### 3. Evaluate Results
 ```bash
 # Evaluate a trained model
