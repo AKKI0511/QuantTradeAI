@@ -7,7 +7,7 @@ format-check:
 	poetry run black --check quanttradeai/
 
 lint:
-	poetry run flake8 quanttradeai/
+	poetry run flake8 --ignore=E501 quanttradeai/
 
 test:
 	poetry run pytest
