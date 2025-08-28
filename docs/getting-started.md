@@ -53,6 +53,18 @@ This will:
 poetry run quanttradeai evaluate -m models/trained/AAPL
 ```
 
+### 4. Backtest a Saved Model
+```bash
+# Backtest a saved model on the configured test window (with execution costs)
+poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> \
+  -c config/model_config.yaml -b config/backtest_config.yaml
+```
+
+This runs an end-to-end evaluation using the model’s saved `feature_columns` and the execution configuration. Artifacts are saved under `reports/backtests/<run_timestamp>/<SYMBOL>/`:
+- metrics.json: summary including Sharpe, drawdown, and CAGR (gross and net)
+- equity_curve.csv: equity curve time series
+- ledger.csv: per-trade fills and costs (when trades occur)
+
 ## 📊 Understanding the Output
 
 After running the training pipeline, you'll find:

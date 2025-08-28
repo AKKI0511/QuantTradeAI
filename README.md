@@ -20,6 +20,10 @@ poetry run quanttradeai train
 
 # Evaluate a saved model
 poetry run quanttradeai evaluate -m models/trained/AAPL
+
+# Backtest a saved model (end-to-end)
+poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> \
+  -c config/model_config.yaml -b config/backtest_config.yaml
 ```
 
 ## ✨ Features
@@ -107,6 +111,10 @@ poetry run quanttradeai train
 
 # Evaluate a trained model
 poetry run quanttradeai evaluate -m models/trained/AAPL
+
+# Backtest a saved model with execution costs
+poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> \
+  -c config/model_config.yaml -b config/backtest_config.yaml
 ```
 
 ### Python API
