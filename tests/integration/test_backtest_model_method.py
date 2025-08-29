@@ -87,6 +87,9 @@ def test_run_model_backtest_happy_path():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         model_cfg = _make_config(tmpdir)
+        # Ensure model directory exists
+        model_dir = os.path.join(tmpdir, "fake_model")
+        os.makedirs(model_dir, exist_ok=True)
 
         with patch("quanttradeai.main.DataLoader.fetch_data", return_value={"AAA": _mock_data()}), \
             patch("quanttradeai.main.DataProcessor", FakeProcessor), \
@@ -94,7 +97,7 @@ def test_run_model_backtest_happy_path():
 
             summary = run_model_backtest(
                 model_config=model_cfg,
-                model_path=os.path.join(tmpdir, "fake_model"),
+                model_path=model_dir,
                 backtest_config=None,
             )
 

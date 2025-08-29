@@ -40,8 +40,7 @@ packages = [
 ]
 
 [project.scripts]
-quanttradeai = "quanttradeai.main:main"
-quanttradeai-pipeline = "quanttradeai.main:run_pipeline"
+quanttradeai = "quanttradeai.cli:app"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"

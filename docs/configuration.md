@@ -25,8 +25,9 @@ data:
   use_cache: true
   refresh: false
   max_workers: 1
-  test_start: '2025-01-01'
-  test_end: '2025-01-31'
+  # Optional time-aware test window used by CLI training
+  test_start: '2024-10-01'
+  test_end: '2024-12-31'
 ```
 
 **Key Parameters:**
@@ -36,6 +37,7 @@ data:
 - `use_cache`: Enable/disable caching
 - `refresh`: Force fresh data download
 - `max_workers`: Parallel processing workers
+- `test_start`/`test_end`: Optional test window for time-aware train/test split (if unset, last `training.test_size` fraction is used chronologically)
 
 ### Model Parameters
 
@@ -71,6 +73,8 @@ training:
   test_size: 0.2
   random_state: 42
   cv_folds: 5
+
+Note: Hyperparameter tuning uses `TimeSeriesSplit(n_splits=cv_folds)` to avoid look‑ahead bias.
 ```
 
 ### Trading Parameters

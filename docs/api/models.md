@@ -39,7 +39,7 @@ print(f"Labels shape: {y.shape}")
 
 ### `optimize_hyperparameters(X: np.ndarray, y: np.ndarray, n_trials: int = 100) -> Dict`
 
-Optimizes hyperparameters using Optuna.
+Optimizes hyperparameters using Optuna with `TimeSeriesSplit(n_splits=training.cv_folds)` to avoid look‑ahead bias.
 
 **Parameters:**
 - `X` (np.ndarray): Feature matrix
@@ -179,14 +179,17 @@ xgb_params = {
 ### Complete Training Example
 ```python
 from quanttradeai import MomentumClassifier
-from sklearn.model_selection import train_test_split
+import numpy as np
 
 # Initialize classifier
 classifier = MomentumClassifier("config/model_config.yaml")
 
 # Prepare data
 X, y = classifier.prepare_data(df_labeled)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+# Chronological split (example). CLI uses config-driven date windows.
+split_idx = int(len(X) * 0.8)
+X_train, y_train = X[:split_idx], y[:split_idx]
+X_test, y_test = X[split_idx:], y[split_idx:]
 
 # Optimize hyperparameters
 best_params = classifier.optimize_hyperparameters(X_train, y_train, n_trials=50)

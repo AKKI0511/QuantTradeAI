@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 from unittest.mock import patch
+import yaml
 
 import pandas as pd
 from typer.testing import CliRunner
@@ -61,6 +62,26 @@ def test_backtest_model_cli_creates_artifacts_and_outputs_summary():
 
     runner = CliRunner()
     with tempfile.TemporaryDirectory() as tmpdir:
+        # Prepare a minimal, valid model config aligned with mock data window
+        model_cfg_path = os.path.join(tmpdir, "model_config.yaml")
+        cfg = {
+            "data": {
+                "symbols": ["AAA"],
+                "start_date": "2020-01-01",
+                "end_date": "2020-01-10",
+                "timeframe": "1d",
+                "use_cache": False,
+                # ensure non-empty test
+                "test_start": "2020-01-05",
+                "test_end": "2020-01-08",
+            },
+            "training": {"test_size": 0.2, "cv_folds": 3},
+        }
+        with open(model_cfg_path, "w") as f:
+            yaml.safe_dump(cfg, f)
+        # Ensure model path exists
+        model_dir = os.path.join(tmpdir, "fake_model")
+        os.makedirs(model_dir, exist_ok=True)
         # Patch pipeline components to avoid network and heavy models
         with patch("quanttradeai.main.DataLoader.fetch_data", return_value={"AAA": _mock_data()}), \
             patch("quanttradeai.main.DataProcessor", FakeProcessor), \
@@ -72,9 +93,9 @@ def test_backtest_model_cli_creates_artifacts_and_outputs_summary():
                 [
                     "backtest-model",
                     "-m",
-                    os.path.join(tmpdir, "fake_model"),
+                    model_dir,
                     "-c",
-                    os.path.join(tmpdir, "model_config.yaml"),  # not used by fakes
+                    model_cfg_path,
                 ],
             )
 
@@ -102,6 +123,24 @@ def test_backtest_model_cli_overrides_plumb_through():
 
     runner = CliRunner()
     with tempfile.TemporaryDirectory() as tmpdir:
+        # Prepare model config and model path
+        model_cfg_path = os.path.join(tmpdir, "model_config.yaml")
+        cfg = {
+            "data": {
+                "symbols": ["AAA"],
+                "start_date": "2020-01-01",
+                "end_date": "2020-01-10",
+                "timeframe": "1d",
+                "use_cache": False,
+                "test_start": "2020-01-05",
+                "test_end": "2020-01-08",
+            },
+            "training": {"test_size": 0.2, "cv_folds": 3},
+        }
+        with open(model_cfg_path, "w") as f:
+            yaml.safe_dump(cfg, f)
+        model_dir = os.path.join(tmpdir, "fake_model")
+        os.makedirs(model_dir, exist_ok=True)
         with patch("quanttradeai.main.DataLoader.fetch_data", return_value={"AAA": _mock_data()}), \
             patch("quanttradeai.main.DataProcessor", FakeProcessor), \
             patch("quanttradeai.main.MomentumClassifier", FakeClassifier):
@@ -111,7 +150,9 @@ def test_backtest_model_cli_overrides_plumb_through():
                 [
                     "backtest-model",
                     "-m",
-                    os.path.join(tmpdir, "fake_model"),
+                    model_dir,
+                    "-c",
+                    model_cfg_path,
                     "--cost-bps",
                     "5",
                     "--slippage-fixed",

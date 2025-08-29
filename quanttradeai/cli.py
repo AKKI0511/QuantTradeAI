@@ -71,9 +71,7 @@ def cmd_backtest(
     cost_bps: Optional[float] = typer.Option(None, help="Transaction cost in bps"),
     cost_fixed: Optional[float] = typer.Option(None, help="Fixed transaction cost"),
     slippage_bps: Optional[float] = typer.Option(None, help="Slippage in bps"),
-    slippage_fixed: Optional[float] = typer.Option(
-        None, help="Fixed slippage amount"
-    ),
+    slippage_fixed: Optional[float] = typer.Option(None, help="Fixed slippage amount"),
     liquidity_max_participation: Optional[float] = typer.Option(
         None, help="Liquidity max participation"
     ),

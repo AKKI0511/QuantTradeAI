@@ -1,148 +1,126 @@
+<div align="center">
+
 # QuantTradeAI
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Poetry](https://img.shields.io/badge/poetry-1.0+-blue.svg)](https://python-poetry.org/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Poetry](https://img.shields.io/badge/poetry-managed-%231C1C1C)](https://python-poetry.org/)
 
-> A comprehensive machine learning framework for quantitative trading strategies with focus on momentum trading using ensemble models.
+<i>Machine learning framework for momentum‑driven quantitative trading</i>
 
-## 🚀 Quick Start
+</div>
 
-```bash
-# Install dependencies
-poetry install
+## Why QuantTradeAI
 
-# Fetch data for all symbols
-poetry run quanttradeai fetch-data
+- Research and production toolkit for ML-based trading strategies
+- Designed for quants, data scientists, and ML engineers
+- Time‑aware evaluation, configurable features, reproducible experiments
 
-# Run complete training pipeline
-poetry run quanttradeai train
+## Key Features
 
-# Evaluate a saved model
-poetry run quanttradeai evaluate -m models/trained/AAPL
+- 📊 Data: YFinance/AlphaVantage loaders, caching, validation
+- 🧪 Features: technical indicators, custom signals, optional LLM sentiment
+- 🤖 Models: ensemble VotingClassifier (LR, RF, XGBoost) with Optuna tuning
+- 📈 Backtesting: execution costs, slippage, liquidity limits, portfolio helpers
+- 🛠️ CLI: end‑to‑end pipeline, evaluation, and model backtest in one place
 
-# Backtest a saved model (end-to-end)
-poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> \
-  -c config/model_config.yaml -b config/backtest_config.yaml
-```
+## Quickstart
 
-## ✨ Features
-
-- **📊 Multi-source Data Fetching** - YFinance, AlphaVantage with intelligent caching
-- **🔧 Advanced Feature Engineering** - 20+ technical indicators and custom features
-- **🤖 Ensemble ML Models** - Voting Classifier with LR, RF, XGBoost
-- **🗞️ LLM Sentiment Analysis** - Swapable provider/model via LiteLLM
-- **⚡ Hyperparameter Optimization** - Optuna-based automatic tuning
-- **📈 Comprehensive Backtesting** - Risk management and performance metrics
-- **🎯 Production Ready** - Model persistence, CLI interface, configuration management
-
-## 📋 Supported Assets
-
-| Symbol | Company | Sector |
-|--------|---------|--------|
-| AAPL | Apple Inc. | Technology |
-| META | Meta Platforms | Technology |
-| TSLA | Tesla Inc. | Automotive |
-| JPM | JPMorgan Chase | Financial |
-| AMZN | Amazon.com | Consumer |
-
-## 🏗️ Architecture
-
-```
-QuantTradeAI/
-├── quanttradeai/           # Core framework
-│   ├── data/              # Data loading & processing
-│   ├── features/          # Technical indicators
-│   ├── models/            # ML models & training
-│   ├── backtest/          # Backtesting engine
-│   ├── trading/           # Risk management
-│   └── utils/             # Utilities & metrics
-├── config/                # Configuration files
-├── docs/                  # 📚 Documentation
-└── tests/                 # Unit tests
-```
-
-## 📚 Documentation
-
-- **[📖 Getting Started](docs/getting-started.md)** - Installation and first steps
-- **[🔧 API Reference](docs/api/)** - Complete API documentation
-- **[📊 Examples](docs/examples/)** - Usage examples and tutorials
-- **[⚙️ Configuration](docs/configuration.md)** - Configuration guide
-- **[🚀 Quick Reference](docs/quick-reference.md)** - Common patterns and commands
-
-## 🎯 Use Cases
-
-- **Research & Development** - Test new trading strategies
-- **Model Training** - Train and optimize ML models
-- **Backtesting** - Simulate historical trading
-- **Production Deployment** - Real-time trading systems
-
-## 🔧 Installation
-
-### Prerequisites
-- Python 3.11+
-- Poetry (recommended) or pip
-
-### Install with Poetry
+1) Install
 ```bash
 git clone https://github.com/AKKI0511/QuantTradeAI.git
 cd QuantTradeAI
 poetry install
 ```
 
-### Install with pip
+2) Run the pipeline
 ```bash
-pip install -r requirements.txt
-```
-
-## 🚀 Usage
-
-### Command Line Interface
-
-```bash
-# Show available commands
+# Show commands
 poetry run quanttradeai --help
 
-# Fetch and cache data
-poetry run quanttradeai fetch-data
+# Fetch OHLCV for configured symbols
+poetry run quanttradeai fetch-data -c config/model_config.yaml
 
-# Run complete training pipeline
-poetry run quanttradeai train
-
-# Evaluate a trained model
-poetry run quanttradeai evaluate -m models/trained/AAPL
-
-# Backtest a saved model with execution costs
-poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> \
-  -c config/model_config.yaml -b config/backtest_config.yaml
+# Train (features → CV tuning → model → artifacts)
+poetry run quanttradeai train -c config/model_config.yaml
 ```
 
-### Python API
+3) Evaluate and backtest a saved model
+```bash
+# Evaluate a trained model on current data
+# (use a path under models/experiments/<timestamp>/<SYMBOL> or your own models/trained/<SYMBOL>)
+poetry run quanttradeai evaluate -m models/experiments/<timestamp>/<SYMBOL> -c config/model_config.yaml
+
+# Backtest a saved model on the configured test window (with execution costs)
+poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> -c config/model_config.yaml -b config/backtest_config.yaml
+```
+
+Artifacts are written to:
+- `models/experiments/<timestamp>/` (models + results.json)
+- `reports/backtests/<timestamp>/<SYMBOL>/` (`metrics.json`, `equity_curve.csv`, `ledger.csv`)
+
+## Configuration
+
+- `config/model_config.yaml`: symbols, date ranges, caching, training, trading
+- `config/features_config.yaml`: pipeline steps, indicators, selection, sentiment
+- `config/backtest_config.yaml`: execution costs, slippage, liquidity
+- `config/streaming.yaml`: providers, auth, subscriptions (optional)
+
+Time‑aware evaluation rules:
+- If `data.test_start` and `data.test_end` set: train = dates < `test_start`; test = `test_start` ≤ dates ≤ `test_end`
+- If only `data.test_start` set: train = dates < `test_start`; test = dates ≥ `test_start`
+- Otherwise: last `training.test_size` fraction is used chronologically (no shuffle)
+
+See docs for details: [Configuration Guide](docs/configuration.md), [Quick Reference](docs/quick-reference.md).
+
+## CLI Commands
+
+```bash
+poetry run quanttradeai fetch-data -c config/model_config.yaml                 # Download + cache data
+poetry run quanttradeai train -c config/model_config.yaml                      # End-to-end training pipeline
+poetry run quanttradeai evaluate -m <model_dir> -c config/model_config.yaml    # Evaluate a saved model
+poetry run quanttradeai backtest -c config/backtest_config.yaml                # CSV backtest (uses data_path)
+poetry run quanttradeai backtest-model -m <model_dir> -c config/model_config.yaml -b config/backtest_config.yaml
+poetry run quanttradeai live-trade --url wss://example -c config/model_config.yaml
+```
+
+## Python API
 
 ```python
 from quanttradeai import DataLoader, DataProcessor, MomentumClassifier
 
-# Initialize components
 loader = DataLoader("config/model_config.yaml")
 processor = DataProcessor("config/features_config.yaml")
-classifier = MomentumClassifier("config/model_config.yaml")
+clf = MomentumClassifier("config/model_config.yaml")
 
-# Fetch and process data
-data_dict = loader.fetch_data()
-df = data_dict['AAPL']
-df_processed = processor.process_data(df)
-df_labeled = processor.generate_labels(df_processed)
-
-# Train model
-X, y = classifier.prepare_data(df_labeled)
-classifier.train(X, y)
+data = loader.fetch_data()
+df = processor.process_data(data["AAPL"])          # feature pipeline
+df = processor.generate_labels(df)                   # forward returns → labels
+X, y = clf.prepare_data(df)
+clf.train(X, y)
 ```
 
-### Sentiment Analysis
+## Environment & Secrets
 
-LiteLLM powers provider-agnostic sentiment scoring. Configure it in
-`config/features_config.yaml` and set the API key in your environment:
+- Copy `.env.example` to `.env` and fill values:
 
+```bash
+cp .env.example .env
+```
+
+Required vs optional keys:
+- Required only if the related feature/provider is used.
+- Examples:
+  - LLM Sentiment (provider-dependent):
+    - `OPENAI_API_KEY` (required if `provider: openai`)
+    - `ANTHROPIC_API_KEY` (required if `provider: anthropic`)
+    - `HUGGINGFACE_API_KEY` (required if `provider: huggingface`)
+  - Streaming providers with `auth_method: api_key`:
+    - Alpaca: `ALPACA_API_KEY`, `ALPACA_API_SECRET` (required if used)
+
+## LLM Sentiment (Optional)
+
+Configure in `config/features_config.yaml`:
 ```yaml
 sentiment:
   enabled: true
@@ -150,91 +128,100 @@ sentiment:
   model: gpt-3.5-turbo
   api_key_env_var: OPENAI_API_KEY
 ```
+Export the key and run the pipeline. A `sentiment_score` column is added when a `text` column exists. See [docs/llm-sentiment.md](docs/llm-sentiment.md).
 
-```bash
-export OPENAI_API_KEY="sk-..."
+## Streaming (Optional)
+
+- CLI: `poetry run quanttradeai live-trade --url wss://... -c config/model_config.yaml`
+- YAML‑driven gateway via `config/streaming.yaml`:
+
+```yaml
+streaming:
+  symbols: ["AAPL"]
+  providers:
+    - name: "alpaca"
+      websocket_url: "wss://stream.data.alpaca.markets/v2/iex"
+      auth_method: "api_key"
+      subscriptions: ["trades", "quotes"]
+  buffer_size: 1000
+  reconnect_attempts: 3
+  health_check_interval: 30
 ```
 
-Switching providers is as simple as updating the YAML config to point to a
-different `provider`/`model` pair supported by LiteLLM.
+```python
+from quanttradeai.streaming import StreamingGateway
 
-## 📊 Performance Metrics
+gw = StreamingGateway("config/streaming.yaml")
+gw.subscribe_to_trades(["AAPL"], lambda m: print("TRADE", m))
+# gw.start_streaming()  # blocking
+```
 
-| Metric | Description |
-|--------|-------------|
-| **Accuracy** | Classification accuracy |
-| **F1 Score** | Balanced precision/recall |
-| **Sharpe Ratio** | Risk-adjusted returns |
-| **Max Drawdown** | Maximum portfolio decline |
+## Project Layout
 
-## 🤝 Contributing
+```
+quanttradeai/          # Core package
+├─ data/               # Data sources, loader, processor
+├─ features/           # Technical & custom features
+├─ models/             # MomentumClassifier & utilities
+├─ backtest/           # Vectorized backtester + metrics
+├─ trading/            # Risk & portfolio management
+├─ streaming/          # WebSocket gateway
+├─ utils/              # Config schemas, metrics, viz
+config/                # YAML configs (model, features, backtest, streaming)
+docs/                  # Guides, API, examples
+tests/                 # Pytest suite mirroring package
+```
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+## Development
 
-### Development Setup
 ```bash
-# Install development dependencies
 poetry install --with dev
-
-# Run tests
-poetry run pytest
-
-# Format code
-poetry run black quanttradeai/
-
-# Lint code
-poetry run flake8 quanttradeai/
+make format     # Black
+make lint       # flake8
+make test       # pytest
 ```
 
-## 📄 License
+Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## Links
 
-## 🙏 Acknowledgments
+- [Getting Started](docs/getting-started.md)
+- [API Reference](docs/api/)
+- [Examples](docs/examples/)
+- [Configuration](docs/configuration.md)
+- [Quick Reference](docs/quick-reference.md)
 
-- [YFinance](https://github.com/ranaroussi/yfinance) for data fetching
-- [Scikit-learn](https://scikit-learn.org/) for ML algorithms
-- [XGBoost](https://xgboost.readthedocs.io/) for gradient boosting
-- [Optuna](https://optuna.org/) for hyperparameter optimization
+## Roadmap
 
-## �️ Roadmap & Future Enhancements
+### 🚀 Phase 1: Stabilize & Polish (current)
+- Streaming hardening: reconnection, health checks, metrics, provider adapters
+- Backtesting realism: market impact knobs, borrow fees, intrabar fills, richer ledgers
+- Risk & portfolio: position sizing improvements, exposure/turnover limits, drawdown guards
+- Multi‑timeframe groundwork: intraday + daily pipelines with safe, time‑aware resampling
 
-### 🚀 Phase 1: Core Infrastructure
-- **Real-time Data Streaming** - WebSocket integration for live market data
-- **Advanced Risk Management** - Portfolio-level risk controls and position sizing
-- **Multi-timeframe Support** - Intraday, daily, weekly, monthly analysis
-- **Enhanced Backtesting** - Transaction costs, slippage, market impact modeling
+### 🤖 Phase 2: Modeling & Features
+- Automated feature discovery/selection; regime detection and cross‑asset features
+- Enhanced labeling and calibration; probability thresholds and evaluation curves
+- LLM sentiment expansion: provider templates, caching, news/transcripts ingestion
 
-### 🤖 Phase 2: AI & LLM Integration
-- **LLM-Powered Analysis** - OpenAI, Anthropic, Gemini integration for market sentiment
-- **Natural Language Processing** - News sentiment analysis and earnings call transcripts
-- **AI-Driven Feature Engineering** - Automated feature selection and generation
-- **Intelligent Portfolio Allocation** - LLM-based asset allocation strategies
+### ⚡ Phase 3: Performance & Scale
+- Parallel/distributed training and backtests across assets; memory efficiency
+- Artifact management & experiment tracking; fully reproducible pipelines
+- Low‑latency inference path for streaming signals
 
-### ⚡ Phase 3: Performance & Latency
-- **C++ Core Components** - Low-latency data processing and signal generation
-- **GPU Acceleration** - CUDA/OpenCL for parallel model training
-- **Real-time Trading** - Direct exchange connectivity and order execution
-- **Microservices Architecture** - Scalable, containerized deployment
+### 🧪 Phase 4: Paper → Live Trading
+- Broker/exchange adapters, order routing, pre‑trade risk checks, fail‑safes
+- Paper trading sandbox, live dashboards, incident logging & alerting
 
-### 🌐 Phase 4: Advanced AI & Cloud
-- **Multi-Modal AI** - Vision models for chart pattern recognition
-- **Reinforcement Learning** - RL agents for dynamic strategy adaptation
-- **Cloud-Native Deployment** - Kubernetes orchestration and auto-scaling
-- **Federated Learning** - Privacy-preserving model training across institutions
+### ☁️ Phase 5: Cloud & Ops
+- Containerized jobs & scheduling, remote storage, model registry
+- Service decomposition for streaming, inference, and backtesting
 
-### 🔮 Phase 5: Next-Generation Features
-- **Quantum Computing Integration** - Quantum algorithms for optimization
-- **Blockchain Integration** - DeFi protocol connectivity and token trading
-- **Advanced NLP** - Real-time news analysis and social sentiment
-- **Autonomous Trading** - Self-optimizing strategies with minimal human intervention
+### Stretch (exploration)
+- GPU acceleration for training loops
+- Reinforcement learning strategy research
+- Multi‑modal data sources
 
-## 📞 Support
+## License
 
-- **📚 Documentation**: [docs/](docs/)
-- **🐛 Issues**: [GitHub Issues](https://github.com/AKKI0511/QuantTradeAI/issues)
-- **💬 Discussions**: [GitHub Discussions](https://github.com/AKKI0511/QuantTradeAI/discussions)
-
----
-
-**Made with ❤️ for quantitative trading**
+MIT © Contributors — see [LICENSE](LICENSE)

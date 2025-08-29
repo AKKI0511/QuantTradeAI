@@ -20,7 +20,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Tuple, Any
 import logging
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
@@ -88,6 +88,9 @@ class MomentumClassifier:
             Dictionary of best parameters
         """
 
+        cv_folds = int(self.config.get("training", {}).get("cv_folds", 5))
+        tscv = TimeSeriesSplit(n_splits=cv_folds)
+
         def objective(trial):
             # Logistic Regression parameters
             lr_params = {
@@ -127,8 +130,10 @@ class MomentumClassifier:
                 estimators=[("lr", lr), ("rf", rf), ("xgb", xgb_clf)], voting="soft"
             )
 
-            # Perform cross-validation
-            scores = cross_val_score(voting_clf, X, y, cv=5, scoring="f1_weighted")
+            # Perform time-series cross-validation
+            scores = cross_val_score(
+                voting_clf, X, y, cv=tscv, scoring="f1_weighted"
+            )
             return scores.mean()
 
         # Create study and optimize

@@ -24,7 +24,6 @@ import yaml
 import json
 from datetime import datetime
 import os
-from sklearn.model_selection import train_test_split
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -164,10 +163,20 @@ def run_pipeline(config_path: str = "config/model_config.yaml"):
             # 3. Generate Labels
             df_labeled = data_processor.generate_labels(df_processed)
 
-            # 4. Split Data
-            X, y = model.prepare_data(df_labeled)
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42
+            # 4. Time-aware Split
+            train_df, test_df = time_aware_split(df_labeled, config)
+            X_train, y_train = model.prepare_data(train_df)
+            X_test, y_test = model.prepare_data(test_df)
+            # Log split summary
+            logger.info(
+                "Split %s -> train[%s..%s]=%d, test[%s..%s]=%d",
+                symbol,
+                str(train_df.index.min()),
+                str(train_df.index.max()),
+                len(train_df),
+                str(test_df.index.min()),
+                str(test_df.index.max()),
+                len(test_df),
             )
 
             # 5. Optimize Hyperparameters
@@ -324,6 +333,12 @@ def run_model_backtest(
 
     Returns a dict keyed by symbol with metrics and artifact paths.
     """
+    # Validate required paths
+    if not model_config or not os.path.exists(model_config):
+        raise FileNotFoundError(f"Model config not found: {model_config}")
+    if not model_path or not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model path not found: {model_path}")
+
     # Load configs and components
     with open(model_config, "r") as f:
         cfg = yaml.safe_load(f)
@@ -355,15 +370,17 @@ def run_model_backtest(
             df_lbl = processor.generate_labels(df_proc)
             train_df, test_df = time_aware_split(df_lbl, cfg)
             # Build features from saved order
-            missing = [c for c in (clf.feature_columns or []) if c not in test_df.columns]
+            missing = [
+                c for c in (clf.feature_columns or []) if c not in test_df.columns
+            ]
             if missing:
-                raise ValueError(
-                    f"Missing required features for {symbol}: {missing}"
-                )
+                raise ValueError(f"Missing required features for {symbol}: {missing}")
             X_test = test_df[clf.feature_columns].values
             preds = clf.predict(X_test)
 
-            bt_df = test_df[[c for c in ["Close", "Volume"] if c in test_df.columns]].copy()
+            bt_df = test_df[
+                [c for c in ["Close", "Volume"] if c in test_df.columns]
+            ].copy()
             if "Volume" not in bt_df.columns:
                 bt_df["Volume"] = 1e12  # effectively infinite liquidity
             bt_df["label"] = preds
