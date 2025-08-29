@@ -21,6 +21,11 @@ poetry run quanttradeai evaluate -m models/trained/AAPL
 # Run backtest
 poetry run quanttradeai backtest --config config/backtest_config.yaml
 poetry run quanttradeai backtest --cost-bps 5 --slippage-bps 10
+
+# Backtest a saved model (end-to-end)
+poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> \
+  -c config/model_config.yaml -b config/backtest_config.yaml \
+  --cost-bps 5 --slippage-fixed 0.01 --liquidity-max-participation 0.25
 ```
 
 ## 📊 Python API Patterns
@@ -71,6 +76,16 @@ df_trades = simulate_trades(df_labeled, stop_loss_pct=0.02, take_profit_pct=0.04
 
 # Calculate metrics
 metrics = compute_metrics(df_trades, risk_free_rate=0.02)
+```
+
+### Backtest a Saved Model
+```bash
+# Uses saved feature_columns and execution config to produce PnL metrics
+poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> \
+  -c config/model_config.yaml -b config/backtest_config.yaml
+
+# Artifacts are saved under:
+# reports/backtests/<run_timestamp>/<SYMBOL>/{metrics.json,equity_curve.csv,ledger.csv}
 ```
 
 ## 🔧 Technical Indicators

@@ -30,7 +30,8 @@ dependencies = [
     "structlog (>=25.4.0,<26.0.0)",
     "pybreaker (>=1.4.0,<2.0.0)",
     "asyncio-throttle (>=1.0.2,<2.0.0)",
-    "prometheus-client (>=0.22.1,<0.23.0)"
+    "prometheus-client (>=0.22.1,<0.23.0)",
+    "typer (>=0.16.1,<0.17.0)"
 ]
 
 [tool.poetry]
@@ -39,8 +40,7 @@ packages = [
 ]
 
 [project.scripts]
-quanttradeai = "quanttradeai.main:main"
-quanttradeai-pipeline = "quanttradeai.main:run_pipeline"
+quanttradeai = "quanttradeai.cli:app"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"

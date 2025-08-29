@@ -34,7 +34,7 @@ class TestDataLoaderTimeframe(unittest.TestCase):
 
         mock_fetch.return_value = pd.DataFrame(
             {"Open": [1], "High": [1], "Low": [1], "Close": [1], "Volume": [1]},
-            index=pd.date_range("2020-01-01", periods=1, freq="H"),
+            index=pd.date_range("2020-01-01", periods=1, freq="h"),
         )
         loader = DataLoader(self.config_path)
         loader.fetch_data()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
 
@@ -14,7 +14,7 @@ class AuthManager:
 
     provider: str
     _token: Optional[str] = None
-    _expires_at: datetime = datetime.fromtimestamp(0)
+    _expires_at: datetime = datetime.fromtimestamp(0, tz=timezone.utc)
 
     def _load_credentials(self) -> Dict[str, str]:
         """Load credentials from environment variables."""
@@ -23,13 +23,13 @@ class AuthManager:
         return {"key": key, "secret": secret}
 
     def _token_needs_refresh(self) -> bool:
-        return datetime.utcnow() >= self._expires_at - timedelta(minutes=5)
+        return datetime.now(timezone.utc) >= self._expires_at - timedelta(minutes=5)
 
     async def _refresh_token(self) -> None:
         creds = self._load_credentials()
         # In production, call provider-specific auth endpoint.
         self._token = creds.get("key")
-        self._expires_at = datetime.utcnow() + timedelta(hours=1)
+        self._expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
 
     async def get_auth_headers(self) -> Dict[str, str]:
         if self._token is None or self._token_needs_refresh():

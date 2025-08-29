@@ -55,21 +55,28 @@ def max_drawdown(equity_curve: pd.Series) -> float:
 
 
 def cagr(equity_curve: pd.Series) -> float:
-    """Compound annual growth rate assuming daily data."""
+    """Compound annual growth rate assuming daily data.
+
+    Returns a Python float to ensure JSON-safe serialization.
+    """
     if equity_curve.empty:
         return 0.0
     periods = len(equity_curve)
     years = periods / 252
-    final = equity_curve.iloc[-1]
-    return final ** (1 / years) - 1
+    final = float(equity_curve.iloc[-1])
+    return float(final ** (1 / years) - 1)
 
 
 def compute_performance(data: pd.DataFrame, risk_free_rate: float = 0.0) -> dict:
-    """Return gross and net performance statistics."""
-    returns = data.get("gross_return", data["strategy_return"])
-    net_returns = data["strategy_return"]
-    equity = data.get("gross_equity_curve", data["equity_curve"])
-    net_equity = data["equity_curve"]
+    """Return gross and net performance statistics.
+
+    Ensures all values are JSON-serializable scalars. Large time series are
+    intentionally omitted from the summary to keep artifacts compact.
+    """
+    returns = data.get("gross_return", data["strategy_return"])  # pd.Series
+    net_returns = data["strategy_return"]  # pd.Series
+    equity = data.get("gross_equity_curve", data["equity_curve"])  # pd.Series
+    net_equity = data["equity_curve"]  # pd.Series
 
     ledger = data.attrs.get("ledger")
     if ledger is not None and not ledger.empty:
@@ -84,21 +91,19 @@ def compute_performance(data: pd.DataFrame, risk_free_rate: float = 0.0) -> dict
         total_slippage = 0.0
 
     summary = {
-        "gross_pnl": float(equity.iloc[-1] - 1),
-        "total_costs": total_costs,
-        "total_slippage_cost": total_slippage,
-        "net_pnl": float(net_equity.iloc[-1] - 1),
-        "gross_sharpe": sharpe_ratio(returns, risk_free_rate),
-        "net_sharpe": sharpe_ratio(net_returns, risk_free_rate),
-        "gross_cagr": cagr(equity),
-        "net_cagr": cagr(net_equity),
-        "gross_mdd": max_drawdown(equity),
-        "net_mdd": max_drawdown(net_equity),
+        "gross_pnl": float(float(equity.iloc[-1]) - 1.0),
+        "total_costs": float(total_costs),
+        "total_slippage_cost": float(total_slippage),
+        "net_pnl": float(float(net_equity.iloc[-1]) - 1.0),
+        "gross_sharpe": float(sharpe_ratio(returns, risk_free_rate)),
+        "net_sharpe": float(sharpe_ratio(net_returns, risk_free_rate)),
+        "gross_cagr": float(cagr(equity)),
+        "net_cagr": float(cagr(net_equity)),
+        "gross_mdd": float(max_drawdown(equity)),
+        "net_mdd": float(max_drawdown(net_equity)),
     }
-    # backward-compatible keys
+    # backward-compatible scalar aliases
     summary["cumulative_return"] = summary["gross_pnl"]
     summary["sharpe_ratio"] = summary["gross_sharpe"]
     summary["max_drawdown"] = summary["gross_mdd"]
-    summary["net_returns_series"] = net_returns
-    summary["gross_returns_series"] = returns
     return summary

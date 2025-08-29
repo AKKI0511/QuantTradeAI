@@ -19,6 +19,7 @@ import pandas as pd
 import numpy as np
 
 import logging
+import warnings
 import yaml  # Added for YAML loading
 from pydantic import ValidationError
 
@@ -33,6 +34,10 @@ from quanttradeai.utils.config_schemas import FeaturesConfigSchema
 if not hasattr(np, "NaN"):
     np.NaN = np.nan  # pragma: no cover - simple compatibility shim
 
+# Suppress pandas_ta pkg_resources deprecation warning (third-party)
+warnings.filterwarnings(
+    "ignore", message="pkg_resources is deprecated.*", category=UserWarning
+)
 import pandas_ta as ta  # For efficient technical analysis calculations
 from quanttradeai.features import technical as ft
 from quanttradeai.features import custom as cf

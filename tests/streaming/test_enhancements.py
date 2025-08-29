@@ -1,6 +1,6 @@
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 from pybreaker import CircuitBreakerError
@@ -47,7 +47,7 @@ def test_rate_limiter_enforces_rate():
 def test_auth_manager_refresh(monkeypatch):
     monkeypatch.setenv("ALPACA_API_KEY", "KEY123")
     am = AuthManager("alpaca")
-    am._expires_at = datetime.utcnow()  # force refresh
+    am._expires_at = datetime.now(timezone.utc)  # force refresh
     headers = asyncio.run(am.get_auth_headers())
     assert headers["Authorization"] == "Bearer KEY123"
 
