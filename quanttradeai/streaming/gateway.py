@@ -35,6 +35,7 @@ from .monitoring import (
     MetricsCollector,
     RecoveryManager,
     StreamingHealthMonitor,
+    create_health_app,
 )
 from .monitoring.metrics import Metrics
 from .logging import logger
@@ -77,9 +78,13 @@ class StreamingGateway:
         alert_cfg = health_cfg.get("alerts", {})
         self.health_monitor = StreamingHealthMonitor(
             metrics_collector=MetricsCollector(),
-            alert_manager=AlertManager(alert_cfg.get("channels", ["log"])),
+            alert_manager=AlertManager(
+                alert_cfg.get("channels", ["log"]),
+                escalation_threshold=alert_cfg.get("escalation_threshold", 3),
+            ),
             recovery_manager=RecoveryManager(
-                max_attempts=thresh_cfg.get("max_reconnect_attempts", 5)
+                max_attempts=thresh_cfg.get("max_reconnect_attempts", 5),
+                reset_timeout=thresh_cfg.get("circuit_breaker_timeout", 60),
             ),
             check_interval=mon_cfg.get("check_interval", 5),
             thresholds={
@@ -88,8 +93,15 @@ class StreamingGateway:
                     "min_throughput_msg_per_sec", 0
                 ),
                 "max_reconnect_attempts": thresh_cfg.get("max_reconnect_attempts", 5),
+                "max_queue_depth": thresh_cfg.get("max_queue_depth", 0),
             },
+            queue_size_fn=self.buffer.queue.qsize,
+            queue_name="stream",
         )
+        api_cfg = health_cfg.get("api", {})
+        self._api_enabled = api_cfg.get("enabled", False)
+        self._api_host = api_cfg.get("host", "0.0.0.0")
+        self._api_port = api_cfg.get("port", 8000)
         # Top-level symbol list for convenience
         self._config_symbols = cfg.get("symbols", []) or []
         for provider_cfg in cfg.get("providers", []):
@@ -129,7 +141,9 @@ class StreamingGateway:
     async def _dispatch(self, provider: str, message: Dict) -> None:
         symbol = message.get("symbol", "")
         self.metrics.record_message(provider, symbol)
-        self.health_monitor.record_message(provider)
+        seq = message.get("sequence")
+        size = len(str(message))
+        self.health_monitor.record_message(provider, sequence=seq, size_bytes=size)
         processed = self.message_processor.process(message)
         await self.buffer.put(processed)
         msg_type = message.get("type", "trades")
@@ -149,6 +163,18 @@ class StreamingGateway:
         for adapter in self.websocket_manager.adapters:
             self.health_monitor.register_connection(adapter.name)
         asyncio.create_task(self.health_monitor.monitor_connection_health())
+        if self._api_enabled:
+            try:
+                import uvicorn
+
+                app = create_health_app(self.health_monitor)
+                config = uvicorn.Config(
+                    app, host=self._api_host, port=self._api_port, log_level="warning"
+                )
+                server = uvicorn.Server(config)
+                asyncio.create_task(server.serve())
+            except Exception:
+                logger.warning("health_api_start_failed")
         # Optional legacy health check for connection pool
         try:
             with open(self.config_path, "r") as f:

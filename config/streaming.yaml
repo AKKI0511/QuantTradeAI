@@ -24,6 +24,13 @@ streaming_health:
     max_latency_ms: 100
     min_throughput_msg_per_sec: 50
     max_reconnect_attempts: 5
+    max_queue_depth: 5000
+    circuit_breaker_timeout: 60
   alerts:
     enabled: true
     channels: ["log", "metrics"]
+    escalation_threshold: 3
+  api:
+    enabled: false
+    host: "0.0.0.0"
+    port: 8000

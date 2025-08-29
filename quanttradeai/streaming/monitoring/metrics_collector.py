@@ -38,6 +38,24 @@ _reconnects = _get_metric(
     "Total reconnection attempts",
     ["connection"],
 )
+_loss = _get_metric(
+    Counter,
+    "stream_message_loss_total",
+    "Detected missing messages per connection",
+    ["connection"],
+)
+_queue_depth = _get_metric(
+    Gauge,
+    "stream_buffer_queue_depth",
+    "Queue size of streaming buffers",
+    ["buffer"],
+)
+_bandwidth = _get_metric(
+    Gauge,
+    "stream_connection_bandwidth_bytes_per_sec",
+    "Approximate inbound bandwidth per connection",
+    ["connection"],
+)
 
 
 @dataclass
@@ -55,3 +73,12 @@ class MetricsCollector:
 
     def increment_reconnect(self, connection: str) -> None:
         _reconnects.labels(connection=connection).inc()
+
+    def increment_message_loss(self, connection: str, count: int) -> None:
+        _loss.labels(connection=connection).inc(count)
+
+    def record_queue_depth(self, buffer: str, depth: int) -> None:
+        _queue_depth.labels(buffer=buffer).set(depth)
+
+    def record_bandwidth(self, connection: str, rate: float) -> None:
+        _bandwidth.labels(connection=connection).set(rate)
