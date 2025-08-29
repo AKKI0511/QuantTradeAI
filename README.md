@@ -156,6 +156,44 @@ gw.subscribe_to_trades(["AAPL"], lambda m: print("TRADE", m))
 # gw.start_streaming()  # blocking
 ```
 
+### Streaming Health Monitoring
+
+Enable advanced monitoring by adding a `streaming_health` section to your config and,
+optionally, starting the embedded REST server:
+
+```yaml
+streaming_health:
+  monitoring:
+    enabled: true
+    check_interval: 5
+  thresholds:
+    max_latency_ms: 100
+    min_throughput_msg_per_sec: 50
+    max_queue_depth: 5000
+  alerts:
+    enabled: true
+    channels: ["log", "metrics"]
+    escalation_threshold: 3
+  api:
+    enabled: true
+    host: "0.0.0.0"
+    port: 8000
+```
+
+Query live status while streaming:
+
+```bash
+curl http://localhost:8000/health    # readiness probe
+curl http://localhost:8000/status    # detailed metrics + incidents
+curl http://localhost:8000/metrics   # Prometheus scrape
+```
+
+Common patterns:
+
+- Tune `escalation_threshold` to control alert promotion.
+- Increase `max_queue_depth` in high-volume environments.
+- Set `circuit_breaker_timeout` to avoid thrashing unstable providers.
+
 ## Project Layout
 
 ```

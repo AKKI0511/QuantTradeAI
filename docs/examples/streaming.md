@@ -75,3 +75,45 @@ manager.add_adapter(MyAdapter(websocket_url="wss://example"), auth_method="none"
 # Use StreamingGateway or call manager.connect_all()/run() directly.
 ```
 
+## Health Monitoring Configuration
+
+Append the following to `config/streaming.yaml` to enable comprehensive health checks:
+
+```yaml
+streaming_health:
+  monitoring:
+    enabled: true
+    check_interval: 5
+  thresholds:
+    max_latency_ms: 100
+    min_throughput_msg_per_sec: 50
+    max_queue_depth: 5000
+    circuit_breaker_timeout: 60
+  alerts:
+    enabled: true
+    channels: ["log", "metrics"]
+    escalation_threshold: 3
+  api:
+    enabled: true
+    host: "0.0.0.0"
+    port: 8000
+```
+
+Start the gateway and query metrics:
+
+```bash
+curl http://localhost:8000/status
+```
+
+## Alert Threshold Tuning
+
+- Increase `max_latency_ms` or decrease `escalation_threshold` for noisy networks.
+- Monitor `max_queue_depth` during peak sessions and adjust to avoid drops.
+- Use Prometheus metrics to derive realistic throughput baselines.
+
+## Production Deployment Recommendations
+
+- Run the health API behind an authenticated ingress when exposing publicly.
+- Scrape `/metrics` with Prometheus and forward alerts to your incident system.
+- Configure fallback providers to ensure continuity during outages.
+
