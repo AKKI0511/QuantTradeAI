@@ -90,3 +90,52 @@ Register it in your runtime (or fork and extend `AdapterMap` in `StreamingGatewa
 - Prometheus metrics (`prometheus_client`) track message counts, connection latency, and active connections.
 - Optional background health checks ping pooled connections (interval configured via YAML).
 
+### Advanced Health Metrics
+
+- **Message loss detection** surfaces gaps in sequence numbers and reports per-provider drop rates.
+- **Queue depth gauges** expose backlog in internal processing buffers.
+- **Bandwidth and throughput** statistics track messages per second and bytes processed.
+- **Data freshness** timers flag stale feeds when updates stop arriving.
+
+### Alerting & Incident History
+
+- Configurable thresholds escalate repeated warnings to errors after a defined count.
+- Incident history is retained in memory for post-mortem analysis and optional export.
+- Alert channels include structured logs and Prometheus-compatible metrics.
+
+### Recovery & Circuit Breaking
+
+- Automatic retries use exponential backoff with jitter and respect circuit-breaker timeouts.
+- Fallback connectors can be configured for provider outages.
+
+### Health API
+
+When enabled, an embedded REST server exposes:
+
+- `GET /health` – lightweight readiness probe.
+- `GET /status` – detailed status including recent incidents.
+- `GET /metrics` – Prometheus scrape endpoint.
+
+### Configuration Example
+
+```yaml
+streaming_health:
+  monitoring:
+    enabled: true
+    check_interval: 5
+  thresholds:
+    max_latency_ms: 100
+    min_throughput_msg_per_sec: 50
+    max_queue_depth: 5000
+    circuit_breaker_timeout: 60
+  alerts:
+    enabled: true
+    channels: ["log", "metrics"]
+    escalation_threshold: 3
+  api:
+    enabled: true
+    host: "0.0.0.0"
+    port: 8000
+```
+
+

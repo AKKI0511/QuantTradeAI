@@ -15,3 +15,22 @@ streaming:
   buffer_size: 10000
   reconnect_attempts: 5
   health_check_interval: 30
+streaming_health:
+  monitoring:
+    enabled: true
+    check_interval: 5
+    metrics_retention: 3600
+  thresholds:
+    max_latency_ms: 100
+    min_throughput_msg_per_sec: 50
+    max_reconnect_attempts: 5
+    max_queue_depth: 5000
+    circuit_breaker_timeout: 60
+  alerts:
+    enabled: true
+    channels: ["log", "metrics"]
+    escalation_threshold: 3
+  api:
+    enabled: false
+    host: "0.0.0.0"
+    port: 8000
