@@ -47,6 +47,16 @@ class DummyRecovery(RecoveryManager):
         return True
 
 
+class CountingRecovery(RecoveryManager):
+    def __init__(self):
+        super().__init__(max_attempts=3)
+        self.calls = 0
+
+    async def reconnect(self, name: str, connect=None) -> bool:  # pragma: no cover - simple override
+        self.calls += 1
+        return True
+
+
 async def run_latency_check() -> CollectingAlertManager:
     alerts = CollectingAlertManager()
     monitor = StreamingHealthMonitor(
@@ -85,3 +95,22 @@ async def run_recovery_check() -> DummyRecovery:
 def test_stale_connection_triggers_recovery():
     recovery = asyncio.run(run_recovery_check())
     assert recovery.called
+
+
+def test_last_message_ts_reset_after_reconnect():
+    alerts = CollectingAlertManager()
+    recovery = CountingRecovery()
+    stale = ConnectionHealth()
+    stale.last_message_ts = time.time() - 10
+    monitor = StreamingHealthMonitor(
+        connection_status={"c": stale},
+        metrics_collector=MetricsCollector(),
+        alert_manager=alerts,
+        recovery_manager=recovery,
+        check_interval=0.1,
+    )
+    asyncio.run(monitor._check_connections_once())
+    first = recovery.calls
+    asyncio.run(monitor._check_connections_once())
+    assert recovery.calls == first
+    assert stale.last_message_ts > time.time() - 1

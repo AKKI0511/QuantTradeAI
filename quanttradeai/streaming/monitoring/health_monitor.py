@@ -137,8 +137,10 @@ class StreamingHealthMonitor:
         self.metrics_collector.increment_reconnect(name)
         success = await self.recovery_manager.reconnect(name)
         if success:
+            now = time.time()
             health.status = "connected"
-            health.window_start = time.time()
+            health.window_start = now
+            health.last_message_ts = now
             health.messages = 0
         else:
             health.status = "down"
