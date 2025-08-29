@@ -85,3 +85,26 @@ async def run_recovery_check() -> DummyRecovery:
 def test_stale_connection_triggers_recovery():
     recovery = asyncio.run(run_recovery_check())
     assert recovery.called
+
+
+async def run_recovery_timestamp_check() -> tuple[ConnectionHealth, float]:
+    alerts = CollectingAlertManager()
+    recovery = DummyRecovery()
+    stale = ConnectionHealth()
+    stale.last_message_ts = time.time() - 10
+    monitor = StreamingHealthMonitor(
+        connection_status={"c": stale},
+        metrics_collector=MetricsCollector(),
+        alert_manager=alerts,
+        recovery_manager=recovery,
+        check_interval=0.1,
+    )
+    start = time.time()
+    await monitor._check_connections_once()
+    assert recovery.called  # ensure reconnect occurred
+    return stale, start
+
+
+def test_reconnect_resets_last_message_ts():
+    health, start = asyncio.run(run_recovery_timestamp_check())
+    assert health.last_message_ts >= start
