@@ -1,6 +1,16 @@
 """Monitoring utilities for streaming system."""
 
-from .health_monitor import HealthMonitor
+from .alerts import AlertManager
+from .health_monitor import ConnectionHealth, StreamingHealthMonitor
 from .metrics import Metrics
+from .metrics_collector import MetricsCollector
+from .recovery_manager import RecoveryManager
 
-__all__ = ["HealthMonitor", "Metrics"]
+__all__ = [
+    "AlertManager",
+    "ConnectionHealth",
+    "StreamingHealthMonitor",
+    "MetricsCollector",
+    "RecoveryManager",
+    "Metrics",
+]

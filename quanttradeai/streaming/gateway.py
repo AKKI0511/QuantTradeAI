@@ -30,6 +30,12 @@ from .websocket_manager import WebSocketManager
 from .adapters.alpaca_adapter import AlpacaAdapter
 from .adapters.ib_adapter import IBAdapter
 from .processors import MessageProcessor
+from .monitoring import (
+    AlertManager,
+    MetricsCollector,
+    RecoveryManager,
+    StreamingHealthMonitor,
+)
 from .monitoring.metrics import Metrics
 from .logging import logger
 
@@ -50,6 +56,7 @@ class StreamingGateway:
     message_processor: MessageProcessor = field(init=False)
     buffer: StreamBuffer = field(init=False)
     metrics: Metrics = field(init=False)
+    health_monitor: StreamingHealthMonitor = field(init=False)
     _subscriptions: List[Tuple[str, List[str]]] = field(default_factory=list)
     _callbacks: Dict[str, List[Callback]] = field(default_factory=dict)
     _config_symbols: List[str] = field(default_factory=list)
@@ -64,6 +71,25 @@ class StreamingGateway:
         self.message_processor = MessageProcessor()
         self.buffer = StreamBuffer(cfg.get("buffer_size", 1000))
         self.metrics = Metrics()
+        health_cfg = cfg_all.get("streaming_health", {})
+        mon_cfg = health_cfg.get("monitoring", {})
+        thresh_cfg = health_cfg.get("thresholds", {})
+        alert_cfg = health_cfg.get("alerts", {})
+        self.health_monitor = StreamingHealthMonitor(
+            metrics_collector=MetricsCollector(),
+            alert_manager=AlertManager(alert_cfg.get("channels", ["log"])),
+            recovery_manager=RecoveryManager(
+                max_attempts=thresh_cfg.get("max_reconnect_attempts", 5)
+            ),
+            check_interval=mon_cfg.get("check_interval", 5),
+            thresholds={
+                "max_latency_ms": thresh_cfg.get("max_latency_ms", 100),
+                "min_throughput_msg_per_sec": thresh_cfg.get(
+                    "min_throughput_msg_per_sec", 0
+                ),
+                "max_reconnect_attempts": thresh_cfg.get("max_reconnect_attempts", 5),
+            },
+        )
         # Top-level symbol list for convenience
         self._config_symbols = cfg.get("symbols", []) or []
         for provider_cfg in cfg.get("providers", []):
@@ -103,6 +129,7 @@ class StreamingGateway:
     async def _dispatch(self, provider: str, message: Dict) -> None:
         symbol = message.get("symbol", "")
         self.metrics.record_message(provider, symbol)
+        self.health_monitor.record_message(provider)
         processed = self.message_processor.process(message)
         await self.buffer.put(processed)
         msg_type = message.get("type", "trades")
@@ -119,7 +146,10 @@ class StreamingGateway:
 
     async def _start(self) -> None:
         await self.websocket_manager.connect_all()
-        # Optional health monitoring loop in the background
+        for adapter in self.websocket_manager.adapters:
+            self.health_monitor.register_connection(adapter.name)
+        asyncio.create_task(self.health_monitor.monitor_connection_health())
+        # Optional legacy health check for connection pool
         try:
             with open(self.config_path, "r") as f:
                 cfg = yaml.safe_load(f).get("streaming", {})
