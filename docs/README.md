@@ -56,7 +56,7 @@ The [Quick Reference Guide](quick-reference.md) includes:
 - **Common Patterns** - Data loading, feature engineering, model training, backtesting
 - **Technical Indicators** - Usage examples for all technical indicators
 - **Custom Features** - Momentum score and volatility breakout functions
-- **Risk Management** - Stop-loss, take-profit, and position sizing
+- **Risk Management** - Stop-loss, take-profit, drawdown guard, and position sizing
 - **Performance Metrics** - Classification and trading metrics
 - **Visualization** - Price charts and performance plots
 - **Configuration Examples** - Model and feature configuration templates
@@ -84,14 +84,17 @@ QuantTradeAI/
 │   ├── backtest/            # Backtesting
 │   │   └── backtester.py    # Trade simulation
 │   ├── trading/             # Trading utilities
-│   │   └── risk.py          # Risk management
+│   │   ├── drawdown_guard.py # Drawdown protection
+│   │   ├── portfolio.py     # Portfolio operations
+│   │   └── risk_manager.py  # Risk coordination
 │   └── utils/               # Utilities
 │       ├── metrics.py       # Performance metrics
 │       ├── visualization.py # Plotting functions
 │       └── config_schemas.py # Configuration validation
 ├── config/                  # Configuration files
 │   ├── model_config.yaml    # Model parameters
-│   └── features_config.yaml # Feature engineering settings
+│   ├── features_config.yaml # Feature engineering settings
+│   └── risk_config.yaml     # Drawdown and turnover limits
 └── docs/                    # Documentation
     ├── api/                 # API documentation
     ├── quick-reference.md   # Quick reference guide
@@ -138,7 +141,7 @@ QuantTradeAI/
 - **Stop-loss and take-profit** rules
 - **Position sizing** calculations
 - **Risk-adjusted returns** analysis
-- **Drawdown monitoring**
+- **Drawdown and turnover guards**
 
 ## 📊 Supported Assets
 

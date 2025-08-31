@@ -22,6 +22,7 @@
 - 🧪 Features: technical indicators, custom signals, optional LLM sentiment
 - 🤖 Models: ensemble VotingClassifier (LR, RF, XGBoost) with Optuna tuning
 - 📈 Backtesting: execution costs, slippage, liquidity limits, market impact modeling, portfolio helpers
+- 🛡️ Risk management: drawdown and turnover guards
 - 🛠️ CLI: end‑to‑end pipeline, evaluation, and model backtest in one place
 
 ## Quickstart
@@ -64,6 +65,7 @@ Artifacts are written to:
 - `config/model_config.yaml`: symbols, date ranges, caching, training, trading
 - `config/features_config.yaml`: pipeline steps, indicators, selection, sentiment
 - `config/backtest_config.yaml`: execution costs, slippage, liquidity
+- `config/risk_config.yaml`: drawdown protection and turnover limits
 - `config/streaming.yaml`: providers, auth, subscriptions (optional)
 
 Time‑aware evaluation rules:

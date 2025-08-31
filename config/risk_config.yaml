@@ -1,0 +1,14 @@
+risk_management:
+  drawdown_protection:
+    enabled: true
+    max_drawdown_pct: 0.15
+    max_drawdown_absolute: 50000
+    warning_threshold: 0.8
+    soft_stop_threshold: 0.9
+    hard_stop_threshold: 1.0
+    emergency_stop_threshold: 1.1
+    lookback_periods: [1, 7, 30]
+  turnover_limits:
+    daily_max: 2.0
+    weekly_max: 5.0
+    monthly_max: 15.0

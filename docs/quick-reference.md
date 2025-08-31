@@ -127,10 +127,11 @@ qty = position_size(capital=10000, risk_per_trade=0.02, stop_loss_pct=0.05, pric
 ```
 
 ```python
-from quanttradeai import PortfolioManager
+from quanttradeai.trading import DrawdownGuard, PortfolioManager
 
-# Allocate capital across multiple symbols
-pm = PortfolioManager(10000)
+# Allocate capital across multiple symbols with drawdown protection
+guard = DrawdownGuard(config_path="config/risk_config.yaml")
+pm = PortfolioManager(10000, drawdown_guard=guard)
 pm.open_position('AAPL', price=150, stop_loss_pct=0.05)
 pm.open_position('TSLA', price=250, stop_loss_pct=0.05)
 print(f"Portfolio exposure: {pm.risk_exposure:.2%}")

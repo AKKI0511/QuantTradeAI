@@ -16,5 +16,13 @@ Quick Start:
 
 from .portfolio import PortfolioManager
 from .risk import apply_stop_loss_take_profit, position_size
+from .drawdown_guard import DrawdownGuard
+from .risk_manager import RiskManager
 
-__all__ = ["PortfolioManager", "apply_stop_loss_take_profit", "position_size"]
+__all__ = [
+    "PortfolioManager",
+    "apply_stop_loss_take_profit",
+    "position_size",
+    "DrawdownGuard",
+    "RiskManager",
+]

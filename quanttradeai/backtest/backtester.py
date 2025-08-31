@@ -21,6 +21,7 @@ import pandas as pd
 from quanttradeai.utils.metrics import sharpe_ratio, max_drawdown
 from quanttradeai.trading.risk import apply_stop_loss_take_profit
 from quanttradeai.trading.portfolio import PortfolioManager
+from quanttradeai.trading.drawdown_guard import DrawdownGuard
 
 
 def _simulate_single(
@@ -196,6 +197,7 @@ def simulate_trades(
     slippage: float = 0.0,
     execution: dict | None = None,
     portfolio: PortfolioManager | None = None,
+    drawdown_guard: DrawdownGuard | None = None,
 ) -> pd.DataFrame | dict[str, pd.DataFrame]:
     """Simulate trades using label signals.
 
@@ -270,14 +272,23 @@ def simulate_trades(
         results["portfolio"] = pd.DataFrame(
             {"strategy_return": combined, "equity_curve": portfolio_curve}
         )
+        if drawdown_guard is not None:
+            curve = results["portfolio"]["equity_curve"]
+            for t, v in zip(curve.index, curve):
+                drawdown_guard.update_portfolio_value(float(v), t)
         return results
     else:
-        return _simulate_single(
+        res = _simulate_single(
             df,
             stop_loss_pct=stop_loss_pct,
             take_profit_pct=take_profit_pct,
             execution=exec_cfg,
         )
+        if drawdown_guard is not None:
+            curve = res["equity_curve"]
+            for t, v in zip(curve.index, curve):
+                drawdown_guard.update_portfolio_value(float(v), t)
+        return res
 
 
 def compute_metrics(data: pd.DataFrame, risk_free_rate: float = 0.0) -> dict:
