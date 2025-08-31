@@ -9,6 +9,7 @@ The framework uses several configuration files:
 - **`config/model_config.yaml`** - Model parameters and data settings
 - **`config/features_config.yaml`** - Feature engineering settings
 - **`config/backtest_config.yaml`** - Execution settings for backtests
+- **`config/impact_config.yaml`** - Market impact parameters by asset class
 
 ## 🔧 Model Configuration
 
@@ -106,7 +107,20 @@ execution:
     enabled: false
     max_participation: 0.1
     volume_source: bar_volume
+  impact:
+    enabled: false
+    model: linear        # linear, square_root, almgren_chriss
+    alpha: 0.0
+    beta: 0.0
+    decay: 0.0           # temporary impact decay rate
+    spread: 0.0          # bid-ask spread per share
+    average_daily_volume: 0
 ```
+
+The `impact` block activates market impact modeling.  Parameters `alpha`,
+`beta`, and optional `gamma` control the chosen model, while `decay` and
+`spread` apply temporary impact decay and bid-ask spread costs.  Default
+parameter sets per asset class can be defined in `config/impact_config.yaml`.
 
 ## 🔧 Feature Configuration
 

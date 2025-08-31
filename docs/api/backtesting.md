@@ -4,16 +4,27 @@ API documentation for trade simulation and performance metrics.
 
 ## Trade Simulation
 
-### `simulate_trades(df: pd.DataFrame | dict[str, pd.DataFrame], stop_loss_pct: float | None = None, take_profit_pct: float | None = None, transaction_cost: float = 0.0, slippage: float = 0.0, portfolio: PortfolioManager | None = None) -> pd.DataFrame | dict[str, pd.DataFrame]`
+### `simulate_trades(
+    df: pd.DataFrame | dict[str, pd.DataFrame],
+    stop_loss_pct: float | None = None,
+    take_profit_pct: float | None = None,
+    transaction_cost: float = 0.0,
+    slippage: float = 0.0,
+    execution: dict | None = None,
+    portfolio: PortfolioManager | None = None,
+) -> pd.DataFrame | dict[str, pd.DataFrame]`
 
-Simulates trades using label signals.
+Simulates trades using label signals.  The ``transaction_cost`` and ``slippage``
+arguments are shorthand for populating the ``execution`` configuration, which
+can also specify liquidity and market impact parameters.
 
 **Parameters:**
 - `df` (pd.DataFrame or dict[str, pd.DataFrame]): Single DataFrame or mapping of symbol to DataFrame with Close prices and label column
 - `stop_loss_pct` (float, optional): Stop-loss percentage as decimal
 - `take_profit_pct` (float, optional): Take-profit percentage as decimal
-- `transaction_cost` (float, optional): Fixed transaction fee per trade
-- `slippage` (float, optional): Additional cost per trade to model slippage
+- `transaction_cost` (float, optional): Transaction cost in decimal bps
+- `slippage` (float, optional): Slippage cost in decimal bps
+- `execution` (dict, optional): Detailed execution settings including `transaction_costs`, `slippage`, `liquidity`, and `impact`
 - `portfolio` (PortfolioManager, optional): Portfolio manager required when `df` is a dictionary
 
 **Returns:**
@@ -23,34 +34,55 @@ Simulates trades using label signals.
 ```python
 from quanttradeai import simulate_trades
 
-# Simulate trades with stop-loss and take-profit
-df_with_trades = simulate_trades(df, stop_loss_pct=0.02, take_profit_pct=0.04)
-
-# Simulate trades without risk management
-df_with_trades = simulate_trades(df)
+# Simulate trades with market impact
+df_with_trades = simulate_trades(
+    df,
+    execution={
+        "impact": {
+            "enabled": True,
+            "model": "linear",
+            "alpha": 0.5,
+            "beta": 0.0,
+            "average_daily_volume": 1_000_000,
+            "spread": 0.02,
+        }
+    },
+)
 ```
 
 ### `compute_metrics(data: pd.DataFrame, risk_free_rate: float = 0.0) -> dict`
 
-Calculates basic performance metrics for a strategy.
+Calculates gross and net performance metrics, including cost breakdowns.
 
 **Parameters:**
-- `data` (pd.DataFrame): Output from simulate_trades
+- `data` (pd.DataFrame): Output from `simulate_trades`
 - `risk_free_rate` (float): Annual risk-free rate for Sharpe ratio
 
 **Returns:**
-- `dict`: Dictionary with cumulative_return, sharpe_ratio, and max_drawdown
+- `dict`: Summary with keys like `gross_pnl`, `net_pnl`, `total_costs`, `total_slippage_cost`, and `total_impact_cost`
 
 **Example:**
 ```python
 from quanttradeai import compute_metrics
 
-# Calculate performance metrics
 metrics = compute_metrics(df_with_trades, risk_free_rate=0.02)
-print(f"Cumulative Return: {metrics['cumulative_return']:.4f}")
-print(f"Sharpe Ratio: {metrics['sharpe_ratio']:.4f}")
-print(f"Max Drawdown: {metrics['max_drawdown']:.4f}")
+print(f"Impact Cost: {metrics['total_impact_cost']:.6f}")
+print(f"Net PnL: {metrics['net_pnl']:.4f}")
 ```
+
+## Market Impact Models
+
+QuantTradeAI includes several market impact models for estimating execution
+price effects.  They are available through the public API:
+
+- `LinearImpactModel`
+- `SquareRootImpactModel`
+- `AlmgrenChrissModel`
+- `ImpactCalculator`
+
+These models can be configured via the `execution.impact` section of the
+backtest configuration or passed directly through the `execution` argument in
+`simulate_trades`.
 
 ## Complete Backtesting Workflow
 

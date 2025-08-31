@@ -131,6 +131,7 @@ QuantTradeAI/
 - **Trade simulation** with realistic constraints
 - **Risk management** (stop-loss, take-profit)
 - **Performance metrics** (Sharpe ratio, max drawdown)
+- **Market impact modeling** for execution cost realism
 - **Position sizing** based on risk parameters
 
 ### Risk Management

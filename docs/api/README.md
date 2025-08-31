@@ -8,7 +8,7 @@ Complete API documentation for QuantTradeAI.
 - **[Data Loading](data.md)** - DataLoader, DataProcessor, DataSource classes
 - **[Feature Engineering](features.md)** - Technical indicators and custom features
 - **[Machine Learning](models.md)** - MomentumClassifier and training utilities
-- **[Backtesting](backtesting.md)** - Trade simulation and performance metrics
+- **[Backtesting](backtesting.md)** - Trade simulation, market impact models, and performance metrics
 - **[Trading Utilities](trading.md)** - Risk management and position sizing
  - **[Streaming](streaming.md)** - Real-time WebSocket gateway, adapters, monitoring
 
