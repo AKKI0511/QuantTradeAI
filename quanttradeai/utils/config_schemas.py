@@ -96,6 +96,27 @@ class ExecutionConfig(BaseModel):
     impact: MarketImpactConfig = MarketImpactConfig()
 
 
+class DrawdownProtectionConfig(BaseModel):
+    enabled: bool = False
+    max_drawdown_pct: float | None = None
+    max_drawdown_absolute: float | None = None
+    warning_threshold: float = 0.8
+    soft_stop_threshold: float = 0.9
+    hard_stop_threshold: float = 1.0
+    lookback_periods: List[int] = [1, 7, 30]
+
+
+class TurnoverLimitsConfig(BaseModel):
+    daily_max: float | None = None
+    weekly_max: float | None = None
+    monthly_max: float | None = None
+
+
+class RiskManagementConfig(BaseModel):
+    drawdown_protection: DrawdownProtectionConfig = DrawdownProtectionConfig()
+    turnover_limits: TurnoverLimitsConfig = TurnoverLimitsConfig()
+
+
 class BacktestConfigSchema(BaseModel):
     data_path: str
     execution: ExecutionConfig = ExecutionConfig()

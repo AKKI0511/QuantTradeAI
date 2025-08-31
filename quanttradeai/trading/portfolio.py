@@ -17,8 +17,10 @@ Typical Usage:
 from __future__ import annotations
 
 from typing import Dict
+from datetime import datetime
 
 from .risk import position_size
+from .risk_manager import RiskManager
 
 
 class PortfolioManager:
@@ -29,12 +31,14 @@ class PortfolioManager:
         capital: float,
         max_risk_per_trade: float = 0.02,
         max_portfolio_risk: float = 0.1,
+        risk_manager: RiskManager | None = None,
     ) -> None:
         self.initial_capital = capital
         self.cash = capital
         self.max_risk_per_trade = max_risk_per_trade
         self.max_portfolio_risk = max_portfolio_risk
         self.positions: Dict[str, dict] = {}
+        self.risk_manager = risk_manager
 
     @property
     def portfolio_value(self) -> float:
@@ -61,6 +65,17 @@ class PortfolioManager:
         if symbol in self.positions:
             raise ValueError(f"Position for {symbol} already exists")
 
+        if self.risk_manager is not None:
+            self.risk_manager.update(self.portfolio_value, datetime.utcnow())
+            if self.risk_manager.should_halt_trading():
+                return 0
+
+        multiplier = (
+            self.risk_manager.get_position_size_multiplier()
+            if self.risk_manager is not None
+            else 1.0
+        )
+
         if stop_loss_pct is None or stop_loss_pct <= 0:
             qty = int(self.max_risk_per_trade * self.portfolio_value / price)
             stop_loss = 0.0
@@ -75,16 +90,20 @@ class PortfolioManager:
             qty = min(qty, allowed_qty)
             stop_loss = stop_loss_pct
 
+        qty = int(qty * multiplier)
         qty = min(qty, int(self.cash // price))
         if qty <= 0:
             return 0
 
-        self.cash -= qty * price
+        notional = qty * price
+        self.cash -= notional
         self.positions[symbol] = {
             "qty": qty,
             "price": price,
             "stop_loss_pct": stop_loss,
         }
+        if self.risk_manager is not None:
+            self.risk_manager.record_trade(notional, datetime.utcnow())
         return qty
 
     def close_position(self, symbol: str, price: float) -> int:
@@ -92,5 +111,8 @@ class PortfolioManager:
         pos = self.positions.pop(symbol, None)
         if pos is None:
             return 0
-        self.cash += pos["qty"] * price
+        notional = pos["qty"] * price
+        self.cash += notional
+        if self.risk_manager is not None:
+            self.risk_manager.record_trade(notional, datetime.utcnow())
         return pos["qty"]
