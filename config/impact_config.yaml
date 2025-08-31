@@ -1,0 +1,10 @@
+# Market impact parameters by asset class
+asset_classes:
+  equities:
+    alpha: 0.1
+    beta: 0.05
+    model: linear
+  futures:
+    alpha: 0.2
+    beta: 0.1
+    model: square_root

@@ -13,5 +13,13 @@ execution:
     enabled: false
     max_participation: 0.1
     volume_source: bar_volume
+  impact:
+    enabled: false
+    model: linear
+    alpha: 0.0
+    beta: 0.0
+    decay: 0.0
+    spread: 0.0
+    average_daily_volume: 0
 # sample data path for CLI backtest
 data_path: data/backtest_sample.csv

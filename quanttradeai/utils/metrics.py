@@ -86,14 +86,21 @@ def compute_performance(data: pd.DataFrame, risk_free_rate: float = 0.0) -> dict
         total_slippage = float(
             (ledger["slippage_cost"] / ledger["reference_price"]).sum()
         )
+        total_impact = float(
+            (ledger.get("impact_cost", 0) / ledger["reference_price"]).sum()
+            if "impact_cost" in ledger
+            else 0.0
+        )
     else:
         total_costs = 0.0
         total_slippage = 0.0
+        total_impact = 0.0
 
     summary = {
         "gross_pnl": float(float(equity.iloc[-1]) - 1.0),
         "total_costs": float(total_costs),
         "total_slippage_cost": float(total_slippage),
+        "total_impact_cost": float(total_impact),
         "net_pnl": float(float(net_equity.iloc[-1]) - 1.0),
         "gross_sharpe": float(sharpe_ratio(returns, risk_free_rate)),
         "net_sharpe": float(sharpe_ratio(net_returns, risk_free_rate)),
