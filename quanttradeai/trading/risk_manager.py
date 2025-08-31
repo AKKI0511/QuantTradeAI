@@ -32,6 +32,11 @@ class RiskManager:
             return self.drawdown_guard.should_halt_trading()
         return False
 
+    def should_emergency_liquidate(self) -> bool:
+        if self.drawdown_guard is not None:
+            return self.drawdown_guard.should_emergency_liquidate()
+        return False
+
     def get_risk_metrics(self) -> dict:
         if self.drawdown_guard is not None:
             return self.drawdown_guard.get_risk_metrics()

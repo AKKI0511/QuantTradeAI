@@ -67,6 +67,9 @@ class PortfolioManager:
 
         if self.risk_manager is not None:
             self.risk_manager.update(self.portfolio_value, datetime.utcnow())
+            if self.risk_manager.should_emergency_liquidate():
+                self.close_all_positions()
+                return 0
             if self.risk_manager.should_halt_trading():
                 return 0
 
@@ -116,3 +119,16 @@ class PortfolioManager:
         if self.risk_manager is not None:
             self.risk_manager.record_trade(notional, datetime.utcnow())
         return pos["qty"]
+
+    def close_all_positions(
+        self, prices: Dict[str, float] | None = None
+    ) -> Dict[str, int]:
+        """Close all positions using provided or last known prices."""
+        closed: Dict[str, int] = {}
+        prices = prices or {}
+        symbols = list(self.positions.keys())
+        for symbol in symbols:
+            price = prices.get(symbol, self.positions[symbol]["price"])
+            qty = self.close_position(symbol, price)
+            closed[symbol] = qty
+        return closed

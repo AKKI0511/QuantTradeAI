@@ -103,6 +103,7 @@ class DrawdownProtectionConfig(BaseModel):
     warning_threshold: float = 0.8
     soft_stop_threshold: float = 0.9
     hard_stop_threshold: float = 1.0
+    emergency_stop_threshold: float = 1.1
     lookback_periods: List[int] = [1, 7, 30]
 
 

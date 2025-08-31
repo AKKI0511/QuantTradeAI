@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 
+import yaml
+
 from quanttradeai.utils.config_schemas import (
     DrawdownProtectionConfig,
     RiskManagementConfig,
@@ -33,6 +35,7 @@ class _RiskState:
     drawdown_abs: float = 0.0
     size_multiplier: float = 1.0
     halt_trading: bool = False
+    emergency: bool = False
 
 
 class DrawdownGuard:
@@ -42,7 +45,13 @@ class DrawdownGuard:
         self,
         config: DrawdownProtectionConfig | RiskManagementConfig | Dict | None = None,
         turnover_limits: TurnoverLimitsConfig | None = None,
+        config_path: str | None = None,
     ) -> None:
+        if config_path is not None:
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            config = data.get("risk_management", data)
+
         if isinstance(config, RiskManagementConfig):
             dd_cfg = config.drawdown_protection
             to_cfg = config.turnover_limits
@@ -102,21 +111,30 @@ class DrawdownGuard:
 
     def _update_state(self, ratio: float) -> None:
         cfg = self.config
-        if ratio >= cfg.hard_stop_threshold:
+        if cfg.emergency_stop_threshold and ratio >= cfg.emergency_stop_threshold:
             self._state.size_multiplier = 0.0
             self._state.halt_trading = True
+            self._state.emergency = True
+            logger.critical("Emergency stop triggered (ratio %.2f)", ratio)
+        elif ratio >= cfg.hard_stop_threshold:
+            self._state.size_multiplier = 0.0
+            self._state.halt_trading = True
+            self._state.emergency = False
             logger.critical("Hard stop triggered (ratio %.2f)", ratio)
         elif ratio >= cfg.soft_stop_threshold:
             self._state.size_multiplier = 0.5
             self._state.halt_trading = False
+            self._state.emergency = False
             logger.warning("Soft stop triggered (ratio %.2f)", ratio)
         elif ratio >= cfg.warning_threshold:
             self._state.size_multiplier = 1.0
             logger.warning("Warning level reached (ratio %.2f)", ratio)
             self._state.halt_trading = False
+            self._state.emergency = False
         else:
             self._state.size_multiplier = 1.0
             self._state.halt_trading = False
+            self._state.emergency = False
 
     def update_portfolio_value(self, current_value: float, timestamp: datetime) -> None:
         with self._lock:
@@ -152,8 +170,41 @@ class DrawdownGuard:
             )
             self._update_state(max(ratio, dd_ratio))
 
-    def check_drawdown_limits(self) -> None:
-        return
+    def check_drawdown_limits(self) -> Dict[str, float | str]:
+        with self._lock:
+            now = datetime.utcnow()
+            turnover_ratio = self._evaluate_turnover(now)
+            dd_ratio = 0.0
+            cfg = self.config
+            if cfg.max_drawdown_pct:
+                dd_ratio = max(
+                    dd_ratio, self._state.drawdown_pct / cfg.max_drawdown_pct
+                )
+            if cfg.max_drawdown_absolute:
+                dd_ratio = max(
+                    dd_ratio, self._state.drawdown_abs / cfg.max_drawdown_absolute
+                )
+            ratio = max(dd_ratio, turnover_ratio)
+            self._update_state(ratio)
+
+            if self._state.emergency:
+                status = "emergency_stop"
+            elif self._state.halt_trading:
+                status = "hard_stop"
+            elif self._state.size_multiplier < 1.0:
+                status = "soft_stop"
+            elif ratio >= cfg.warning_threshold:
+                status = "warning"
+            else:
+                status = "ok"
+
+            return {
+                "status": status,
+                "ratio": ratio,
+                "drawdown_pct": self._state.drawdown_pct,
+                "drawdown_abs": self._state.drawdown_abs,
+                "turnover_ratio": turnover_ratio,
+            }
 
     def get_position_size_multiplier(self) -> float:
         with self._lock:
@@ -162,6 +213,10 @@ class DrawdownGuard:
     def should_halt_trading(self) -> bool:
         with self._lock:
             return self._state.halt_trading
+
+    def should_emergency_liquidate(self) -> bool:
+        with self._lock:
+            return self._state.emergency
 
     def get_risk_metrics(self) -> Dict[str, float]:
         with self._lock:
