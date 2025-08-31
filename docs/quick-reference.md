@@ -71,8 +71,19 @@ classifier.save_model("models/trained/AAPL")
 ```python
 from quanttradeai import simulate_trades, compute_metrics
 
-# Simulate trades
-df_trades = simulate_trades(df_labeled, stop_loss_pct=0.02, take_profit_pct=0.04)
+# Simulate trades with market impact
+df_trades = simulate_trades(
+    df_labeled,
+    execution={
+        "impact": {
+            "enabled": True,
+            "model": "linear",
+            "alpha": 0.5,
+            "beta": 0.0,
+            "average_daily_volume": 1_000_000,
+        }
+    },
+)
 
 # Calculate metrics
 metrics = compute_metrics(df_trades, risk_free_rate=0.02)

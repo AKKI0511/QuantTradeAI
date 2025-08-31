@@ -35,7 +35,15 @@ from .data.processor import DataProcessor
 from .models.classifier import MomentumClassifier
 from .trading.portfolio import PortfolioManager
 from .trading.risk import apply_stop_loss_take_profit, position_size
-from .backtest.backtester import simulate_trades, compute_metrics
+from .backtest import (
+    simulate_trades,
+    compute_metrics,
+    MarketImpactModel,
+    LinearImpactModel,
+    SquareRootImpactModel,
+    AlmgrenChrissModel,
+    ImpactCalculator,
+)
 
 __all__ = [
     "DataSource",
@@ -50,4 +58,9 @@ __all__ = [
     "position_size",
     "simulate_trades",
     "compute_metrics",
+    "MarketImpactModel",
+    "LinearImpactModel",
+    "SquareRootImpactModel",
+    "AlmgrenChrissModel",
+    "ImpactCalculator",
 ]

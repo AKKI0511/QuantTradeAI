@@ -38,6 +38,29 @@ def _simulate_single(
     tc = exec_cfg.get("transaction_costs", {})
     sl = exec_cfg.get("slippage", {})
     liq = exec_cfg.get("liquidity", {})
+    impact_cfg = exec_cfg.get("impact", {})
+
+    impact_calc = None
+    if impact_cfg.get("enabled", False):
+        from .impact import MODEL_MAP, ImpactCalculator
+
+        model_cls = MODEL_MAP.get(
+            impact_cfg.get("model", "linear"), MODEL_MAP["linear"]
+        )
+        model_params = {k: v for k, v in impact_cfg.items() if k in {"alpha", "beta"}}
+        # ``gamma`` is only relevant for the Almgren-Chriss model; the
+        # configuration schema sets it to ``None`` by default, which would raise
+        # ``TypeError`` if passed to other models. Only include it when provided
+        # and when the chosen model expects it.
+        gamma = impact_cfg.get("gamma")
+        if gamma is not None and model_cls is MODEL_MAP["almgren_chriss"]:
+            model_params["gamma"] = gamma
+        model = model_cls(**model_params)
+        impact_calc = ImpactCalculator(
+            model=model,
+            decay=impact_cfg.get("decay", 0.0),
+            spread=impact_cfg.get("spread", 0.0),
+        )
 
     ref_col = "Close"
     if sl.get("reference_price", "close") == "mid" and "Mid" in data.columns:
@@ -84,6 +107,19 @@ def _simulate_single(
                         slip_bps = slip_amt / price * 10000
                 fill_price = price + slip_amt if side > 0 else price - slip_amt
 
+                impact_cost = 0.0
+                impact_temp = 0.0
+                impact_perm = 0.0
+                if impact_calc is not None:
+                    adv = impact_cfg.get("average_daily_volume", float(volume))
+                    imp = impact_calc.impact_cost(exec_qty, adv)
+                    impact_cost = imp["total"]
+                    impact_temp = imp["temp"] * exec_qty
+                    impact_perm = imp["perm"] * exec_qty
+                    fill_price += (imp["temp"] + imp["spread"]) * (
+                        1 if side > 0 else -1
+                    )
+
                 t_cost = 0.0
                 if tc.get("enabled", False) and tc.get("value", 0) > 0:
                     if tc.get("mode", "bps") == "bps":
@@ -95,7 +131,7 @@ def _simulate_single(
                             t_cost = tc["value"]
 
                 sl_cost = abs(slip_amt) * exec_qty
-                total_cost = t_cost + sl_cost
+                total_cost = t_cost + sl_cost + impact_cost
 
                 gross_pnl = 0.0
                 if position != 0 and side != (1 if position > 0 else -1):
@@ -127,6 +163,9 @@ def _simulate_single(
                         "gross_pnl_contrib": gross_pnl,
                         "transaction_cost": t_cost,
                         "slippage_cost": sl_cost,
+                        "impact_temp_cost": impact_temp,
+                        "impact_perm_cost": impact_perm,
+                        "impact_cost": impact_cost,
                         "costs": total_cost,
                         "slippage_bps_applied": slip_bps,
                         "net_pnl_contrib": gross_pnl - total_cost,

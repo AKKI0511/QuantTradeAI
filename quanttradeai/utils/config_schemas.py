@@ -78,10 +78,22 @@ class LiquidityConfig(BaseModel):
     volume_source: str = "bar_volume"
 
 
+class MarketImpactConfig(BaseModel):
+    enabled: bool = False
+    model: Literal["linear", "square_root", "almgren_chriss"] = "linear"
+    alpha: float = 0.0
+    beta: float = 0.0
+    gamma: float | None = None
+    decay: float = 0.0
+    spread: float = 0.0
+    average_daily_volume: float | None = None
+
+
 class ExecutionConfig(BaseModel):
     transaction_costs: TransactionCostConfig = TransactionCostConfig()
     slippage: SlippageConfig = SlippageConfig()
     liquidity: LiquidityConfig = LiquidityConfig()
+    impact: MarketImpactConfig = MarketImpactConfig()
 
 
 class BacktestConfigSchema(BaseModel):
