@@ -10,6 +10,7 @@ The framework uses several configuration files:
 - **`config/features_config.yaml`** - Feature engineering settings
 - **`config/backtest_config.yaml`** - Execution settings for backtests
 - **`config/impact_config.yaml`** - Market impact parameters by asset class
+- **`config/risk_config.yaml`** - Drawdown protection and turnover limits
 
 ## 🔧 Model Configuration
 
@@ -232,6 +233,26 @@ pipeline:
     - scale_features
     - select_features
 ```
+
+## 🛡️ Risk Management
+
+```yaml
+risk_management:
+  drawdown_protection:
+    enabled: true
+    max_drawdown_pct: 0.15
+    warning_threshold: 0.8
+    soft_stop_threshold: 0.9
+    hard_stop_threshold: 1.0
+  turnover_limits:
+    daily_max: 2.0
+    weekly_max: 5.0
+    monthly_max: 15.0
+```
+
+**Key Parameters:**
+- `drawdown_protection`: monitors portfolio equity and halts trading at specified levels
+- `turnover_limits`: caps how frequently positions may change over each period
 
 ## 🎯 Common Configurations
 
