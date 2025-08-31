@@ -47,9 +47,14 @@ def _simulate_single(
         model_cls = MODEL_MAP.get(
             impact_cfg.get("model", "linear"), MODEL_MAP["linear"]
         )
-        model_params = {
-            k: v for k, v in impact_cfg.items() if k in {"alpha", "beta", "gamma"}
-        }
+        model_params = {k: v for k, v in impact_cfg.items() if k in {"alpha", "beta"}}
+        # ``gamma`` is only relevant for the Almgren-Chriss model; the
+        # configuration schema sets it to ``None`` by default, which would raise
+        # ``TypeError`` if passed to other models. Only include it when provided
+        # and when the chosen model expects it.
+        gamma = impact_cfg.get("gamma")
+        if gamma is not None and model_cls is MODEL_MAP["almgren_chriss"]:
+            model_params["gamma"] = gamma
         model = model_cls(**model_params)
         impact_calc = ImpactCalculator(
             model=model,
