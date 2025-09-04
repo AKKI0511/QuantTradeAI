@@ -30,9 +30,15 @@ from .data.datasource import (
     AlphaVantageDataSource,
     WebSocketDataSource,
 )
+
+# Lazily import optional dependencies to keep lightweight usage possible
 from .data.loader import DataLoader
 from .data.processor import DataProcessor
-from .models.classifier import MomentumClassifier
+
+try:  # pragma: no cover - optional heavy dependency
+    from .models.classifier import MomentumClassifier
+except Exception:  # pragma: no cover - tolerate missing ML libs
+    MomentumClassifier = None  # type: ignore[assignment]
 from .trading.portfolio import PortfolioManager
 from .trading.risk import apply_stop_loss_take_profit, position_size
 from .backtest import (

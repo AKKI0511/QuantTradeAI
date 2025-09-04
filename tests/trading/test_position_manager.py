@@ -1,0 +1,55 @@
+"""Tests for :mod:`quanttradeai.trading.position_manager`."""
+
+from datetime import datetime, timedelta
+
+import pytest
+
+from quanttradeai.trading import PositionManager
+from quanttradeai.utils.config_schemas import (
+    DrawdownProtectionConfig,
+    MarketImpactConfig,
+    PositionManagerConfig,
+    RiskManagementConfig,
+)
+
+
+def test_open_close_reconcile() -> None:
+    pm = PositionManager.from_config(PositionManagerConfig())
+    pm.cash = 1000
+    pm.open_position("AAPL", qty=10, price=10)
+    pm.handle_market_data({"symbol": "AAPL", "price": 11, "timestamp": datetime.utcnow()})
+    assert pm.portfolio_value == pytest.approx(900 + 10 * 11)
+    closed = pm.close_position("AAPL", price=12)
+    assert closed == 10
+    rec = pm.reconcile_positions(datetime.utcnow())
+    assert rec["intraday"].get("AAPL", 0) == 0
+    assert rec["daily"].get("AAPL", 0) == 0
+
+
+def test_impact_cost() -> None:
+    cfg = PositionManagerConfig(
+        impact=MarketImpactConfig(enabled=True, model="linear", alpha=0.1, beta=0.05)
+    )
+    pm = PositionManager.from_config(cfg)
+    pm.open_position("AAPL", qty=100, price=10, adv=1000)
+    metrics = pm.execution_metrics()
+    assert metrics["trades"] == 1
+    assert metrics["total_impact_cost"] > 0
+
+
+def test_risk_manager_integration() -> None:
+    cfg = PositionManagerConfig(
+        risk_management=RiskManagementConfig(
+            drawdown_protection=DrawdownProtectionConfig(enabled=True, max_drawdown_pct=0.1)
+        )
+    )
+    pm = PositionManager.from_config(cfg)
+    pm.cash = 10000
+    pm.open_position("AAPL", qty=100, price=100)
+    ts = datetime.utcnow()
+    pm.handle_market_data({"symbol": "AAPL", "price": 100, "timestamp": ts})
+    assert pm.risk_manager is not None
+    assert not pm.risk_manager.should_halt_trading()
+    pm.handle_market_data({"symbol": "AAPL", "price": 80, "timestamp": ts + timedelta(minutes=1)})
+    assert pm.risk_manager.should_halt_trading()
+

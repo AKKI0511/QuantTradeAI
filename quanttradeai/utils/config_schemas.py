@@ -121,3 +121,12 @@ class RiskManagementConfig(BaseModel):
 class BacktestConfigSchema(BaseModel):
     data_path: str
     execution: ExecutionConfig = ExecutionConfig()
+
+
+class PositionManagerConfig(BaseModel):
+    """Configuration for real-time position management."""
+
+    risk_management: RiskManagementConfig = RiskManagementConfig()
+    impact: MarketImpactConfig = MarketImpactConfig()
+    reconciliation: Dict[str, str] = {"intraday": "1m", "daily": "1d"}
+    mode: Literal["paper", "live"] = "paper"
