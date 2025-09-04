@@ -9,7 +9,7 @@ Complete API documentation for QuantTradeAI.
 - **[Feature Engineering](features.md)** - Technical indicators and custom features
 - **[Machine Learning](models.md)** - MomentumClassifier and training utilities
 - **[Backtesting](backtesting.md)** - Trade simulation, market impact models, and performance metrics
-- **[Trading Utilities](trading.md)** - Risk management and position sizing
+- **[Trading Utilities](trading.md)** - Risk management, position sizing, live position control
  - **[Streaming](streaming.md)** - Real-time WebSocket gateway, adapters, monitoring
 
 ## 🚀 Quick Navigation
@@ -19,7 +19,7 @@ Complete API documentation for QuantTradeAI.
 - **Feature Creation**: [Feature Engineering](features.md)
 - **Model Training**: [Machine Learning](models.md)
 - **Strategy Testing**: [Backtesting](backtesting.md)
-- **Risk Management**: [Trading Utilities](trading.md)
+- **Risk Management & Execution**: [Trading Utilities](trading.md)
  - **Real-time Data**: [Streaming](streaming.md)
 
 ### By Component

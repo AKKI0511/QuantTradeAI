@@ -23,6 +23,7 @@
 - 🤖 Models: ensemble VotingClassifier (LR, RF, XGBoost) with Optuna tuning
 - 📈 Backtesting: execution costs, slippage, liquidity limits, market impact modeling, portfolio helpers
 - 🛡️ Risk management: drawdown and turnover guards
+- 📟 Live trading: real-time position manager with intraday risk controls
 - 🛠️ CLI: end‑to‑end pipeline, evaluation, and model backtest in one place
 
 ## Quickstart
@@ -67,6 +68,7 @@ Artifacts are written to:
 - `config/backtest_config.yaml`: execution costs, slippage, liquidity
 - `config/risk_config.yaml`: drawdown protection and turnover limits
 - `config/streaming.yaml`: providers, auth, subscriptions (optional)
+- `config/position_manager.yaml`: live position tracking and impact parameters
 
 Time‑aware evaluation rules:
 - If `data.test_start` and `data.test_end` set: train = dates < `test_start`; test = `test_start` ≤ dates ≤ `test_end`
