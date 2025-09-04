@@ -179,6 +179,13 @@ class PositionManager:
         if qty == 0:
             return
         ts = timestamp or datetime.utcnow()
+        if self.risk_manager is not None:
+            if self.risk_manager.should_halt_trading():
+                logger.warning("Trade halted by risk guard for %s", symbol)
+                return
+            qty = int(qty * self.risk_manager.get_position_size_multiplier())
+            if qty == 0:
+                return
         with self._lock:
             pos = self._positions.setdefault(symbol, Position())
             pos.market_price = price
@@ -217,7 +224,17 @@ class PositionManager:
             pos = self._positions.get(symbol)
             if pos is None or pos.qty == 0:
                 return 0
+            if (
+                self.risk_manager is not None
+                and self.risk_manager.should_halt_trading()
+            ):
+                logger.warning("Trade halted by risk guard for %s", symbol)
+                return 0
             qty = -pos.qty
+            if self.risk_manager is not None:
+                qty = int(qty * self.risk_manager.get_position_size_multiplier())
+                if qty == 0:
+                    return 0
             pos.update(qty, price)
             pos.market_price = price
             notional = -qty * price
