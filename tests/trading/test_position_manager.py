@@ -90,6 +90,27 @@ def test_position_size_multiplier_applied() -> None:
     assert pm.cash == pytest.approx(950)
 
 
+def test_close_position_not_scaled_by_multiplier() -> None:
+    cfg = PositionManagerConfig(
+        risk_management=RiskManagementConfig(
+            drawdown_protection=DrawdownProtectionConfig(enabled=True, max_drawdown_pct=0.1)
+        )
+    )
+    pm = PositionManager.from_config(cfg)
+    pm.cash = 1000
+    ts = datetime.utcnow()
+    assert pm.risk_manager is not None
+    pm.risk_manager.update(1000, ts)
+    pm.open_position("AAPL", qty=10, price=10, timestamp=ts + timedelta(minutes=1))
+    pm.risk_manager.update(905, ts + timedelta(minutes=2))
+    assert pm.risk_manager.get_position_size_multiplier() == 0.5
+    assert not pm.risk_manager.should_halt_trading()
+    closed = pm.close_position("AAPL", price=10, timestamp=ts + timedelta(minutes=3))
+    assert closed == 10
+    assert "AAPL" not in pm._positions
+    assert pm.cash == pytest.approx(1000)
+
+
 def test_close_position_blocked_when_halted() -> None:
     cfg = PositionManagerConfig(
         risk_management=RiskManagementConfig(

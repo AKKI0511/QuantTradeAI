@@ -231,10 +231,6 @@ class PositionManager:
                 logger.warning("Trade halted by risk guard for %s", symbol)
                 return 0
             qty = -pos.qty
-            if self.risk_manager is not None:
-                qty = int(qty * self.risk_manager.get_position_size_multiplier())
-                if qty == 0:
-                    return 0
             pos.update(qty, price)
             pos.market_price = price
             notional = -qty * price
