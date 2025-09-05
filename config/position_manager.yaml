@@ -1,0 +1,14 @@
+position_manager:
+  risk_management:
+    drawdown_protection:
+      enabled: true
+      max_drawdown_pct: 0.2
+  impact:
+    enabled: true
+    model: linear
+    alpha: 0.1
+    beta: 0.05
+  reconciliation:
+    intraday: "1m"
+    daily: "1d"
+  mode: paper

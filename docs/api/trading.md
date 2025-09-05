@@ -1,6 +1,29 @@
 # Trading Utilities
 
-API documentation for risk management and position sizing.
+API documentation for risk management, position sizing, and live position control.
+
+## Position Manager
+
+### `PositionManager(config_path: str)`
+
+Thread-safe real-time position tracking that ties into the streaming gateway
+and enforces intraday risk limits.
+
+**Parameters:**
+- `config_path` (str): Path to a YAML file matching `PositionManagerConfig`.
+
+**Example:**
+```python
+from quanttradeai.streaming import StreamingGateway
+from quanttradeai.trading import PositionManager
+
+gw = StreamingGateway("config/streaming.yaml")
+pm = PositionManager("config/position_manager.yaml", gateway=gw)
+pm.start()
+```
+
+The manager reconciles intraday and daily positions while applying
+drawdown protection and market-impact-aware execution.
 
 ## Risk Management
 
@@ -203,6 +226,24 @@ print(f"Calmar Ratio: {risk_metrics['calmar_ratio']:.2f}")
 ```
 
 ## Configuration
+
+### Position Manager Configuration
+```yaml
+position_manager:
+  risk_management:
+    drawdown_protection:
+      enabled: true
+      max_drawdown_pct: 0.2
+  impact:
+    enabled: true
+    model: linear
+    alpha: 0.1
+    beta: 0.05
+  reconciliation:
+    intraday: "1m"
+    daily: "1d"
+  mode: paper
+```
 
 ### Risk Management Configuration
 ```yaml

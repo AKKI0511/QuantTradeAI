@@ -11,6 +11,7 @@ The framework uses several configuration files:
 - **`config/backtest_config.yaml`** - Execution settings for backtests
 - **`config/impact_config.yaml`** - Market impact parameters by asset class
 - **`config/risk_config.yaml`** - Drawdown protection and turnover limits
+- **`config/position_manager.yaml`** - Live position tracking and intraday risk controls
 
 ## 🔧 Model Configuration
 
@@ -122,6 +123,29 @@ The `impact` block activates market impact modeling.  Parameters `alpha`,
 `beta`, and optional `gamma` control the chosen model, while `decay` and
 `spread` apply temporary impact decay and bid-ask spread costs.  Default
 parameter sets per asset class can be defined in `config/impact_config.yaml`.
+
+### Position Manager
+
+```yaml
+position_manager:
+  risk_management:
+    drawdown_protection:
+      enabled: true
+      max_drawdown_pct: 0.2
+  impact:
+    enabled: true
+    model: linear
+    alpha: 0.1
+    beta: 0.05
+  reconciliation:
+    intraday: "1m"
+    daily: "1d"
+  mode: paper
+```
+
+Controls live position tracking and execution logic. The `impact` section
+reuses backtest models, while `reconciliation` intervals harmonize intraday and
+daily views. Set `mode` to `paper` or `live`.
 
 ## 🔧 Feature Configuration
 

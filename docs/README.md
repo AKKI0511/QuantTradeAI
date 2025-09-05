@@ -45,7 +45,7 @@ The [API Documentation](api/) provides comprehensive coverage of:
 - **Feature Engineering** - Technical indicators and custom features
 - **Machine Learning Models** - MomentumClassifier and training utilities
 - **Backtesting Framework** - Trade simulation and performance metrics
-- **Trading Utilities** - Risk management and position sizing
+- **Trading Utilities** - Risk management, position sizing, real-time position control
 - **Utility Functions** - Metrics, visualization, and configuration schemas
 - **Configuration** - Model and feature configuration examples
 
@@ -84,9 +84,10 @@ QuantTradeAI/
 │   ├── backtest/            # Backtesting
 │   │   └── backtester.py    # Trade simulation
 │   ├── trading/             # Trading utilities
-│   │   ├── drawdown_guard.py # Drawdown protection
-│   │   ├── portfolio.py     # Portfolio operations
-│   │   └── risk_manager.py  # Risk coordination
+│   │   ├── drawdown_guard.py  # Drawdown protection
+│   │   ├── portfolio.py      # Portfolio operations
+│   │   ├── position_manager.py # Real-time position tracking
+│   │   └── risk_manager.py   # Risk coordination
 │   └── utils/               # Utilities
 │       ├── metrics.py       # Performance metrics
 │       ├── visualization.py # Plotting functions

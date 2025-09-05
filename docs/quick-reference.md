@@ -255,6 +255,17 @@ streaming:
   health_check_interval: 30
 ```
 
+### Position Manager
+
+```python
+from quanttradeai.streaming import StreamingGateway
+from quanttradeai.trading import PositionManager
+
+gw = StreamingGateway("config/streaming.yaml")
+pm = PositionManager("config/position_manager.yaml", gateway=gw)
+pm.start()
+```
+
 ## 🚨 Error Handling
 
 ```python
