@@ -76,6 +76,7 @@ class LiquidityConfig(BaseModel):
     enabled: bool = False
     max_participation: float = 0.1
     volume_source: str = "bar_volume"
+    order_book_depth: float | None = None
 
 
 class MarketImpactConfig(BaseModel):
@@ -85,7 +86,16 @@ class MarketImpactConfig(BaseModel):
     beta: float = 0.0
     gamma: float | None = None
     decay: float = 0.0
+    decay_volume_coeff: float = 0.0
     spread: float = 0.0
+    spread_model: Optional[Dict[str, Any]] = None
+    alpha_buy: float | None = None
+    alpha_sell: float | None = None
+    beta_buy: float | None = None
+    beta_sell: float | None = None
+    cross_alpha: float = 0.0
+    cross_beta: float = 0.0
+    horizon_decay: float = 0.0
     average_daily_volume: float | None = None
     liquidity_scale: float = Field(1.0, ge=0.0)
 
@@ -98,6 +108,9 @@ class BorrowFeeConfig(BaseModel):
 class IntrabarConfig(BaseModel):
     enabled: bool = False
     tick_column: str = "ticks"
+    drift: float = 0.0
+    volatility: float = 0.0
+    synthetic_ticks: int = 0
 
 
 class ExecutionConfig(BaseModel):

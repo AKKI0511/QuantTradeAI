@@ -13,6 +13,7 @@ from .backtest import (
     SquareRootImpactModel,
     AlmgrenChrissModel,
     ImpactCalculator,
+    DynamicSpreadModel,
     BacktestEngine,
 )
 
@@ -27,5 +28,6 @@ __all__ = [
     "SquareRootImpactModel",
     "AlmgrenChrissModel",
     "ImpactCalculator",
+    "DynamicSpreadModel",
     "BacktestEngine",
 ]

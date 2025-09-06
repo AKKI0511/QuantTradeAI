@@ -22,6 +22,7 @@ from .impact import (
     SquareRootImpactModel,
     AlmgrenChrissModel,
     ImpactCalculator,
+    DynamicSpreadModel,
 )
 
 __all__ = [
@@ -32,5 +33,6 @@ __all__ = [
     "SquareRootImpactModel",
     "AlmgrenChrissModel",
     "ImpactCalculator",
+    "DynamicSpreadModel",
     "BacktestEngine",
 ]

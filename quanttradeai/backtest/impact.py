@@ -11,6 +11,7 @@ selection and applies spread and decay logic.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Protocol
 import math
 
@@ -87,36 +88,127 @@ MODEL_MAP = {
 
 
 @dataclass
+class DynamicSpreadModel:
+    """Adaptive bid-ask spread model."""
+
+    def __init__(
+        self,
+        base: float = 0.0,
+        vol_coeff: float = 0.0,
+        volume_coeff: float = 0.0,
+        tod: dict[int, float] | None = None,
+    ) -> None:
+        self.base = base
+        self.vol_coeff = vol_coeff
+        self.volume_coeff = volume_coeff
+        self.tod = tod or {}
+
+    def value(self, volatility: float, volume: float, ts: datetime) -> float:
+        spread = self.base + self.vol_coeff * volatility
+        if volume > 0:
+            spread += self.volume_coeff / volume
+        if self.tod:
+            spread *= self.tod.get(ts.hour, 1.0)
+        return spread
+
+
+@dataclass
 class ImpactCalculator:
     """Service class for applying market impact models."""
 
     model: MarketImpactModel
     decay: float = 0.0
+    decay_volume_coeff: float = 0.0
     spread: float = 0.0
-    _cache: dict[tuple[float, float], tuple[float, float]] = field(
+    spread_model: DynamicSpreadModel | None = None
+    alpha_buy: float | None = None
+    alpha_sell: float | None = None
+    beta_buy: float | None = None
+    beta_sell: float | None = None
+    cross_alpha: float = 0.0
+    cross_beta: float = 0.0
+    horizon_decay: float = 0.0
+    _cache: dict[tuple[float, float, int], tuple[float, float]] = field(
         default_factory=dict, init=False
     )
+    _perm_state: float = field(default=0.0, init=False)
 
-    def _impact(self, trade_volume: float, adv: float) -> tuple[float, float]:
-        key = (trade_volume, adv)
+    def _impact(
+        self, trade_volume: float, adv: float, side: int, cross_volume: float
+    ) -> tuple[float, float]:
+        key = (trade_volume, adv, side)
         if key in self._cache:
-            return self._cache[key]
-        tmp = self.model.temporary(trade_volume, adv)
-        perm = self.model.permanent(trade_volume, adv)
-        if self.decay > 0:
-            tmp *= math.exp(-self.decay)
-        self._cache[key] = (tmp, perm)
+            tmp, perm = self._cache[key]
+        else:
+            # apply asymmetry
+            orig_alpha, orig_beta = self.model.alpha, self.model.beta
+            if side > 0:
+                if self.alpha_buy is not None:
+                    self.model.alpha = self.alpha_buy
+                if self.beta_buy is not None:
+                    self.model.beta = self.beta_buy
+            else:
+                if self.alpha_sell is not None:
+                    self.model.alpha = self.alpha_sell
+                if self.beta_sell is not None:
+                    self.model.beta = self.beta_sell
+            tmp = self.model.temporary(trade_volume, adv)
+            perm = self.model.permanent(trade_volume, adv)
+            self.model.alpha, self.model.beta = orig_alpha, orig_beta
+            self._cache[key] = (tmp, perm)
+        if self.decay > 0 or self.decay_volume_coeff > 0:
+            decay = self.decay
+            if self.decay_volume_coeff > 0:
+                decay *= trade_volume**self.decay_volume_coeff
+            tmp *= math.exp(-decay)
+        if self.cross_alpha or self.cross_beta:
+            r_c = cross_volume / adv if adv > 0 else 0.0
+            tmp += self.cross_alpha * math.sqrt(r_c)
+            perm += self.cross_beta * math.sqrt(r_c)
+        if self.horizon_decay:
+            perm += self._perm_state
+            self._perm_state = self._perm_state * self.horizon_decay + perm
         return tmp, perm
 
     def impact_per_share(
-        self, trade_volume: float, adv: float
+        self,
+        trade_volume: float,
+        adv: float,
+        *,
+        side: int = 1,
+        volatility: float = 0.0,
+        volume: float = 0.0,
+        timestamp: datetime | None = None,
+        cross_volume: float = 0.0,
     ) -> tuple[float, float, float]:
-        tmp, perm = self._impact(trade_volume, adv)
-        spread_cost = self.spread / 2.0
+        tmp, perm = self._impact(trade_volume, adv, side, cross_volume)
+        if self.spread_model is not None and timestamp is not None:
+            spread_val = self.spread_model.value(volatility, volume, timestamp)
+        else:
+            spread_val = self.spread
+        spread_cost = spread_val / 2.0
         return tmp, perm, spread_cost
 
-    def impact_cost(self, trade_volume: float, adv: float) -> dict[str, float]:
-        tmp, perm, spread_cost = self.impact_per_share(trade_volume, adv)
+    def impact_cost(
+        self,
+        trade_volume: float,
+        adv: float,
+        *,
+        side: int = 1,
+        volatility: float = 0.0,
+        volume: float = 0.0,
+        timestamp: datetime | None = None,
+        cross_volume: float = 0.0,
+    ) -> dict[str, float]:
+        tmp, perm, spread_cost = self.impact_per_share(
+            trade_volume,
+            adv,
+            side=side,
+            volatility=volatility,
+            volume=volume,
+            timestamp=timestamp,
+            cross_volume=cross_volume,
+        )
         per_share = tmp + spread_cost + perm
         return {
             "temp": tmp,
