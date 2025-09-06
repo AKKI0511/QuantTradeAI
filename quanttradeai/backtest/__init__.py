@@ -15,6 +15,7 @@ Quick Start:
 """
 
 from .backtester import simulate_trades, compute_metrics
+from .engine import BacktestEngine
 from .impact import (
     MarketImpactModel,
     LinearImpactModel,
@@ -31,4 +32,5 @@ __all__ = [
     "SquareRootImpactModel",
     "AlmgrenChrissModel",
     "ImpactCalculator",
+    "BacktestEngine",
 ]

@@ -7,6 +7,6 @@ Public API:
     - :mod:`visualization`
 """
 
-from . import metrics, visualization
+from . import metrics
 
-__all__ = ["metrics", "visualization"]
+__all__ = ["metrics"]
