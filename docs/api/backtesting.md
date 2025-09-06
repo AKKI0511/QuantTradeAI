@@ -16,7 +16,9 @@ API documentation for trade simulation and performance metrics.
 
 Simulates trades using label signals.  The ``transaction_cost`` and ``slippage``
 arguments are shorthand for populating the ``execution`` configuration, which
-can also specify liquidity and market impact parameters.
+can also specify liquidity, market impact, borrow fees, and intrabar simulation
+parameters. The engine supports market, limit, and stop orders with partial
+fills.
 
 **Parameters:**
 - `df` (pd.DataFrame or dict[str, pd.DataFrame]): Single DataFrame or mapping of symbol to DataFrame with Close prices and label column
@@ -24,7 +26,8 @@ can also specify liquidity and market impact parameters.
 - `take_profit_pct` (float, optional): Take-profit percentage as decimal
 - `transaction_cost` (float, optional): Transaction cost in decimal bps
 - `slippage` (float, optional): Slippage cost in decimal bps
-- `execution` (dict, optional): Detailed execution settings including `transaction_costs`, `slippage`, `liquidity`, and `impact`
+- `execution` (dict, optional): Detailed execution settings including `transaction_costs`, `slippage`, `liquidity`, `impact`,
+  `borrow_fee`, and `intrabar`
 - `portfolio` (PortfolioManager, optional): Portfolio manager required when `df` is a dictionary
 
 **Returns:**
@@ -34,7 +37,7 @@ can also specify liquidity and market impact parameters.
 ```python
 from quanttradeai import simulate_trades
 
-# Simulate trades with market impact
+# Simulate trades with intrabar fills and borrow fees
 df_with_trades = simulate_trades(
     df,
     execution={
@@ -45,7 +48,9 @@ df_with_trades = simulate_trades(
             "beta": 0.0,
             "average_daily_volume": 1_000_000,
             "spread": 0.02,
-        }
+        },
+        "intrabar": {"enabled": True, "synthetic_ticks": 20, "volatility": 0.01},
+        "borrow_fee": {"enabled": True, "rate_bps": 100},
     },
 )
 ```

@@ -132,10 +132,11 @@ QuantTradeAI/
 - **Model persistence** and loading
 
 ### Backtesting
-- **Trade simulation** with realistic constraints
+- **Trade simulation** with limit/stop orders and intrabar tick fills
+- **Adaptive market impact modeling** with dynamic spreads and asymmetric coefficients
+- **Borrow fee accounting** for short positions
 - **Risk management** (stop-loss, take-profit)
 - **Performance metrics** (Sharpe ratio, max drawdown)
-- **Market impact modeling** for execution cost realism
 - **Position sizing** based on risk parameters
 
 ### Risk Management

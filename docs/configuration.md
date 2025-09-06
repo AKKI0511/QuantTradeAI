@@ -114,15 +114,32 @@ execution:
     model: linear        # linear, square_root, almgren_chriss
     alpha: 0.0
     beta: 0.0
+    alpha_buy: 0.0       # optional asymmetric coefficients
+    alpha_sell: 0.0
     decay: 0.0           # temporary impact decay rate
+    decay_volume_coeff: 0.0
     spread: 0.0          # bid-ask spread per share
+    spread_model: {type: dynamic}
     average_daily_volume: 0
+  borrow_fee:
+    enabled: false
+    rate_bps: 0
+  intrabar:
+    enabled: false
+    drift: 0.0
+    volatility: 0.0
+    synthetic_ticks: 0
 ```
 
-The `impact` block activates market impact modeling.  Parameters `alpha`,
-`beta`, and optional `gamma` control the chosen model, while `decay` and
-`spread` apply temporary impact decay and bid-ask spread costs.  Default
-parameter sets per asset class can be defined in `config/impact_config.yaml`.
+The `impact` block activates market impact modeling. Parameters `alpha`/`beta`
+and their buy/sell counterparts control the chosen model, while `decay`,
+`decay_volume_coeff`, and `spread_model` enable dynamic spread and volume-based
+decay. Default parameter sets per asset class can be defined in
+`config/impact_config.yaml`.
+
+The `borrow_fee` block applies financing costs to short positions, and the
+`intrabar` block enables tick-level fill simulation with optional synthetic
+Brownian motion ticks.
 
 ### Position Manager
 
