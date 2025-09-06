@@ -106,7 +106,10 @@ def _simulate_single(
     for i in range(len(data)):
         price = prices.iloc[i]
         volume = volumes.iloc[i] if i < len(volumes) else float("inf")
-        desired = data["label"].iloc[i] + carry
+        label = data["label"].iloc[i]
+        if carry and label * carry <= 0:
+            carry = 0.0
+        desired = label + carry
 
         diff = desired - position
         side = 1 if diff > 0 else -1 if diff < 0 else 0
@@ -122,14 +125,14 @@ def _simulate_single(
                 if not (
                     (side > 0 and price <= limit_p) or (side < 0 and price >= limit_p)
                 ):
-                    carry += qty
+                    carry += side * qty
                     exec_qty = 0.0
             elif order_type == "stop":
                 triggered = (side > 0 and price >= stop_p) or (
                     side < 0 and price <= stop_p
                 )
                 if not triggered:
-                    carry += qty
+                    carry += side * qty
                     exec_qty = 0.0
 
             if exec_qty > 0:
@@ -137,7 +140,7 @@ def _simulate_single(
                     max_part = liq.get("max_participation", 0.0)
                     max_qty = max_part * float(volume)
                     exec_qty = min(exec_qty, max_qty)
-                    carry = qty - exec_qty
+                    carry = side * (qty - exec_qty)
                 else:
                     carry = 0.0
 
@@ -145,7 +148,7 @@ def _simulate_single(
                 if depth:
                     fill_prob = min(1.0, float(volume) / depth)
                     filled = exec_qty * fill_prob
-                    carry += exec_qty - filled
+                    carry += side * (exec_qty - filled)
                     exec_qty = filled
 
                 slip_amt = 0.0
@@ -202,7 +205,7 @@ def _simulate_single(
                 if ticks is not None:
                     tick_vol = sum(t.get("volume", 0.0) for t in ticks)
                     if tick_vol < exec_qty:
-                        carry += exec_qty - tick_vol
+                        carry += side * (exec_qty - tick_vol)
                         exec_qty = tick_vol
                     filled = 0.0
                     vwap = 0.0

@@ -70,6 +70,24 @@ def test_synthetic_intrabar_generation():
     assert trade["tick_fills"] == 3
 
 
+def test_intrabar_residual_direction():
+    df = pd.DataFrame(
+        {
+            "Close": [10, 10],
+            "label": [-1, 1],
+            "ticks": [[], [{"price": 10.0, "volume": 2}]],
+            "Volume": [0, 2],
+        }
+    )
+    execution = {"intrabar": {"enabled": True}}
+    res = simulate_trades(df, execution=execution)
+    ledger = res.attrs["ledger"]
+    trades = ledger[ledger["qty"] > 0]
+    assert len(trades) == 1
+    assert pytest.approx(trades.iloc[0]["qty"], rel=1e-6) == 1.0
+    assert trades.iloc[0]["side"] == "buy"
+
+
 def test_limit_and_stop_orders():
     df = pd.DataFrame(
         {
@@ -95,7 +113,7 @@ def test_limit_and_stop_orders():
     assert pytest.approx(ledger.iloc[0]["qty"], rel=1e-6) == 5.0
     # stop order triggers on third bar with partial fill
     assert ledger.iloc[1]["order_type"] == "stop"
-    assert pytest.approx(ledger.iloc[1]["qty"], rel=1e-6) == 2.5
+    assert pytest.approx(ledger.iloc[1]["qty"], rel=1e-6) == 5.0
     assert ledger.iloc[1]["timestamp"] == df.index[2]
 
 

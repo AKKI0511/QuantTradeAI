@@ -16,8 +16,14 @@ from typing import Any, Dict, List
 
 import yaml
 
-from quanttradeai.streaming.gateway import StreamingGateway
-from quanttradeai.streaming.logging import logger
+try:
+    from quanttradeai.streaming.gateway import StreamingGateway
+    from quanttradeai.streaming.logging import logger
+except Exception:  # pragma: no cover - optional streaming deps
+    StreamingGateway = Any  # type: ignore
+    import logging
+
+    logger = logging.getLogger(__name__)
 from quanttradeai.trading.drawdown_guard import DrawdownGuard
 from quanttradeai.trading.risk_manager import RiskManager
 from quanttradeai.backtest.impact import ImpactCalculator, MODEL_MAP
