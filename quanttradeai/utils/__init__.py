@@ -1,12 +1,17 @@
 """Miscellaneous utilities.
 
-Expose common metrics and visualization helpers used across the project.
+Expose common metrics lazily to avoid heavy optional dependencies.
 
 Public API:
     - :mod:`metrics`
-    - :mod:`visualization`
 """
 
-from . import metrics, visualization
+__all__ = ["metrics"]
 
-__all__ = ["metrics", "visualization"]
+
+def __getattr__(name: str):
+    if name == "metrics":
+        from . import metrics as _metrics
+
+        return _metrics
+    raise AttributeError(name)

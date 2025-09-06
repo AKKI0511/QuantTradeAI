@@ -15,12 +15,14 @@ Quick Start:
 """
 
 from .backtester import simulate_trades, compute_metrics
+from .engine import BacktestEngine
 from .impact import (
     MarketImpactModel,
     LinearImpactModel,
     SquareRootImpactModel,
     AlmgrenChrissModel,
     ImpactCalculator,
+    DynamicSpreadModel,
 )
 
 __all__ = [
@@ -31,4 +33,6 @@ __all__ = [
     "SquareRootImpactModel",
     "AlmgrenChrissModel",
     "ImpactCalculator",
+    "DynamicSpreadModel",
+    "BacktestEngine",
 ]

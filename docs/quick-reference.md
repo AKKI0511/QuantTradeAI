@@ -71,7 +71,7 @@ classifier.save_model("models/trained/AAPL")
 ```python
 from quanttradeai import simulate_trades, compute_metrics
 
-# Simulate trades with market impact
+# Simulate trades with intrabar fills and market impact
 df_trades = simulate_trades(
     df_labeled,
     execution={
@@ -81,7 +81,9 @@ df_trades = simulate_trades(
             "alpha": 0.5,
             "beta": 0.0,
             "average_daily_volume": 1_000_000,
-        }
+        },
+        "intrabar": {"enabled": True, "synthetic_ticks": 20, "volatility": 0.01},
+        "borrow_fee": {"enabled": True, "rate_bps": 100},
     },
 )
 

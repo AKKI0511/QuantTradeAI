@@ -22,6 +22,7 @@ from quanttradeai.utils.metrics import sharpe_ratio, max_drawdown
 from quanttradeai.trading.risk import apply_stop_loss_take_profit
 from quanttradeai.trading.portfolio import PortfolioManager
 from quanttradeai.trading.drawdown_guard import DrawdownGuard
+from .intrabar import BrownianParams, generate_gbm_ticks
 
 
 def _simulate_single(
@@ -40,10 +41,12 @@ def _simulate_single(
     sl = exec_cfg.get("slippage", {})
     liq = exec_cfg.get("liquidity", {})
     impact_cfg = exec_cfg.get("impact", {})
+    borrow_cfg = exec_cfg.get("borrow_fee", {})
+    intrabar_cfg = exec_cfg.get("intrabar", {})
 
     impact_calc = None
     if impact_cfg.get("enabled", False):
-        from .impact import MODEL_MAP, ImpactCalculator
+        from .impact import MODEL_MAP, ImpactCalculator, DynamicSpreadModel
 
         model_cls = MODEL_MAP.get(
             impact_cfg.get("model", "linear"), MODEL_MAP["linear"]
@@ -57,10 +60,28 @@ def _simulate_single(
         if gamma is not None and model_cls is MODEL_MAP["almgren_chriss"]:
             model_params["gamma"] = gamma
         model = model_cls(**model_params)
+        spread_model = None
+        if impact_cfg.get("spread_model"):
+            sm = impact_cfg["spread_model"]
+            spread_model = DynamicSpreadModel(
+                base=sm.get("base", 0.0),
+                vol_coeff=sm.get("vol_coeff", 0.0),
+                volume_coeff=sm.get("volume_coeff", 0.0),
+                tod=sm.get("tod"),
+            )
         impact_calc = ImpactCalculator(
             model=model,
             decay=impact_cfg.get("decay", 0.0),
+            decay_volume_coeff=impact_cfg.get("decay_volume_coeff", 0.0),
             spread=impact_cfg.get("spread", 0.0),
+            spread_model=spread_model,
+            alpha_buy=impact_cfg.get("alpha_buy"),
+            alpha_sell=impact_cfg.get("alpha_sell"),
+            beta_buy=impact_cfg.get("beta_buy"),
+            beta_sell=impact_cfg.get("beta_sell"),
+            cross_alpha=impact_cfg.get("cross_alpha", 0.0),
+            cross_beta=impact_cfg.get("cross_beta", 0.0),
+            horizon_decay=impact_cfg.get("horizon_decay", 0.0),
         )
 
     ref_col = "Close"
@@ -68,6 +89,12 @@ def _simulate_single(
         ref_col = "Mid"
     prices = data[ref_col].astype(float)
     volumes = data.get("Volume", pd.Series(float("inf"), index=data.index))
+    order_types = data.get(
+        "order_type", pd.Series("market", index=data.index, dtype="object")
+    )
+    limit_prices = data.get("limit_price", pd.Series(float("nan"), index=data.index))
+    stop_prices = data.get("stop_price", pd.Series(float("nan"), index=data.index))
+    vol_series = data.get("Volatility", pd.Series(0.0, index=data.index, dtype=float))
 
     position = 0.0
     carry = 0.0
@@ -79,7 +106,10 @@ def _simulate_single(
     for i in range(len(data)):
         price = prices.iloc[i]
         volume = volumes.iloc[i] if i < len(volumes) else float("inf")
-        desired = data["label"].iloc[i] + carry
+        label = data["label"].iloc[i]
+        if carry and label * carry <= 0:
+            carry = 0.0
+        desired = label + carry
 
         diff = desired - position
         side = 1 if diff > 0 else -1 if diff < 0 else 0
@@ -87,16 +117,40 @@ def _simulate_single(
         total_cost = 0.0
 
         if side != 0 and qty > 0:
-            if liq.get("enabled", False):
-                max_part = liq.get("max_participation", 0.0)
-                max_qty = max_part * float(volume)
-                exec_qty = min(qty, max_qty)
-                carry = qty - exec_qty
-            else:
-                exec_qty = qty
-                carry = 0.0
+            order_type = order_types.iloc[i]
+            limit_p = limit_prices.iloc[i]
+            stop_p = stop_prices.iloc[i]
+            exec_qty = qty
+            if order_type == "limit":
+                if not (
+                    (side > 0 and price <= limit_p) or (side < 0 and price >= limit_p)
+                ):
+                    carry += side * qty
+                    exec_qty = 0.0
+            elif order_type == "stop":
+                triggered = (side > 0 and price >= stop_p) or (
+                    side < 0 and price <= stop_p
+                )
+                if not triggered:
+                    carry += side * qty
+                    exec_qty = 0.0
 
             if exec_qty > 0:
+                if liq.get("enabled", False):
+                    max_part = liq.get("max_participation", 0.0)
+                    max_qty = max_part * float(volume)
+                    exec_qty = min(exec_qty, max_qty)
+                    carry = side * (qty - exec_qty)
+                else:
+                    carry = 0.0
+
+                depth = liq.get("order_book_depth")
+                if depth:
+                    fill_prob = min(1.0, float(volume) / depth)
+                    filled = exec_qty * fill_prob
+                    carry += side * (exec_qty - filled)
+                    exec_qty = filled
+
                 slip_amt = 0.0
                 slip_bps = 0.0
                 if sl.get("enabled", False) and sl.get("value", 0) > 0:
@@ -106,20 +160,75 @@ def _simulate_single(
                     else:
                         slip_amt = sl["value"]
                         slip_bps = slip_amt / price * 10000
-                fill_price = price + slip_amt if side > 0 else price - slip_amt
 
                 impact_cost = 0.0
                 impact_temp = 0.0
                 impact_perm = 0.0
+                impact_adjust = 0.0
                 if impact_calc is not None:
                     adv = impact_cfg.get("average_daily_volume", float(volume))
-                    imp = impact_calc.impact_cost(exec_qty, adv)
+                    adv *= impact_cfg.get("liquidity_scale", 1.0)
+                    imp = impact_calc.impact_cost(
+                        exec_qty,
+                        adv,
+                        side=side,
+                        volatility=vol_series.iloc[i],
+                        volume=float(volume),
+                        timestamp=data.index[i],
+                    )
                     impact_cost = imp["total"]
                     impact_temp = imp["temp"] * exec_qty
                     impact_perm = imp["perm"] * exec_qty
-                    fill_price += (imp["temp"] + imp["spread"]) * (
+                    impact_adjust = (imp["temp"] + imp["spread"]) * (
                         1 if side > 0 else -1
                     )
+                # Intrabar tick-level fills
+                liquidity_part = 0.0
+                tick_fills = 0
+                ticks = None
+                if intrabar_cfg.get("enabled", False):
+                    tick_col = intrabar_cfg.get("tick_column", "ticks")
+                    if tick_col in data.columns:
+                        ticks = data[tick_col].iloc[i]
+                    if not ticks:
+                        params = BrownianParams(
+                            drift=intrabar_cfg.get("drift", 0.0),
+                            volatility=intrabar_cfg.get("volatility", 0.0),
+                            ticks=intrabar_cfg.get("synthetic_ticks", 1),
+                        )
+                        ticks = generate_gbm_ticks(
+                            price,
+                            float(volume),
+                            params,
+                            seed=i,
+                        )
+                if ticks is not None:
+                    tick_vol = sum(t.get("volume", 0.0) for t in ticks)
+                    if tick_vol < exec_qty:
+                        carry += side * (exec_qty - tick_vol)
+                        exec_qty = tick_vol
+                    filled = 0.0
+                    vwap = 0.0
+                    for t in ticks:
+                        if filled >= exec_qty:
+                            break
+                        take = min(exec_qty - filled, t.get("volume", 0.0))
+                        if take > 0:
+                            vwap += t.get("price", price) * take
+                            filled += take
+                            tick_fills += 1
+                    base_price = vwap / exec_qty if exec_qty > 0 else price
+                    fill_price = (
+                        base_price + slip_amt * (1 if side > 0 else -1) + impact_adjust
+                    )
+                    liquidity_part = exec_qty / tick_vol if tick_vol > 0 else 0.0
+                else:
+                    base_price = price
+                    fill_price = (
+                        base_price + slip_amt * (1 if side > 0 else -1) + impact_adjust
+                    )
+                    liquidity_part = exec_qty / float(volume) if float(volume) else 0.0
+                    tick_fills = 0
 
                 t_cost = 0.0
                 if tc.get("enabled", False) and tc.get("value", 0) > 0:
@@ -170,8 +279,44 @@ def _simulate_single(
                         "costs": total_cost,
                         "slippage_bps_applied": slip_bps,
                         "net_pnl_contrib": gross_pnl - total_cost,
+                        "borrow_fee": 0.0,
+                        "liquidity_participation": liquidity_part,
+                        "tick_fills": tick_fills,
+                        "intrabar": intrabar_cfg.get("enabled", False),
+                        "order_type": order_type,
                     }
                 )
+
+        borrow_cost = 0.0
+        if (
+            borrow_cfg.get("enabled", False)
+            and borrow_cfg.get("rate_bps", 0) > 0
+            and position < 0
+        ):
+            borrow_cost = abs(position) * price * borrow_cfg["rate_bps"] / 10000
+            total_cost += borrow_cost
+            ledger.append(
+                {
+                    "timestamp": data.index[i],
+                    "side": "borrow_fee",
+                    "qty": abs(position),
+                    "reference_price": price,
+                    "fill_price": price,
+                    "gross_pnl_contrib": 0.0,
+                    "transaction_cost": 0.0,
+                    "slippage_cost": 0.0,
+                    "impact_temp_cost": 0.0,
+                    "impact_perm_cost": 0.0,
+                    "impact_cost": 0.0,
+                    "costs": borrow_cost,
+                    "slippage_bps_applied": 0.0,
+                    "net_pnl_contrib": -borrow_cost,
+                    "borrow_fee": borrow_cost,
+                    "liquidity_participation": 0.0,
+                    "tick_fills": 0,
+                    "intrabar": False,
+                }
+            )
 
         if i < len(data) - 1:
             price_next = prices.iloc[i + 1]

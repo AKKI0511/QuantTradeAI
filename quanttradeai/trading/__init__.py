@@ -15,16 +15,16 @@ Quick Start:
 """
 
 from .portfolio import PortfolioManager
+from .position_manager import PositionManager
 from .risk import apply_stop_loss_take_profit, position_size
 from .drawdown_guard import DrawdownGuard
 from .risk_manager import RiskManager
-from .position_manager import PositionManager
 
 __all__ = [
     "PortfolioManager",
+    "PositionManager",
     "apply_stop_loss_take_profit",
     "position_size",
     "DrawdownGuard",
     "RiskManager",
-    "PositionManager",
 ]

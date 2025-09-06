@@ -21,7 +21,7 @@
 - 📊 Data: YFinance/AlphaVantage loaders, caching, validation
 - 🧪 Features: technical indicators, custom signals, optional LLM sentiment
 - 🤖 Models: ensemble VotingClassifier (LR, RF, XGBoost) with Optuna tuning
-- 📈 Backtesting: execution costs, slippage, liquidity limits, market impact modeling, portfolio helpers
+- 📈 Backtesting: execution costs, slippage, liquidity limits, adaptive impact, intrabar fills, borrow fees
 - 🛡️ Risk management: drawdown and turnover guards
 - 📟 Live trading: real-time position manager with intraday risk controls
 - 🛠️ CLI: end‑to‑end pipeline, evaluation, and model backtest in one place
