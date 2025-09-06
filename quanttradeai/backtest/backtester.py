@@ -40,6 +40,8 @@ def _simulate_single(
     sl = exec_cfg.get("slippage", {})
     liq = exec_cfg.get("liquidity", {})
     impact_cfg = exec_cfg.get("impact", {})
+    borrow_cfg = exec_cfg.get("borrow_fee", {})
+    intrabar_cfg = exec_cfg.get("intrabar", {})
 
     impact_calc = None
     if impact_cfg.get("enabled", False):
@@ -106,20 +108,60 @@ def _simulate_single(
                     else:
                         slip_amt = sl["value"]
                         slip_bps = slip_amt / price * 10000
-                fill_price = price + slip_amt if side > 0 else price - slip_amt
 
                 impact_cost = 0.0
                 impact_temp = 0.0
                 impact_perm = 0.0
+                impact_adjust = 0.0
                 if impact_calc is not None:
                     adv = impact_cfg.get("average_daily_volume", float(volume))
+                    adv *= impact_cfg.get("liquidity_scale", 1.0)
                     imp = impact_calc.impact_cost(exec_qty, adv)
                     impact_cost = imp["total"]
                     impact_temp = imp["temp"] * exec_qty
                     impact_perm = imp["perm"] * exec_qty
-                    fill_price += (imp["temp"] + imp["spread"]) * (
+                    impact_adjust = (imp["temp"] + imp["spread"]) * (
                         1 if side > 0 else -1
                     )
+                # Intrabar tick-level fills
+                liquidity_part = 0.0
+                tick_fills = 0
+                if (
+                    intrabar_cfg.get("enabled", False)
+                    and intrabar_cfg.get("tick_column", "ticks") in data.columns
+                ):
+                    ticks = data[intrabar_cfg.get("tick_column", "ticks")].iloc[i]
+                    tick_vol = (
+                        sum(t.get("volume", 0.0) for t in ticks) if ticks else 0.0
+                    )
+                    if tick_vol < exec_qty:
+                        carry += exec_qty - tick_vol
+                        exec_qty = tick_vol
+                    filled = 0.0
+                    vwap = 0.0
+                    for t in ticks or []:
+                        if filled >= exec_qty:
+                            break
+                        take = min(exec_qty - filled, t.get("volume", 0.0))
+                        if take > 0:
+                            vwap += t.get("price", price) * take
+                            filled += take
+                            tick_fills += 1
+                    if exec_qty > 0:
+                        base_price = vwap / exec_qty
+                    else:
+                        base_price = price
+                    fill_price = (
+                        base_price + slip_amt * (1 if side > 0 else -1) + impact_adjust
+                    )
+                    liquidity_part = exec_qty / tick_vol if tick_vol > 0 else 0.0
+                else:
+                    base_price = price
+                    fill_price = (
+                        base_price + slip_amt * (1 if side > 0 else -1) + impact_adjust
+                    )
+                    liquidity_part = exec_qty / float(volume) if float(volume) else 0.0
+                    tick_fills = 0
 
                 t_cost = 0.0
                 if tc.get("enabled", False) and tc.get("value", 0) > 0:
@@ -170,8 +212,43 @@ def _simulate_single(
                         "costs": total_cost,
                         "slippage_bps_applied": slip_bps,
                         "net_pnl_contrib": gross_pnl - total_cost,
+                        "borrow_fee": 0.0,
+                        "liquidity_participation": liquidity_part,
+                        "tick_fills": tick_fills,
+                        "intrabar": intrabar_cfg.get("enabled", False),
                     }
                 )
+
+        borrow_cost = 0.0
+        if (
+            borrow_cfg.get("enabled", False)
+            and borrow_cfg.get("rate_bps", 0) > 0
+            and position < 0
+        ):
+            borrow_cost = abs(position) * price * borrow_cfg["rate_bps"] / 10000
+            total_cost += borrow_cost
+            ledger.append(
+                {
+                    "timestamp": data.index[i],
+                    "side": "borrow_fee",
+                    "qty": abs(position),
+                    "reference_price": price,
+                    "fill_price": price,
+                    "gross_pnl_contrib": 0.0,
+                    "transaction_cost": 0.0,
+                    "slippage_cost": 0.0,
+                    "impact_temp_cost": 0.0,
+                    "impact_perm_cost": 0.0,
+                    "impact_cost": 0.0,
+                    "costs": borrow_cost,
+                    "slippage_bps_applied": 0.0,
+                    "net_pnl_contrib": -borrow_cost,
+                    "borrow_fee": borrow_cost,
+                    "liquidity_participation": 0.0,
+                    "tick_fills": 0,
+                    "intrabar": False,
+                }
+            )
 
         if i < len(data) - 1:
             price_next = prices.iloc[i + 1]
