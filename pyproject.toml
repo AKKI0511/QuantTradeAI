@@ -49,6 +49,8 @@ pytest = "^8.4.1"
 black = "^25.1.0"
 flake8 = "^7.3.0"
 pre-commit = "^4.2.0"
+pytest-asyncio = "^1.2.0"
+hypothesis = "^6.140.3"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

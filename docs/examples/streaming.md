@@ -1,119 +1,107 @@
 # Real-Time Streaming Examples
 
-This page shows end-to-end streaming examples using the built-in Alpaca adapter. Replace the URL and credentials to match your provider.
+The streaming subsystem now supports plugin-based providers with configuration validation, discovery, and health-aware execution. The snippets below demonstrate how to work with the reference `ExampleStreamingProvider`. Replace the provider name and configuration with your implementation as needed.
 
 ## Prerequisites
 
-- Install package dependencies (Poetry or pip)
-- Export provider API key, for example:
+- Install dependencies (via Poetry or pip)
+- Export any credentials referenced in provider configs, for example:
 
 ```bash
-export ALPACA_API_KEY="<your-key>"
+export API_TOKEN="super-secret"
 ```
 
-## Example 1: YAML-Only Subscriptions
-
-`config/streaming.yaml`:
+Create `config/providers/example.yaml`:
 
 ```yaml
-streaming:
-  symbols: ["AAPL"]
-  providers:
-    - name: "alpaca"
-      websocket_url: "wss://stream.data.alpaca.markets/v2/iex"
-      auth_method: "api_key"
-      subscriptions: ["trades", "quotes"]
-  buffer_size: 1000
-  reconnect_attempts: 3
-  health_check_interval: 30
+provider: example
+environment: dev
+environments:
+  dev:
+    asset_types: ["stocks", "crypto"]
+    data_types: ["trades", "quotes"]
+    credentials:
+      token: ${API_TOKEN}
+    options:
+      mode: realtime
 ```
 
-Python:
+## Example 1: Discover and Validate a Provider
 
 ```python
-from quanttradeai.streaming import StreamingGateway
+from quanttradeai.streaming.providers import ProviderConfigValidator, ProviderDiscovery
 
-gw = StreamingGateway("config/streaming.yaml")
+discovery = ProviderDiscovery()
+registry = discovery.discover()
+adapter = registry.create_instance("example")
 
-def on_trade(msg):
-    print("TRADE", msg)
+validator = ProviderConfigValidator()
+model = validator.load_from_path("config/providers/example.yaml", environment="dev")
+runtime = validator.validate(adapter, model)
 
-def on_quote(msg):
-    print("QUOTE", msg)
-
-gw.subscribe_to_trades(["AAPL"], on_trade)
-gw.subscribe_to_quotes(["AAPL"], on_quote)
-# gw.start_streaming()
+print(runtime.asset_types)  # {'stocks', 'crypto'}
+# runtime.options / runtime.credentials contain the normalized settings for your adapter
 ```
 
-## Example 2: Programmatic Symbols
+## Example 2: Connect with Health Monitoring
+
+Continue from Example 1 using the same `adapter` instance.
 
 ```python
-from quanttradeai.streaming import StreamingGateway
+import asyncio
 
-gw = StreamingGateway("config/streaming.yaml")
-gw.subscribe_to_trades(["MSFT", "TSLA"], lambda m: print(m))
-# gw.start_streaming()
+from quanttradeai.streaming.providers import ProviderHealthMonitor
+
+monitor = ProviderHealthMonitor(error_threshold=3)
+monitor.register_provider(
+    adapter.provider_name,
+    status_provider=adapter.get_health_status,
+)
+
+async def main() -> None:
+    await monitor.execute_with_health(adapter.provider_name, adapter.connect)
+    await monitor.execute_with_health(
+        adapter.provider_name,
+        lambda: adapter.subscribe(["AAPL", "MSFT"]),
+    )
+    status = monitor.get_status(adapter.provider_name)
+    print(status.status, status.metrics["subscriptions"])
+
+asyncio.run(main())
 ```
 
-## Example 3: Custom Adapter
+## Example 3: Hot Reload Newly Added Providers
 
 ```python
-from dataclasses import dataclass
-from typing import Any, Dict, List
-from quanttradeai.streaming.adapters.base_adapter import DataProviderAdapter
-from quanttradeai.streaming.websocket_manager import WebSocketManager
-
-@dataclass
-class MyAdapter(DataProviderAdapter):
-    name: str = "custom"
-    def _build_subscribe_message(self, channel: str, symbols: List[str]) -> Dict[str, Any]:
-        return {"action": "subscribe", channel: symbols}
-
-manager = WebSocketManager()
-manager.add_adapter(MyAdapter(websocket_url="wss://example"), auth_method="none")
-# Use StreamingGateway or call manager.connect_all()/run() directly.
+# Continuing with the same discovery instance from Example 1
+registry = discovery.refresh()  # clears caches and re-imports modules
+print([metadata.name for metadata in registry.list()])
 ```
 
-## Health Monitoring Configuration
+## Example 4: Fallback Handling
 
-Append the following to `config/streaming.yaml` to enable comprehensive health checks:
+Continue from Example 2 with the configured `monitor`.
 
-```yaml
-streaming_health:
-  monitoring:
-    enabled: true
-    check_interval: 5
-  thresholds:
-    max_latency_ms: 100
-    min_throughput_msg_per_sec: 50
-    max_queue_depth: 5000
-    circuit_breaker_timeout: 60
-  alerts:
-    enabled: true
-    channels: ["log", "metrics"]
-    escalation_threshold: 3
-  api:
-    enabled: true
-    host: "0.0.0.0"
-    port: 8000
+```python
+import asyncio
+
+async def fallback() -> str:
+    return "fallback-value"
+
+async def main() -> None:
+    result = await monitor.execute_with_health(
+        adapter.provider_name,
+        lambda: (_ for _ in ()).throw(RuntimeError("boom")),  # force an error
+        fallback=fallback,
+    )
+    print(result)  # "fallback-value"
+
+asyncio.run(main())
 ```
 
-Start the gateway and query metrics:
+## Integrating with the Gateway
 
-```bash
-curl http://localhost:8000/status
-```
-
-## Alert Threshold Tuning
-
-- Increase `max_latency_ms` or decrease `escalation_threshold` for noisy networks.
-- Monitor `max_queue_depth` during peak sessions and adjust to avoid drops.
-- Use Prometheus metrics to derive realistic throughput baselines.
-
-## Production Deployment Recommendations
-
-- Run the health API behind an authenticated ingress when exposing publicly.
-- Scrape `/metrics` with Prometheus and forward alerts to your incident system.
-- Configure fallback providers to ensure continuity during outages.
+- Continue to configure `config/streaming.yaml` for built-in adapters and shared buffering.
+- Custom providers can publish into the same processing pipeline by extending `StreamingGateway`'s adapter map or streaming events alongside the gateway.
+- Health API, metrics, and alerting remain enabled through the existing `streaming_health` section in `config/streaming.yaml`.
 

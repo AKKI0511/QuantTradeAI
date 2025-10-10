@@ -1,141 +1,98 @@
 # Streaming API
 
-QuantTradeAI provides a lightweight, extensible streaming stack for real-time market data. It abstracts provider-specific WebSocket details behind adapters and offers a high-level gateway to manage connections, subscriptions, rate limiting, and monitoring.
+QuantTradeAI ships with a plugin-ready streaming provider framework. Providers are implemented as adapters, discovered at runtime, validated against explicit configuration models, and wrapped with health monitoring utilities for capability negotiation and failover handling. The existing `StreamingGateway` continues to orchestrate WebSocket connections defined in `config/streaming.yaml`, while the provider subsystem enables richer lifecycle control when integrating third-party feeds.
 
-## Key Classes
+## Key Modules
 
-- `StreamingGateway`: High-level orchestrator that reads a YAML config, connects providers, and dispatches messages to callbacks.
-- `WebSocketManager`: Manages adapter lifecycle, retries, and circuit breaking.
-- `DataProviderAdapter`: Base adapter for providers; Alpaca and Interactive Brokers examples included.
-- `AuthManager`, `AdaptiveRateLimiter`, `ConnectionPool`: Opt-in safeguards for production reliability.
+- **`StreamingGateway`** – High-level orchestrator that reads `config/streaming.yaml`, manages built-in adapters, and dispatches normalized messages to callbacks.
+- **`StreamingProviderAdapter`** – Abstract base class for provider integrations. Implement connection, subscription, and capability reporting logic.
+- **`ProviderDiscovery`** – Scans adapter packages (with hot reload support) and registers available providers in a `ProviderRegistry`.
+- **`ProviderRegistry`** – Stores `ProviderMetadata`, performs dependency validation, and instantiates adapters on demand.
+- **`ProviderConfigValidator`** – Validates provider-specific configuration files and negotiates runtime settings against advertised capabilities.
+- **`ProviderHealthMonitor`** – Extends the streaming health monitor with per-provider metrics, circuit breaking, and failover hooks.
 
-## Configuration
+## Provider Configuration
 
-File: `config/streaming.yaml`
-
-```yaml
-streaming:
-  symbols: ["AAPL", "MSFT"]  # global symbols (optional)
-  providers:
-    - name: "alpaca"
-      websocket_url: "wss://stream.data.alpaca.markets/v2/iex"
-      auth_method: "api_key"  # expects ALPACA_API_KEY in env
-      subscriptions: ["trades", "quotes"]
-      # Optional overrides
-      # symbols: ["TSLA", "NVDA"]
-      rate_limit:
-        default_rate: 100
-        burst_allowance: 50
-      circuit_breaker:
-        failure_threshold: 5
-        timeout: 30
-  buffer_size: 10000
-  reconnect_attempts: 5
-  health_check_interval: 30
-```
-
-Notes:
-- If `providers[].symbols` is omitted, `streaming.symbols` is used.
-- If no symbols are provided in YAML, subscribe via the API (see below).
-- Set `ALPACA_API_KEY` or `${PROVIDER}_API_KEY` in your environment for `auth_method: api_key`.
-
-## Usage
-
-### YAML-Driven
-
-```python
-from quanttradeai.streaming import StreamingGateway
-
-gateway = StreamingGateway("config/streaming.yaml")
-
-# Register callbacks (optional if YAML-only subscriptions suffice)
-gateway.subscribe_to_trades(["AAPL"], callback=lambda msg: print("trade", msg))
-gateway.subscribe_to_quotes(["AAPL"], callback=lambda msg: print("quote", msg))
-
-# Blocking run
-# gateway.start_streaming()
-```
-
-### Programmatic Subscriptions
-
-```python
-from quanttradeai.streaming import StreamingGateway
-
-gw = StreamingGateway("config/streaming.yaml")
-gw.subscribe_to_trades(["MSFT", "TSLA"], callback=lambda m: print(m))
-# gw.start_streaming()
-```
-
-## Extending Providers
-
-Create a new adapter by subclassing `DataProviderAdapter` and implementing `_build_subscribe_message`.
-
-```python
-from dataclasses import dataclass
-from typing import Any, Dict, List
-from quanttradeai.streaming.adapters.base_adapter import DataProviderAdapter
-
-@dataclass
-class MyProviderAdapter(DataProviderAdapter):
-    name: str = "my_provider"
-
-    def _build_subscribe_message(self, channel: str, symbols: List[str]) -> Dict[str, Any]:
-        return {"action": "subscribe", "channel": channel, "symbols": symbols}
-```
-
-Register it in your runtime (or fork and extend `AdapterMap` in `StreamingGateway`).
-
-## Monitoring
-
-- Prometheus metrics (`prometheus_client`) track message counts, connection latency, and active connections.
-- Optional background health checks ping pooled connections (interval configured via YAML).
-
-### Advanced Health Metrics
-
-- **Message loss detection** surfaces gaps in sequence numbers and reports per-provider drop rates.
-- **Queue depth gauges** expose backlog in internal processing buffers.
-- **Bandwidth and throughput** statistics track messages per second and bytes processed.
-- **Data freshness** timers flag stale feeds when updates stop arriving.
-
-### Alerting & Incident History
-
-- Configurable thresholds escalate repeated warnings to errors after a defined count.
-- Incident history is retained in memory for post-mortem analysis and optional export.
-- Alert channels include structured logs and Prometheus-compatible metrics.
-
-### Recovery & Circuit Breaking
-
-- Automatic retries use exponential backoff with jitter and respect circuit-breaker timeouts.
-- Fallback connectors can be configured for provider outages.
-
-### Health API
-
-When enabled, an embedded REST server exposes:
-
-- `GET /health` – lightweight readiness probe.
-- `GET /status` – detailed status including recent incidents.
-- `GET /metrics` – Prometheus scrape endpoint.
-
-### Configuration Example
+Providers define their own configuration documents (YAML or JSON) that describe supported environments. Example (`config/providers/example.yaml`):
 
 ```yaml
-streaming_health:
-  monitoring:
-    enabled: true
-    check_interval: 5
-  thresholds:
-    max_latency_ms: 100
-    min_throughput_msg_per_sec: 50
-    max_queue_depth: 5000
-    circuit_breaker_timeout: 60
-  alerts:
-    enabled: true
-    channels: ["log", "metrics"]
-    escalation_threshold: 3
-  api:
-    enabled: true
-    host: "0.0.0.0"
-    port: 8000
+provider: example
+environment: dev
+environments:
+  dev:
+    asset_types: ["stocks", "crypto"]
+    data_types: ["trades", "quotes", "order_book"]
+    rate_limit_per_minute: 1200
+    max_subscriptions: 500
+    options:
+      mode: realtime
+    credentials:
+      token: ${API_TOKEN}
 ```
+
+Use `ProviderConfigValidator` to load and validate this file while resolving environment variables and capability constraints:
+
+```python
+from quanttradeai.streaming.adapters.example_provider import ExampleStreamingProvider
+from quanttradeai.streaming.providers import ProviderConfigValidator
+
+validator = ProviderConfigValidator()
+model = validator.load_from_path("config/providers/example.yaml", environment="dev")
+adapter = ExampleStreamingProvider()
+runtime = validator.validate(adapter, model)  # raises on unsupported assets, limits, or auth
+```
+
+## Runtime Discovery and Hot Reload
+
+```python
+from quanttradeai.streaming.providers import ProviderDiscovery
+
+discovery = ProviderDiscovery()      # defaults to quanttradeai.streaming.adapters
+registry = discovery.discover()
+
+for metadata in registry.list():
+    print(metadata.name, metadata.version, metadata.capabilities.asset_types)
+
+# After dropping a new adapter module into quanttradeai/streaming/adapters/
+registry = discovery.refresh()       # hot reload; new providers are registered automatically
+```
+
+The registry enforces dependency availability and version precedence to prevent conflicting registrations.
+
+## Health Monitoring and Failover
+
+```python
+import asyncio
+
+from quanttradeai.streaming.providers import ProviderHealthMonitor
+
+monitor = ProviderHealthMonitor(error_threshold=5)
+monitor.register_provider(
+    adapter.provider_name,
+    status_provider=adapter.get_health_status,
+    failover_handler=lambda: adapter.connect(),
+)
+
+async def run() -> None:
+    await monitor.execute_with_health(adapter.provider_name, adapter.connect)
+    await monitor.execute_with_health(
+        adapter.provider_name,
+        lambda: adapter.subscribe(["AAPL"]),
+    )
+    status = monitor.get_status(adapter.provider_name)
+    print(status.status, status.latency_ms)
+
+asyncio.run(run())
+```
+
+`ProviderHealthMonitor` wraps adapter operations with circuit breakers, rolling error windows, and optional failover callbacks coordinated through the shared recovery manager.
+
+## Integrating with `StreamingGateway`
+
+For existing YAML-driven workflows, continue to instantiate `StreamingGateway("config/streaming.yaml")` and register callbacks via `subscribe_to_trades`/`subscribe_to_quotes`. Custom providers discovered at runtime can be wired into the gateway by extending its adapter map or by running sidecar tasks that publish normalized events into the same processing pipeline.
+
+## Health API Configuration
+
+`StreamingGateway` exposes the original health monitoring controls via the `streaming_health` section in `config/streaming.yaml`. The provider-centric monitor shares the same recovery manager and metrics subsystem, so alert thresholds, Prometheus integration, and REST endpoints (`/health`, `/status`, `/metrics`) continue to operate as documented in the gateway README.
 
 
