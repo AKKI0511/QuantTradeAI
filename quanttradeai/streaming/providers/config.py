@@ -151,6 +151,32 @@ class ProviderConfigValidator:
         if max_subscriptions is not None and not isinstance(max_subscriptions, int):
             raise ProviderConfigurationError("'max_subscriptions' must be an integer")
 
+        normalized_requires_auth = normalized.get("requires_authentication")
+        if normalized_requires_auth is not None and not isinstance(
+            normalized_requires_auth, bool
+        ):
+            raise ProviderConfigurationError(
+                "'requires_authentication' must be a boolean when provided"
+            )
+        requested_requires_auth = (
+            normalized_requires_auth
+            if normalized_requires_auth is not None
+            else env_config.requires_authentication
+        )
+
+        if capabilities.requires_authentication:
+            if requested_requires_auth is False:
+                raise ProviderConfigurationError(
+                    "Authentication is required by the provider capabilities and "
+                    f"cannot be disabled for provider '{config.provider}' environment "
+                    f"'{env_name}'"
+                )
+            requires_authentication = True
+        else:
+            requires_authentication = (
+                requested_requires_auth if requested_requires_auth is not None else False
+            )
+
         runtime = ProviderRuntimeConfiguration(
             provider=config.provider,
             environment=env_name,
@@ -160,11 +186,7 @@ class ProviderConfigValidator:
             data_types=data_types,
             rate_limit_per_minute=rate_limit,
             max_subscriptions=max_subscriptions,
-            requires_authentication=(
-                env_config.requires_authentication
-                if env_config.requires_authentication is not None
-                else capabilities.requires_authentication
-            ),
+            requires_authentication=requires_authentication,
         )
 
         self._validate_capabilities(capabilities, runtime)

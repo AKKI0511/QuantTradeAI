@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Set
+from typing import Mapping, MutableMapping, Set
 
 import pytest
 import yaml
@@ -13,6 +13,7 @@ from quanttradeai.streaming.providers.config import (
     ProviderConfigValidator,
     ProviderConfigurationError,
 )
+from quanttradeai.streaming.providers.base import ProviderCapabilities
 
 
 def _write_config(path: Path, data: dict) -> None:
@@ -92,5 +93,79 @@ def test_provider_config_validator_rejects_unsupported_assets(tmp_path: Path) ->
     validator = ProviderConfigValidator()
     model = validator.load_from_path(config_path, environment="dev")
     adapter = ExampleStreamingProvider()
+    with pytest.raises(ProviderConfigurationError):
+        validator.validate(adapter, model, environment="dev")
+
+
+class AuthRequiredStreamingProvider(ExampleStreamingProvider):
+    """Adapter that advertises authentication as a hard requirement."""
+
+    def get_capabilities(self) -> ProviderCapabilities:
+        base = super().get_capabilities()
+        return ProviderCapabilities(
+            asset_types=base.asset_types,
+            data_types=base.data_types,
+            max_subscriptions=base.max_subscriptions,
+            rate_limit_per_minute=base.rate_limit_per_minute,
+            requires_authentication=True,
+            supports_order_book=base.supports_order_book,
+            metadata=base.metadata,
+        )
+
+
+def test_validator_rejects_disabling_required_auth_via_env(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_data = {
+        "provider": "example",
+        "environment": "dev",
+        "environments": {
+            "dev": {
+                "asset_types": ["stocks"],
+                "data_types": ["trades"],
+                "requires_authentication": False,
+                "credentials": {},
+            }
+        },
+    }
+    _write_config(config_path, config_data)
+
+    validator = ProviderConfigValidator()
+    model = validator.load_from_path(config_path, environment="dev")
+    adapter = AuthRequiredStreamingProvider()
+
+    with pytest.raises(ProviderConfigurationError):
+        validator.validate(adapter, model, environment="dev")
+
+
+class AuthOverrideStreamingProvider(AuthRequiredStreamingProvider):
+    """Adapter that attempts to disable authentication via normalization."""
+
+    def validate_config(self, config: Mapping[str, object]) -> MutableMapping[str, object]:
+        normalized = super().validate_config(config)
+        normalized["requires_authentication"] = False
+        return normalized
+
+
+def test_validator_rejects_disabling_required_auth_via_normalization(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_data = {
+        "provider": "example",
+        "environment": "dev",
+        "environments": {
+            "dev": {
+                "asset_types": ["stocks"],
+                "data_types": ["trades"],
+                "credentials": {"token": "abc"},
+            }
+        },
+    }
+    _write_config(config_path, config_data)
+
+    validator = ProviderConfigValidator()
+    model = validator.load_from_path(config_path, environment="dev")
+    adapter = AuthOverrideStreamingProvider()
+
     with pytest.raises(ProviderConfigurationError):
         validator.validate(adapter, model, environment="dev")
