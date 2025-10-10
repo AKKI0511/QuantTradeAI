@@ -120,6 +120,18 @@ class ProviderConfigValidator:
             "max_subscriptions": env_config.max_subscriptions,
         }
 
+        required_auth_error = (
+            "Authentication is required by the provider capabilities and "
+            f"cannot be disabled for provider '{config.provider}' environment "
+            f"'{env_name}'"
+        )
+
+        if (
+            capabilities.requires_authentication
+            and env_config.requires_authentication is False
+        ):
+            raise ProviderConfigurationError(required_auth_error)
+
         normalized = adapter.validate_config(base_payload)
         if not isinstance(normalized, Mapping):
             raise ProviderConfigurationError(
@@ -166,15 +178,13 @@ class ProviderConfigValidator:
 
         if capabilities.requires_authentication:
             if requested_requires_auth is False:
-                raise ProviderConfigurationError(
-                    "Authentication is required by the provider capabilities and "
-                    f"cannot be disabled for provider '{config.provider}' environment "
-                    f"'{env_name}'"
-                )
+                raise ProviderConfigurationError(required_auth_error)
             requires_authentication = True
         else:
             requires_authentication = (
-                requested_requires_auth if requested_requires_auth is not None else False
+                requested_requires_auth
+                if requested_requires_auth is not None
+                else False
             )
 
         runtime = ProviderRuntimeConfiguration(
