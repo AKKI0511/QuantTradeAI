@@ -235,27 +235,48 @@ Hyperparameter tuning uses `TimeSeriesSplit(n_splits=training.cv_folds)` to avoi
 ## 🔌 Streaming
 
 ```python
-from quanttradeai.streaming import StreamingGateway
+from quanttradeai.streaming.providers import (
+    ProviderConfigValidator,
+    ProviderDiscovery,
+    ProviderHealthMonitor,
+)
 
-gw = StreamingGateway("config/streaming.yaml")
-gw.subscribe_to_trades(["AAPL"], callback=lambda m: print(m))
-# gw.start_streaming()  # blocking
+discovery = ProviderDiscovery()           # auto-discovers adapters with hot reload support
+registry = discovery.discover()
+adapter = registry.create_instance("example")
+
+validator = ProviderConfigValidator()
+model = validator.load_from_path("config/providers/example.yaml", environment="dev")
+runtime = validator.validate(adapter, model)
+
+monitor = ProviderHealthMonitor()
+monitor.register_provider(adapter.provider_name, status_provider=adapter.get_health_status)
+
+# inside an async context
+await monitor.execute_with_health(adapter.provider_name, adapter.connect)
+await monitor.execute_with_health(
+    adapter.provider_name,
+    lambda: adapter.subscribe(["AAPL"]),
+)
+# Use `adapter` with the legacy StreamingGateway or custom event loop as needed
 ```
 
-`config/streaming.yaml` example:
+Provider configuration file (`config/providers/example.yaml`):
 
 ```yaml
-streaming:
-  symbols: ["AAPL"]
-  providers:
-    - name: "alpaca"
-      websocket_url: "wss://stream.data.alpaca.markets/v2/iex"
-      auth_method: "api_key"
-      subscriptions: ["trades", "quotes"]
-  buffer_size: 1000
-  reconnect_attempts: 3
-  health_check_interval: 30
+provider: example
+environment: dev
+environments:
+  dev:
+    asset_types: ["stocks", "crypto"]
+    data_types: ["trades", "quotes"]
+    options:
+      mode: "realtime"
 ```
+
+- Use `discovery.refresh()` to hot reload newly added adapters.
+- `monitor.execute_with_health()` wraps connect/subscribe calls with circuit breaking and failover handling.
+- Legacy `config/streaming.yaml` continues to control shared buffers, subscriptions, and rate limits for the built-in gateway.
 
 ### Position Manager
 
