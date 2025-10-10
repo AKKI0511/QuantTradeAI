@@ -4,7 +4,6 @@ import tempfile
 import yaml
 import pandas as pd
 from unittest.mock import patch
-import pytest
 
 from quanttradeai.data.loader import DataLoader
 from quanttradeai.data.datasource import WebSocketDataSource

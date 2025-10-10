@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Dict, List, Tuple
 
 import yaml
@@ -172,7 +172,7 @@ class DrawdownGuard:
 
     def check_drawdown_limits(self) -> Dict[str, float | str]:
         with self._lock:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             turnover_ratio = self._evaluate_turnover(now)
             dd_ratio = 0.0
             cfg = self.config
@@ -220,7 +220,7 @@ class DrawdownGuard:
 
     def get_risk_metrics(self) -> Dict[str, float]:
         with self._lock:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             metrics = {
                 "high_water_mark": self._high_water_mark,
                 "current_drawdown_pct": self._state.drawdown_pct,

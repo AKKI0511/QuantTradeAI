@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 from quanttradeai.trading.drawdown_guard import DrawdownGuard
 from quanttradeai.trading.risk_manager import RiskManager
@@ -13,7 +13,7 @@ class TestDrawdownGuard(unittest.TestCase):
             enabled=True, max_drawdown_pct=0.10, emergency_stop_threshold=1.5
         )
         guard = DrawdownGuard(cfg)
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         guard.update_portfolio_value(100000, now)
         guard.update_portfolio_value(90500, now + timedelta(days=1))
         status = guard.check_drawdown_limits()
@@ -37,7 +37,7 @@ class TestDrawdownGuard(unittest.TestCase):
     def test_turnover_limits(self):
         tcfg = TurnoverLimitsConfig(daily_max=200000)
         guard = DrawdownGuard(DrawdownProtectionConfig(enabled=False), tcfg)
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         guard.update_portfolio_value(100000, now)
         guard.record_trade(180000, now)
         self.assertEqual(guard.get_position_size_multiplier(), 0.5)
@@ -49,7 +49,7 @@ class TestDrawdownGuard(unittest.TestCase):
             enabled=True, max_drawdown_pct=0.10, emergency_stop_threshold=1.1
         )
         guard = DrawdownGuard(cfg)
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         guard.update_portfolio_value(100000, now)
         pm = PortfolioManager(100000, risk_manager=RiskManager(guard))
         qty = pm.open_position("AAPL", price=100, stop_loss_pct=0.05)

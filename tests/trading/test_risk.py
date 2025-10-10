@@ -1,5 +1,4 @@
 import unittest
-import os
 import pandas as pd
 
 from quanttradeai.backtest.backtester import simulate_trades

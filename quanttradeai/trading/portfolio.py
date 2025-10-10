@@ -17,7 +17,7 @@ Typical Usage:
 from __future__ import annotations
 
 from typing import Dict
-from datetime import datetime
+from datetime import datetime, UTC
 
 from .risk import position_size
 from .risk_manager import RiskManager
@@ -66,7 +66,7 @@ class PortfolioManager:
             raise ValueError(f"Position for {symbol} already exists")
 
         if self.risk_manager is not None:
-            self.risk_manager.update(self.portfolio_value, datetime.utcnow())
+            self.risk_manager.update(self.portfolio_value, datetime.now(UTC))
             if self.risk_manager.should_emergency_liquidate():
                 self.close_all_positions()
                 return 0
@@ -106,7 +106,7 @@ class PortfolioManager:
             "stop_loss_pct": stop_loss,
         }
         if self.risk_manager is not None:
-            self.risk_manager.record_trade(notional, datetime.utcnow())
+            self.risk_manager.record_trade(notional, datetime.now(UTC))
         return qty
 
     def close_position(self, symbol: str, price: float) -> int:
@@ -117,7 +117,7 @@ class PortfolioManager:
         notional = pos["qty"] * price
         self.cash += notional
         if self.risk_manager is not None:
-            self.risk_manager.record_trade(notional, datetime.utcnow())
+            self.risk_manager.record_trade(notional, datetime.now(UTC))
         return pos["qty"]
 
     def close_all_positions(

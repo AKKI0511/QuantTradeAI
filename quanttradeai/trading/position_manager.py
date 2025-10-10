@@ -10,7 +10,7 @@ concurrent streaming callbacks.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 import threading
 from typing import Any, Dict, List
 
@@ -156,7 +156,7 @@ class PositionManager:
 
         symbol = message.get("symbol")
         price = message.get("price") or message.get("last") or message.get("close")
-        ts = message.get("timestamp") or datetime.utcnow()
+        ts = message.get("timestamp") or datetime.now(UTC)
         if symbol is None or price is None:
             return
 
@@ -184,7 +184,7 @@ class PositionManager:
 
         if qty == 0:
             return
-        ts = timestamp or datetime.utcnow()
+        ts = timestamp or datetime.now(UTC)
         if self.risk_manager is not None:
             if self.risk_manager.should_halt_trading():
                 logger.warning("Trade halted by risk guard for %s", symbol)
@@ -225,7 +225,7 @@ class PositionManager:
     ) -> int:
         """Close a position and return quantity closed."""
 
-        ts = timestamp or datetime.utcnow()
+        ts = timestamp or datetime.now(UTC)
         with self._lock:
             pos = self._positions.get(symbol)
             if pos is None or pos.qty == 0:
@@ -275,7 +275,7 @@ class PositionManager:
     ) -> Dict[str, Dict[str, int]]:
         """Return net positions for configured timeframes."""
 
-        now = now or datetime.utcnow()
+        now = now or datetime.now(UTC)
         with self._lock:
             intraday = {s: p.qty for s, p in self._positions.items()}
             daily: Dict[str, int] = {}

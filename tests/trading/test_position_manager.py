@@ -1,6 +1,6 @@
 """Tests for :mod:`quanttradeai.trading.position_manager`."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 import pytest
 
@@ -17,11 +17,11 @@ def test_open_close_reconcile() -> None:
     pm = PositionManager.from_config(PositionManagerConfig())
     pm.cash = 1000
     pm.open_position("AAPL", qty=10, price=10)
-    pm.handle_market_data({"symbol": "AAPL", "price": 11, "timestamp": datetime.utcnow()})
+    pm.handle_market_data({"symbol": "AAPL", "price": 11, "timestamp": datetime.now(UTC)})
     assert pm.portfolio_value == pytest.approx(900 + 10 * 11)
     closed = pm.close_position("AAPL", price=12)
     assert closed == 10
-    rec = pm.reconcile_positions(datetime.utcnow())
+    rec = pm.reconcile_positions(datetime.now(UTC))
     assert rec["intraday"].get("AAPL", 0) == 0
     assert rec["daily"].get("AAPL", 0) == 0
 
@@ -46,7 +46,7 @@ def test_risk_manager_integration() -> None:
     pm = PositionManager.from_config(cfg)
     pm.cash = 10000
     pm.open_position("AAPL", qty=100, price=100)
-    ts = datetime.utcnow()
+    ts = datetime.now(UTC)
     pm.handle_market_data({"symbol": "AAPL", "price": 100, "timestamp": ts})
     assert pm.risk_manager is not None
     assert not pm.risk_manager.should_halt_trading()
@@ -62,7 +62,7 @@ def test_open_position_respects_risk_guard() -> None:
     )
     pm = PositionManager.from_config(cfg)
     pm.cash = 1000
-    ts = datetime.utcnow()
+    ts = datetime.now(UTC)
     assert pm.risk_manager is not None
     pm.risk_manager.update(1000, ts)
     pm.risk_manager.update(900, ts + timedelta(minutes=1))
@@ -80,7 +80,7 @@ def test_position_size_multiplier_applied() -> None:
     )
     pm = PositionManager.from_config(cfg)
     pm.cash = 1000
-    ts = datetime.utcnow()
+    ts = datetime.now(UTC)
     assert pm.risk_manager is not None
     pm.risk_manager.update(1000, ts)
     pm.risk_manager.update(905, ts + timedelta(minutes=1))
@@ -98,7 +98,7 @@ def test_close_position_not_scaled_by_multiplier() -> None:
     )
     pm = PositionManager.from_config(cfg)
     pm.cash = 1000
-    ts = datetime.utcnow()
+    ts = datetime.now(UTC)
     assert pm.risk_manager is not None
     pm.risk_manager.update(1000, ts)
     pm.open_position("AAPL", qty=10, price=10, timestamp=ts + timedelta(minutes=1))
@@ -120,7 +120,7 @@ def test_close_position_blocked_when_halted() -> None:
     pm = PositionManager.from_config(cfg)
     pm.cash = 1000
     pm.open_position("AAPL", qty=10, price=10)
-    ts = datetime.utcnow()
+    ts = datetime.now(UTC)
     pm.risk_manager.update(1000, ts)
     pm.risk_manager.update(800, ts + timedelta(minutes=1))
     assert pm.risk_manager is not None

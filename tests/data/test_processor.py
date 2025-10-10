@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch, mock_open, MagicMock
+from unittest.mock import patch, mock_open
 import os
 import subprocess
 import yaml
@@ -158,7 +158,7 @@ class TestFeatureGenerationMethods(unittest.TestCase):
 
         # Ensure no dummy config file from other tests interferes
 
-    @patch("pandas_ta.bbands")
+    @patch("pandas_ta_classic.bbands")
     def test_add_bollinger_bands_uses_config_params(self, mocked_bbands):
         # Mock the return value of bbands to avoid issues with its internal structure
         # It should return a DataFrame with expected column names for BBANDS
@@ -190,7 +190,7 @@ class TestFeatureGenerationMethods(unittest.TestCase):
         self.assertIn("bb_middle", processed_df.columns)
         self.assertIn("bb_upper", processed_df.columns)
 
-    @patch("pandas_ta.sma")
+    @patch("pandas_ta_classic.sma")
     def test_add_volume_features_uses_config_params(self, mocked_sma):
         # Mock pandas_ta.sma to return a series, as expected
         mocked_sma.return_value = pd.Series([1.0] * len(self.dummy_df))

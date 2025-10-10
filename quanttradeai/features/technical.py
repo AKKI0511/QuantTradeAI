@@ -18,7 +18,7 @@ Typical Usage:
 """
 
 import pandas as pd
-import pandas_ta as ta
+import pandas_ta_classic as ta
 
 
 def sma(series: pd.Series, period: int) -> pd.Series:
@@ -55,7 +55,7 @@ def stochastic(
 ) -> pd.DataFrame:
     """Stochastic Oscillator with parameter-agnostic column selection.
 
-    ``pandas_ta.stoch`` encodes the parameters in its column names
+    ``pandas_ta_classic.stoch`` encodes the parameters in its column names
     (e.g. ``STOCHk_14_3_3``). This helper renames the first two returned
     columns to a stable ``stoch_k`` and ``stoch_d`` regardless of the
     ``k``/``d`` values used.
@@ -71,7 +71,7 @@ def stochastic(
     True
     """
     df = ta.stoch(high, low, close, k=k, d=d)
-    # Be resilient to pandas-ta naming: pick the first k/d columns returned
+    # Be resilient to pandas-ta_classic naming: pick the first k/d columns returned
     k_col = next(
         (c for c in df.columns if c.lower().startswith("stochk")), df.columns[0]
     )

@@ -19,26 +19,11 @@ import pandas as pd
 import numpy as np
 
 import logging
-import warnings
 import yaml  # Added for YAML loading
 from pydantic import ValidationError
+import pandas_ta_classic as ta  # For efficient technical analysis calculations
 
 from quanttradeai.utils.config_schemas import FeaturesConfigSchema
-
-# ---------------------------------------------------------------------------
-# pandas_ta relies on the deprecated ``numpy.NaN`` constant which was removed
-# in numpy 2.0.  Tests mock ``pandas_ta`` functions but importing the library
-# would normally fail under numpy>=2 due to this missing attribute.  To keep the
-# import working we provide ``numpy.NaN`` when it's absent before importing
-# ``pandas_ta``.
-if not hasattr(np, "NaN"):
-    np.NaN = np.nan  # pragma: no cover - simple compatibility shim
-
-# Suppress pandas_ta pkg_resources deprecation warning (third-party)
-warnings.filterwarnings(
-    "ignore", message="pkg_resources is deprecated.*", category=UserWarning
-)
-import pandas_ta as ta  # For efficient technical analysis calculations
 from quanttradeai.features import technical as ft
 from quanttradeai.features import custom as cf
 from quanttradeai.features.sentiment import SentimentAnalyzer
@@ -365,7 +350,7 @@ class DataProcessor:
         return df
 
     def _add_bollinger_bands(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Calculate Bollinger Bands using ``pandas_ta`` and append them."""
+        """Calculate Bollinger Bands using ``pandas_ta_classic`` and append them."""
         try:
             bb = ta.bbands(df["Close"], length=self.bb_period, std=self.bb_std)
             df["bb_lower"] = bb.iloc[:, 0]

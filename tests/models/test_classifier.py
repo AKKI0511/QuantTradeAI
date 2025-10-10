@@ -1,7 +1,6 @@
 import unittest
 import pandas as pd
 import numpy as np
-import os
 
 from quanttradeai.models.classifier import MomentumClassifier
 

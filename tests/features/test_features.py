@@ -1,20 +1,19 @@
 import unittest
 from unittest.mock import patch
 import pandas as pd
-import os
 
 from quanttradeai.features import technical as ft
 from quanttradeai.features import custom as cf
 
 
 class TestTechnicalFunctions(unittest.TestCase):
-    @patch("pandas_ta.sma")
+    @patch("pandas_ta_classic.sma")
     def test_sma_calls_pandas_ta(self, mock_sma):
         series = pd.Series([1, 2, 3])
         ft.sma(series, 5)
         mock_sma.assert_called_once_with(series, length=5)
 
-    @patch("pandas_ta.macd")
+    @patch("pandas_ta_classic.macd")
     def test_macd_returns_dataframe(self, mock_macd):
         mock_df = pd.DataFrame(
             {"MACD_12_26_9": [0], "MACDs_12_26_9": [0], "MACDh_12_26_9": [0]}
