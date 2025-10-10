@@ -24,6 +24,7 @@
 - 📈 Backtesting: execution costs, slippage, liquidity limits, adaptive impact, intrabar fills, borrow fees
 - 🛡️ Risk management: drawdown and turnover guards
 - 📟 Live trading: real-time position manager with intraday risk controls
+- 🔌 Streaming: plugin-ready provider framework with automatic discovery and health monitoring
 - 🛠️ CLI: end‑to‑end pipeline, evaluation, and model backtest in one place
 
 ## Quickstart
@@ -159,6 +160,10 @@ gw = StreamingGateway("config/streaming.yaml")
 gw.subscribe_to_trades(["AAPL"], lambda m: print("TRADE", m))
 # gw.start_streaming()  # blocking
 ```
+
+- Provider adapters are discovered dynamically via `quanttradeai.streaming.providers.ProviderDiscovery`,
+  validated with `ProviderConfigValidator`, and monitored through `ProviderHealthMonitor`. See
+  [docs/api/streaming.md](docs/api/streaming.md) for detailed provider configuration and health tooling.
 
 ### Streaming Health Monitoring
 
