@@ -24,6 +24,9 @@ data:
   end_date: '2024-12-31'
   cache_dir: 'data/raw'
   cache_path: 'data/raw'
+  secondary_timeframes:
+    - '1h'
+    - '30m'
   cache_expiration_days: 7
   use_cache: true
   refresh: false
@@ -37,6 +40,7 @@ data:
 - `symbols`: List of stock symbols to process
 - `start_date`/`end_date`: Data date range
 - `cache_dir`: Directory for cached data
+- `secondary_timeframes`: Optional list of higher-frequency bars to resample into the primary `timeframe` using OHLCV aggregations (`open→first`, `high→max`, `low→min`, `close→last`, `volume→sum`)
 - `use_cache`: Enable/disable caching
 - `refresh`: Force fresh data download
 - `max_workers`: Parallel processing workers

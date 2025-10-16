@@ -53,6 +53,7 @@ class DataLoader:
         self.start_date = data_cfg.start_date
         self.end_date = data_cfg.end_date
         self.timeframe = data_cfg.timeframe or "1d"
+        self.secondary_timeframes = data_cfg.secondary_timeframes or []
         # allow both legacy 'cache_dir' and new 'cache_path' keys
         self.cache_dir = data_cfg.cache_path or data_cfg.cache_dir or "data/raw"
         self.cache_expiration_days = data_cfg.cache_expiration_days
@@ -76,23 +77,52 @@ class DataLoader:
             self.cache_dir, f"{symbol}_{self.timeframe}_data.parquet"
         )
         try:
-            if self.use_cache and not refresh and self._is_cache_valid(cache_file):
-                logger.info(f"Loading cached data for {symbol} from {cache_file}")
-                df = pd.read_parquet(cache_file)
-            else:
-                logger.info(f"Fetching data for {symbol}")
-                df = self.data_source.fetch(
-                    symbol, self.start_date, self.end_date, self.timeframe
+            df = self._load_timeframe_data(
+                symbol=symbol,
+                timeframe=self.timeframe,
+                cache_file=cache_file,
+                refresh=refresh,
+            )
+
+            if df is None or df.empty:
+                logger.error(f"No data found for {symbol}")
+                return None
+
+            df = df.sort_index()
+
+            for secondary_tf in self.secondary_timeframes:
+                secondary_cache = os.path.join(
+                    self.cache_dir, f"{symbol}_{secondary_tf}_data.parquet"
+                )
+                secondary_df = self._load_timeframe_data(
+                    symbol=symbol,
+                    timeframe=secondary_tf,
+                    cache_file=secondary_cache,
+                    refresh=refresh,
                 )
 
-                if df is None or df.empty:
-                    logger.error(f"No data found for {symbol}")
-                    return None
+                if secondary_df is None or secondary_df.empty:
+                    logger.warning(
+                        "No data found for %s at secondary timeframe %s",
+                        symbol,
+                        secondary_tf,
+                    )
+                    continue
 
-                if self.use_cache:
-                    os.makedirs(self.cache_dir, exist_ok=True)
-                    df.to_parquet(cache_file)
-                    logger.info(f"Cached data for {symbol} at {cache_file}")
+                try:
+                    resampled = self._resample_secondary(
+                        secondary_df, df.index, secondary_tf
+                    )
+                except ValueError as exc:
+                    logger.warning(
+                        "Skipping secondary timeframe %s for %s: %s",
+                        secondary_tf,
+                        symbol,
+                        exc,
+                    )
+                    continue
+
+                df = df.join(resampled, how="left")
 
             missing_dates = self._check_missing_dates(df)
             if missing_dates:
@@ -144,6 +174,72 @@ class DataLoader:
         all_dates = pd.date_range(start=df.index.min(), end=df.index.max(), freq="B")
         missing_dates = all_dates.difference(df.index)
         return list(missing_dates)
+
+    def _load_timeframe_data(
+        self, symbol: str, timeframe: str, cache_file: str, refresh: bool
+    ) -> Optional[pd.DataFrame]:
+        """Load data for a given timeframe from cache or datasource."""
+
+        if self.use_cache and not refresh and self._is_cache_valid(cache_file):
+            logger.info(
+                "Loading cached data for %s (%s) from %s", symbol, timeframe, cache_file
+            )
+            return pd.read_parquet(cache_file)
+
+        logger.info(f"Fetching data for {symbol} ({timeframe})")
+        df = self.data_source.fetch(
+            symbol, self.start_date, self.end_date, timeframe
+        )
+
+        if df is None or df.empty:
+            return None
+
+        if self.use_cache:
+            os.makedirs(self.cache_dir, exist_ok=True)
+            df.to_parquet(cache_file)
+            logger.info(
+                "Cached data for %s (%s) at %s", symbol, timeframe, cache_file
+            )
+
+        return df
+
+    def _resample_secondary(
+        self,
+        df: pd.DataFrame,
+        target_index: pd.Index,
+        source_timeframe: str,
+    ) -> pd.DataFrame:
+        """Resample a secondary timeframe to the loader's primary timeframe."""
+
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df = df.copy()
+            df.index = pd.to_datetime(df.index)
+
+        df = df.sort_index()
+
+        required_columns = {
+            "Open": "first",
+            "High": "max",
+            "Low": "min",
+            "Close": "last",
+            "Volume": "sum",
+        }
+
+        missing = [col for col in required_columns if col not in df.columns]
+        if missing:
+            raise ValueError(
+                f"Secondary timeframe data missing required columns: {missing}"
+            )
+
+        resampled = df.resample(self.timeframe).agg(required_columns)
+
+        renamed = {
+            col: f"{col.lower()}_{source_timeframe}_{required_columns[col]}"
+            for col in required_columns
+        }
+        resampled = resampled.rename(columns=renamed)
+        resampled = resampled.reindex(target_index)
+        return resampled
 
     def validate_data(self, data_dict: Dict[str, pd.DataFrame]) -> bool:
         """
