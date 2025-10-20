@@ -13,6 +13,7 @@ from .auth_manager import AuthManager
 from .rate_limiter import AdaptiveRateLimiter
 from .connection_pool import ConnectionPool
 from .logging import logger
+from .providers.health import ProviderHealthMonitor
 
 Callback = Callable[[str, dict], Awaitable[None]]
 
@@ -49,11 +50,23 @@ class WebSocketManager:
             adapter.auth_manager = AuthManager(adapter.name)
         self.adapters.append(adapter)
 
-    async def _connect_with_retry(self, adapter: DataProviderAdapter) -> None:
+    async def _connect_with_retry(
+        self,
+        adapter: DataProviderAdapter,
+        *,
+        monitor: Optional[ProviderHealthMonitor] = None,
+    ) -> None:
         delay = 1.0
         for attempt in range(self.reconnect_attempts):
             try:
-                await adapter.circuit_breaker.call_async(adapter.connect)
+                if monitor is not None:
+
+                    async def _operation() -> None:
+                        await adapter.circuit_breaker.call_async(adapter.connect)
+
+                    await monitor.execute_with_health(adapter.name, _operation)
+                else:
+                    await adapter.circuit_breaker.call_async(adapter.connect)
                 return
             except CircuitBreakerError as exc:
                 logger.error("circuit_open", provider=adapter.name, error=str(exc))
@@ -70,11 +83,13 @@ class WebSocketManager:
                 await asyncio.sleep(delay)
                 delay *= 2
 
-    async def connect_all(self) -> None:
+    async def connect_all(
+        self, *, monitor: Optional[ProviderHealthMonitor] = None
+    ) -> None:
         """Connect all registered adapters."""
 
         for adapter in self.adapters:
-            await self._connect_with_retry(adapter)
+            await self._connect_with_retry(adapter, monitor=monitor)
         self.connection_pool._active.update(
             ad.connection for ad in self.adapters if ad.connection
         )

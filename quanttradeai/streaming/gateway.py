@@ -39,6 +39,7 @@ from .monitoring import (
 )
 from .monitoring.metrics import Metrics
 from .logging import logger
+from .providers import ProviderHealthMonitor
 
 AdapterMap = {
     "alpaca": AlpacaAdapter,
@@ -58,6 +59,7 @@ class StreamingGateway:
     buffer: StreamBuffer = field(init=False)
     metrics: Metrics = field(init=False)
     health_monitor: StreamingHealthMonitor = field(init=False)
+    provider_monitor: ProviderHealthMonitor = field(init=False)
     _subscriptions: List[Tuple[str, List[str]]] = field(default_factory=list)
     _callbacks: Dict[str, List[Callback]] = field(default_factory=dict)
     _config_symbols: List[str] = field(default_factory=list)
@@ -98,6 +100,9 @@ class StreamingGateway:
             queue_size_fn=self.buffer.queue.qsize,
             queue_name="stream",
         )
+        self.provider_monitor = ProviderHealthMonitor(
+            streaming_monitor=self.health_monitor
+        )
         api_cfg = health_cfg.get("api", {})
         self._api_enabled = api_cfg.get("enabled", False)
         self._api_host = api_cfg.get("host", "0.0.0.0")
@@ -116,6 +121,17 @@ class StreamingGateway:
                 circuit_breaker_cfg=provider_cfg.get("circuit_breaker", {}),
                 rate_limit_cfg=provider_cfg.get("rate_limit"),
                 auth_method=provider_cfg.get("auth_method", "api_key"),
+            )
+
+            async def _failover(adapter=adapter) -> None:
+                await self.websocket_manager._connect_with_retry(
+                    adapter,
+                    monitor=self.provider_monitor,
+                )
+
+            self.provider_monitor.register_provider(
+                adapter.name,
+                failover_handler=_failover,
             )
             # Config-driven subscriptions (optional)
             subs = provider_cfg.get("subscriptions", []) or []
@@ -159,7 +175,7 @@ class StreamingGateway:
                 logger.error("callback_error", error=str(exc))
 
     async def _start(self) -> None:
-        await self.websocket_manager.connect_all()
+        await self.websocket_manager.connect_all(monitor=self.provider_monitor)
         for adapter in self.websocket_manager.adapters:
             self.health_monitor.register_connection(adapter.name)
         asyncio.create_task(self.health_monitor.monitor_connection_health())
@@ -188,7 +204,18 @@ class StreamingGateway:
             )
         for channel, symbols in self._subscriptions:
             for adapter in self.websocket_manager.adapters:
-                await adapter.subscribe(channel, symbols)
+
+                async def _subscribe(
+                    adapter=adapter,
+                    channel=channel,
+                    symbols=symbols,
+                ) -> None:
+                    await adapter.subscribe(channel, symbols)
+
+                await self.provider_monitor.execute_with_health(
+                    adapter.name,
+                    _subscribe,
+                )
         await self.websocket_manager.run(self._dispatch)
 
     def start_streaming(self) -> None:

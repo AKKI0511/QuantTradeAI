@@ -1,14 +1,75 @@
 import asyncio
 import json
 import tempfile
-import asyncio
-import json
-import tempfile
-from unittest.mock import patch
+import time
+from typing import Awaitable, Callable, Dict, List, Optional
+from unittest.mock import AsyncMock, patch
 
 import yaml
 
+from quanttradeai.streaming.monitoring import StreamingHealthMonitor
+
+import pytest
 from quanttradeai.streaming import StreamingGateway
+
+
+class StubProviderMonitor:
+    def __init__(
+        self,
+        *,
+        streaming_monitor: Optional[StreamingHealthMonitor] = None,
+        **_: Dict,
+    ) -> None:
+        self.streaming_monitor = streaming_monitor or StreamingHealthMonitor()
+        self.recovery_manager = self.streaming_monitor.recovery_manager
+        self.registered: List[str] = []
+        self.failover_handlers: Dict[str, Callable[[], Awaitable[None]]] = {}
+        self.execute_calls: List[str] = []
+        self.record_success_calls: List[float] = []
+        self.record_failure_calls: List[str] = []
+        self.status_providers: Dict[str, Callable[[], object]] = {}
+
+    def register_provider(
+        self,
+        provider_name: str,
+        *,
+        failover_handler: Optional[Callable[[], Awaitable[None]]] = None,
+        status_provider: Optional[Callable[[], object]] = None,
+    ) -> None:
+        self.streaming_monitor.register_connection(provider_name)
+        self.registered.append(provider_name)
+        if failover_handler is not None:
+            self.failover_handlers[provider_name] = failover_handler
+        if status_provider is not None:
+            self.status_providers[provider_name] = status_provider
+
+    async def execute_with_health(
+        self,
+        provider_name: str,
+        operation: Callable[[], Awaitable[object]],
+        *,
+        fallback: Optional[Callable[[], Awaitable[object]]] = None,
+    ) -> object:
+        self.execute_calls.append(provider_name)
+        start = time.perf_counter()
+        try:
+            result = await operation()
+        except Exception as exc:
+            await self.record_failure(provider_name, exc)
+            if fallback is not None:
+                return await fallback()
+            raise
+        latency_ms = (time.perf_counter() - start) * 1000.0
+        await self.record_success(provider_name, latency_ms)
+        return result
+
+    async def record_success(
+        self, provider_name: str, latency_ms: float, *, bytes_received: int = 0
+    ) -> None:
+        self.record_success_calls.append(latency_ms)
+
+    async def record_failure(self, provider_name: str, error: Exception) -> None:
+        self.record_failure_calls.append(provider_name)
 
 
 class FakeConnection:
@@ -69,3 +130,101 @@ def test_gateway_streaming():
                     pass
 
     asyncio.run(run_test())
+
+
+@patch("quanttradeai.streaming.gateway.ProviderHealthMonitor", new=StubProviderMonitor)
+def test_gateway_registers_providers_and_failover(tmp_path):
+    cfg = {
+        "streaming": {
+            "providers": [
+                {
+                    "name": "alpaca",
+                    "websocket_url": "ws://test",
+                    "auth_method": "none",
+                }
+            ]
+        }
+    }
+    config_file = tmp_path / "streaming.yaml"
+    config_file.write_text(yaml.safe_dump(cfg))
+    gateway = StreamingGateway(str(config_file))
+    monitor = gateway.provider_monitor
+    assert monitor.registered == ["alpaca"]
+    adapter = gateway.websocket_manager.adapters[0]
+    gateway.websocket_manager._connect_with_retry = AsyncMock()
+    failover = monitor.failover_handlers[adapter.name]
+    asyncio.run(failover())
+    gateway.websocket_manager._connect_with_retry.assert_awaited_once()
+    _, kwargs = gateway.websocket_manager._connect_with_retry.await_args
+    assert kwargs["monitor"] is monitor
+
+
+@patch("quanttradeai.streaming.gateway.ProviderHealthMonitor", new=StubProviderMonitor)
+def test_gateway_start_uses_provider_monitor(tmp_path):
+    cfg = {
+        "streaming": {
+            "providers": [
+                {
+                    "name": "alpaca",
+                    "websocket_url": "ws://test",
+                    "auth_method": "none",
+                }
+            ]
+        }
+    }
+    config_file = tmp_path / "streaming.yaml"
+    config_file.write_text(yaml.safe_dump(cfg))
+    gateway = StreamingGateway(str(config_file))
+    adapter = gateway.websocket_manager.adapters[0]
+    gateway.subscribe_to_trades(["TEST"], callback=lambda _: None)
+    adapter.subscribe = AsyncMock(return_value=None)
+    gateway.websocket_manager.connect_all = AsyncMock()
+    gateway.websocket_manager.run = AsyncMock()
+    gateway.health_monitor.monitor_connection_health = AsyncMock()
+
+    async def run_start():
+        await gateway._start()
+
+    asyncio.run(run_start())
+
+    gateway.websocket_manager.connect_all.assert_awaited_once()
+    _, kwargs = gateway.websocket_manager.connect_all.await_args
+    assert kwargs["monitor"] is gateway.provider_monitor
+    adapter.subscribe.assert_awaited_once()
+    assert gateway.provider_monitor.execute_calls.count("alpaca") == len(
+        gateway._subscriptions
+    )
+
+
+@patch("quanttradeai.streaming.gateway.ProviderHealthMonitor", new=StubProviderMonitor)
+def test_websocket_manager_reports_failures(tmp_path):
+    cfg = {
+        "streaming": {
+            "providers": [
+                {
+                    "name": "alpaca",
+                    "websocket_url": "ws://test",
+                    "auth_method": "none",
+                }
+            ]
+        }
+    }
+    config_file = tmp_path / "streaming.yaml"
+    config_file.write_text(yaml.safe_dump(cfg))
+    gateway = StreamingGateway(str(config_file))
+    monitor = gateway.provider_monitor
+    manager = gateway.websocket_manager
+    adapter = manager.adapters[0]
+    manager.reconnect_attempts = 1
+
+    async def failing_connect():
+        raise RuntimeError("boom")
+
+    adapter.connect = AsyncMock(side_effect=failing_connect)
+
+    async def run_connect():
+        await manager._connect_with_retry(adapter, monitor=monitor)
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(run_connect())
+    assert monitor.record_failure_calls
