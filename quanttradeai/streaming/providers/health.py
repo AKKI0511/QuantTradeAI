@@ -7,7 +7,7 @@ import logging
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timezone
-from typing import Awaitable, Callable, Deque, Dict, Optional, TypeVar
+from typing import Awaitable, Callable, Deque, Dict, Optional, Set, TypeVar
 
 from pybreaker import CircuitBreaker, CircuitBreakerError
 
@@ -40,6 +40,7 @@ class ProviderHealthMonitor:
         self._failover_handlers: Dict[str, Callable[[], Awaitable[None]]] = {}
         self._circuit_breakers: Dict[str, CircuitBreaker] = {}
         self._status_sources: Dict[str, Callable[[], ProviderHealthStatus]] = {}
+        self._active_failovers: Set[str] = set()
         self._lock = asyncio.Lock()
         self.error_window = error_window
         self.error_threshold = error_threshold
@@ -109,6 +110,9 @@ class ProviderHealthMonitor:
         handler = self._failover_handlers.get(provider_name)
         if handler is None:
             return
+        if provider_name in self._active_failovers:
+            return
+        self._active_failovers.add(provider_name)
         try:
             async with self._lock:
                 status = self._statuses.setdefault(
@@ -123,6 +127,8 @@ class ProviderHealthMonitor:
                 "provider_failover_failed",
                 extra={"provider": provider_name, "error": str(exc)},
             )
+        finally:
+            self._active_failovers.discard(provider_name)
 
     # ------------------------------------------------------------------
     async def execute_with_health(
