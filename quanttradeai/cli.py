@@ -121,6 +121,11 @@ def cmd_backtest_model(
     backtest_config: Optional[str] = typer.Option(
         "config/backtest_config.yaml", "-b", "--backtest-config", help="Backtest config"
     ),
+    risk_config: Optional[str] = typer.Option(
+        "config/risk_config.yaml",
+        "--risk-config",
+        help="Risk management config applied via drawdown guard",
+    ),
     cost_bps: Optional[float] = typer.Option(None, help="Transaction cost in bps"),
     cost_fixed: Optional[float] = typer.Option(None, help="Fixed transaction cost"),
     slippage_bps: Optional[float] = typer.Option(None, help="Slippage in bps"),
@@ -135,6 +140,7 @@ def cmd_backtest_model(
         model_config=config,
         model_path=model_path,
         backtest_config=backtest_config,
+        risk_config=risk_config,
         cost_bps=cost_bps,
         cost_fixed=cost_fixed,
         slippage_bps=slippage_bps,

@@ -18,7 +18,6 @@ Typical Usage:
 """
 
 import pandas as pd
-from quanttradeai.utils.metrics import sharpe_ratio, max_drawdown
 from quanttradeai.trading.risk import apply_stop_loss_take_profit
 from quanttradeai.trading.portfolio import PortfolioManager
 from quanttradeai.trading.drawdown_guard import DrawdownGuard
@@ -30,6 +29,7 @@ def _simulate_single(
     stop_loss_pct: float | None = None,
     take_profit_pct: float | None = None,
     execution: dict | None = None,
+    drawdown_guard: DrawdownGuard | None = None,
 ) -> pd.DataFrame:
     """Simulate trades for a single symbol with execution effects."""
     data = df.copy()
@@ -102,14 +102,36 @@ def _simulate_single(
     gross_returns: list[float] = [0.0] * len(data)
     net_returns: list[float] = [0.0] * len(data)
     ledger: list[dict] = []
+    equity_value = 1.0
+    last_timestamp = data.index[0] if not data.empty else None
+    updated_portfolio = False
 
     for i in range(len(data)):
         price = prices.iloc[i]
         volume = volumes.iloc[i] if i < len(volumes) else float("inf")
         label = data["label"].iloc[i]
+
+        size_multiplier = 1.0
+        halt_trading = False
+        emergency_liquidate = False
+        if drawdown_guard is not None:
+            drawdown_guard.check_drawdown_limits()
+            size_multiplier = drawdown_guard.get_position_size_multiplier()
+            halt_trading = drawdown_guard.should_halt_trading()
+            emergency_liquidate = drawdown_guard.should_emergency_liquidate()
+
         if carry and label * carry <= 0:
             carry = 0.0
-        desired = label + carry
+        if emergency_liquidate:
+            desired = 0.0
+            carry = 0.0
+        else:
+            scaled_label = label * size_multiplier
+            if halt_trading:
+                desired = 0.0
+                carry = 0.0
+            else:
+                desired = scaled_label + carry
 
         diff = desired - position
         side = 1 if diff > 0 else -1 if diff < 0 else 0
@@ -286,6 +308,9 @@ def _simulate_single(
                         "order_type": order_type,
                     }
                 )
+                if drawdown_guard is not None and exec_qty > 0:
+                    notional = exec_qty * fill_price
+                    drawdown_guard.record_trade(notional, data.index[i])
 
         borrow_cost = 0.0
         if (
@@ -324,6 +349,14 @@ def _simulate_single(
             cost_return = total_cost / price if price else 0.0
             gross_returns[i] = gross_ret
             net_returns[i] = gross_ret - cost_return
+            if drawdown_guard is not None:
+                equity_value *= 1 + net_returns[i]
+                last_timestamp = data.index[i + 1]
+                drawdown_guard.update_portfolio_value(
+                    equity_value,
+                    last_timestamp,
+                )
+                updated_portfolio = True
     gross_returns[-1] = 0.0
     net_returns[-1] = 0.0
     data["gross_return"] = pd.Series(gross_returns, index=data.index)
@@ -331,6 +364,12 @@ def _simulate_single(
     data["gross_equity_curve"] = (1 + data["gross_return"]).cumprod()
     data["equity_curve"] = (1 + data["strategy_return"]).cumprod()
     data.attrs["ledger"] = pd.DataFrame(ledger)
+    if (
+        drawdown_guard is not None
+        and not updated_portfolio
+        and last_timestamp is not None
+    ):
+        drawdown_guard.update_portfolio_value(equity_value, last_timestamp)
     return data
 
 
@@ -402,6 +441,7 @@ def simulate_trades(
                 stop_loss_pct=stop_loss_pct,
                 take_profit_pct=take_profit_pct,
                 execution=exec_cfg,
+                drawdown_guard=drawdown_guard,
             )
             results[symbol] = res
             qty = portfolio.open_position(symbol, data["Close"].iloc[0], stop_loss_pct)
@@ -428,6 +468,7 @@ def simulate_trades(
             stop_loss_pct=stop_loss_pct,
             take_profit_pct=take_profit_pct,
             execution=exec_cfg,
+            drawdown_guard=drawdown_guard,
         )
         if drawdown_guard is not None:
             curve = res["equity_curve"]

@@ -136,11 +136,22 @@ class DrawdownGuard:
             self._state.halt_trading = False
             self._state.emergency = False
 
+    def _to_aware_utc(self, ts: datetime) -> datetime:
+        """Return a timezone-aware UTC datetime for comparisons.
+
+        Accepts naive datetimes and attaches UTC. If `ts` is already aware,
+        leaves it unchanged.
+        """
+        if ts.tzinfo is None or ts.tzinfo.utcoffset(ts) is None:
+            return ts.replace(tzinfo=UTC)
+        return ts
+
     def update_portfolio_value(self, current_value: float, timestamp: datetime) -> None:
         with self._lock:
             if current_value <= 0:
                 return
-            self._history.append((timestamp, current_value))
+            ts = self._to_aware_utc(timestamp)
+            self._history.append((ts, current_value))
             if current_value > self._high_water_mark:
                 self._high_water_mark = current_value
             dd_abs = self._high_water_mark - current_value
@@ -154,15 +165,16 @@ class DrawdownGuard:
             if self.config.max_drawdown_absolute:
                 ratio = max(ratio, dd_abs / self.config.max_drawdown_absolute)
 
-            turnover_ratio = self._evaluate_turnover(timestamp)
+            turnover_ratio = self._evaluate_turnover(ts)
             ratio = max(ratio, turnover_ratio)
 
             self._update_state(ratio)
 
     def record_trade(self, notional: float, timestamp: datetime) -> None:
         with self._lock:
-            self._trades.append((timestamp, abs(notional)))
-            ratio = self._evaluate_turnover(timestamp)
+            ts = self._to_aware_utc(timestamp)
+            self._trades.append((ts, abs(notional)))
+            ratio = self._evaluate_turnover(ts)
             dd_ratio = (
                 self._state.drawdown_pct / self.config.max_drawdown_pct
                 if self.config.max_drawdown_pct

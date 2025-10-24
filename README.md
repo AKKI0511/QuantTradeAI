@@ -54,8 +54,8 @@ poetry run quanttradeai train -c config/model_config.yaml
 # (use a path under models/experiments/<timestamp>/<SYMBOL> or your own models/trained/<SYMBOL>)
 poetry run quanttradeai evaluate -m models/experiments/<timestamp>/<SYMBOL> -c config/model_config.yaml
 
-# Backtest a saved model on the configured test window (with execution costs)
-poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> -c config/model_config.yaml -b config/backtest_config.yaml
+# Backtest a saved model on the configured test window (with execution costs and optional risk halts)
+poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> -c config/model_config.yaml -b config/backtest_config.yaml --risk-config config/risk_config.yaml
 ```
 
 Artifacts are written to:
@@ -71,6 +71,8 @@ Artifacts are written to:
 - `config/streaming.yaml`: providers, auth, subscriptions (optional)
 - `config/position_manager.yaml`: live position tracking and impact parameters
 
+Pass `--risk-config path/to/risk.yaml` to `poetry run quanttradeai backtest-model` to enforce the configured drawdown guard during CLI backtests. If the file is omitted or missing, the backtest proceeds without halts.
+
 Time‑aware evaluation rules:
 - If `data.test_start` and `data.test_end` set: train = dates < `test_start`; test = `test_start` ≤ dates ≤ `test_end`
 - If only `data.test_start` set: train = dates < `test_start`; test = dates ≥ `test_start`
@@ -85,7 +87,7 @@ poetry run quanttradeai fetch-data -c config/model_config.yaml                 #
 poetry run quanttradeai train -c config/model_config.yaml                      # End-to-end training pipeline
 poetry run quanttradeai evaluate -m <model_dir> -c config/model_config.yaml    # Evaluate a saved model
 poetry run quanttradeai backtest -c config/backtest_config.yaml                # CSV backtest (uses data_path)
-poetry run quanttradeai backtest-model -m <model_dir> -c config/model_config.yaml -b config/backtest_config.yaml
+poetry run quanttradeai backtest-model -m <model_dir> -c config/model_config.yaml -b config/backtest_config.yaml --risk-config config/risk_config.yaml
 poetry run quanttradeai live-trade --url wss://example -c config/model_config.yaml
 ```
 
