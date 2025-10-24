@@ -299,6 +299,16 @@ risk_management:
 - `drawdown_protection`: monitors portfolio equity and halts trading at specified levels
 - `turnover_limits`: caps how frequently positions may change over each period
 
+### CLI Usage
+
+The backtesting CLI can enforce these limits via the drawdown guard:
+
+```bash
+poetry run quanttradeai backtest-model -m <model_dir> -c config/model_config.yaml --risk-config config/risk_config.yaml
+```
+
+If the path passed to `--risk-config` is missing or omitted, the command still runs, but no drawdown halts are applied.
+
 ## 🎯 Common Configurations
 
 ### Minimal Configuration

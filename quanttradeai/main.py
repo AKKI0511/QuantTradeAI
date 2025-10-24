@@ -19,6 +19,7 @@ from quanttradeai.data.datasource import WebSocketDataSource
 import pandas as pd
 from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
 from quanttradeai.models.classifier import MomentumClassifier
+from quanttradeai.trading.drawdown_guard import DrawdownGuard
 from typing import Tuple
 import yaml
 import json
@@ -323,6 +324,7 @@ def run_model_backtest(
     model_config: str = "config/model_config.yaml",
     model_path: str,
     backtest_config: str | None = "config/backtest_config.yaml",
+    risk_config: str | None = "config/risk_config.yaml",
     cost_bps: float | None = None,
     cost_fixed: float | None = None,
     slippage_bps: float | None = None,
@@ -357,6 +359,25 @@ def run_model_backtest(
         slippage_fixed=slippage_fixed,
         liquidity_max_participation=liquidity_max_participation,
     )
+
+    drawdown_guard: DrawdownGuard | None = None
+    if risk_config:
+        risk_path = Path(risk_config)
+        if risk_path.is_file():
+            try:
+                drawdown_guard = DrawdownGuard(config_path=str(risk_path))
+                logger.info("Loaded risk config from %s", risk_path)
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.warning(
+                    "Failed to load risk config %s: %s. Continuing without drawdown guard.",
+                    risk_path,
+                    exc,
+                )
+        else:
+            logger.info(
+                "Risk config not found at %s; continuing without drawdown guard.",
+                risk_path,
+            )
 
     data_dict = loader.fetch_data()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -394,6 +415,7 @@ def run_model_backtest(
                 stop_loss_pct=stop_loss,
                 take_profit_pct=take_profit,
                 execution=exec_cfg,
+                drawdown_guard=drawdown_guard,
             )
             metrics = compute_metrics(result_df)
 

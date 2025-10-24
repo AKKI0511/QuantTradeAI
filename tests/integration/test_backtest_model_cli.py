@@ -172,3 +172,63 @@ def test_backtest_model_cli_overrides_plumb_through():
     metrics = aaa["metrics"]
     assert any(k in metrics for k in ("sharpe_ratio", "gross_sharpe", "net_sharpe"))
 
+
+def test_backtest_model_cli_risk_config_passed_to_drawdown_guard():
+    from quanttradeai.cli import app
+
+    runner = CliRunner()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_cfg_path = os.path.join(tmpdir, "model_config.yaml")
+        cfg = {
+            "data": {
+                "symbols": ["AAA"],
+                "start_date": "2020-01-01",
+                "end_date": "2020-01-10",
+                "timeframe": "1d",
+                "use_cache": False,
+                "test_start": "2020-01-05",
+                "test_end": "2020-01-08",
+            },
+            "training": {"test_size": 0.2, "cv_folds": 3},
+        }
+        with open(model_cfg_path, "w") as f:
+            yaml.safe_dump(cfg, f)
+        model_dir = os.path.join(tmpdir, "fake_model")
+        os.makedirs(model_dir, exist_ok=True)
+        risk_path = os.path.join(tmpdir, "risk.yaml")
+        with open(risk_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump({"risk_management": {"drawdown_protection": {"max_drawdown_pct": 0.1}}}, f)
+
+        fake_result = pd.DataFrame(
+            {
+                "strategy_return": [0.01, -0.005],
+                "equity_curve": [1.01, 1.00495],
+            },
+            index=pd.date_range("2020-01-05", periods=2, freq="D"),
+        )
+
+        with patch("quanttradeai.main.DataLoader.fetch_data", return_value={"AAA": _mock_data()}), \
+            patch("quanttradeai.main.DataProcessor", FakeProcessor), \
+            patch("quanttradeai.main.MomentumClassifier", FakeClassifier), \
+            patch("quanttradeai.main.DrawdownGuard") as mock_guard, \
+            patch("quanttradeai.main.simulate_trades", return_value=fake_result) as mock_sim, \
+            patch("quanttradeai.main.compute_metrics", return_value={"net": 1.0}):
+
+            result = runner.invoke(
+                app,
+                [
+                    "backtest-model",
+                    "-m",
+                    model_dir,
+                    "-c",
+                    model_cfg_path,
+                    "--risk-config",
+                    risk_path,
+                ],
+            )
+
+    assert result.exit_code == 0, result.stdout
+    mock_guard.assert_called_once()
+    assert mock_guard.call_args.kwargs.get("config_path") == risk_path
+    assert mock_sim.call_args.kwargs.get("drawdown_guard") is mock_guard.return_value
+
