@@ -35,7 +35,13 @@ subscription_strategy = st.one_of(st.none(), st.integers(min_value=1, max_value=
     rate_limit=rate_strategy,
     max_subscriptions=subscription_strategy,
 )
-@settings(max_examples=25, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(
+    max_examples=25,
+    suppress_health_check=[
+        HealthCheck.function_scoped_fixture,
+        HealthCheck.too_slow,
+    ],
+)
 def test_provider_config_validator_property(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -18,7 +18,6 @@ Typical Usage:
 """
 
 import pandas as pd
-from quanttradeai.utils.metrics import sharpe_ratio, max_drawdown
 from quanttradeai.trading.risk import apply_stop_loss_take_profit
 from quanttradeai.trading.portfolio import PortfolioManager
 from quanttradeai.trading.drawdown_guard import DrawdownGuard
@@ -365,7 +364,11 @@ def _simulate_single(
     data["gross_equity_curve"] = (1 + data["gross_return"]).cumprod()
     data["equity_curve"] = (1 + data["strategy_return"]).cumprod()
     data.attrs["ledger"] = pd.DataFrame(ledger)
-    if drawdown_guard is not None and not updated_portfolio and last_timestamp is not None:
+    if (
+        drawdown_guard is not None
+        and not updated_portfolio
+        and last_timestamp is not None
+    ):
         drawdown_guard.update_portfolio_value(equity_value, last_timestamp)
     return data
 
