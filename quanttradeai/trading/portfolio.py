@@ -16,11 +16,14 @@ Typical Usage:
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, TYPE_CHECKING
 from datetime import datetime, UTC
 
 from .risk import position_size
 from .risk_manager import RiskManager
+
+if TYPE_CHECKING:
+    from .drawdown_guard import DrawdownGuard
 
 
 class PortfolioManager:
@@ -32,7 +35,31 @@ class PortfolioManager:
         max_risk_per_trade: float = 0.02,
         max_portfolio_risk: float = 0.1,
         risk_manager: RiskManager | None = None,
+        drawdown_guard: "DrawdownGuard | None" = None,
     ) -> None:
+        """Initialize a portfolio manager.
+
+        Parameters
+        ----------
+        capital:
+            Initial capital allocated to the portfolio.
+        max_risk_per_trade:
+            Maximum fraction of the portfolio value risked per trade.
+        max_portfolio_risk:
+            Maximum fraction of the portfolio value that can be exposed at once.
+        risk_manager:
+            Optional pre-configured :class:`RiskManager` instance.
+        drawdown_guard:
+            Optional :class:`DrawdownGuard` that will be wrapped in a
+            :class:`RiskManager`. Cannot be provided together with
+            ``risk_manager``.
+        """
+        if risk_manager is not None and drawdown_guard is not None:
+            raise ValueError("Provide either risk_manager or drawdown_guard, not both.")
+
+        if drawdown_guard is not None:
+            risk_manager = RiskManager(drawdown_guard=drawdown_guard)
+
         self.initial_capital = capital
         self.cash = capital
         self.max_risk_per_trade = max_risk_per_trade

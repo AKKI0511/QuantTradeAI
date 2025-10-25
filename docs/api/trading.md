@@ -75,7 +75,7 @@ qty = position_size(capital=10000, risk_per_trade=0.02, stop_loss_pct=0.05, pric
 print(f"Position size: {qty} shares")
 ```
 
-### `PortfolioManager(capital: float, max_risk_per_trade: float = 0.02, max_portfolio_risk: float = 0.1)`
+### `PortfolioManager(capital: float, max_risk_per_trade: float = 0.02, max_portfolio_risk: float = 0.1, risk_manager: RiskManager | None = None, drawdown_guard: DrawdownGuard | None = None)`
 
 Manages capital allocation and risk across multiple symbols.
 
@@ -83,6 +83,8 @@ Manages capital allocation and risk across multiple symbols.
 - `capital` (float): Initial portfolio capital
 - `max_risk_per_trade` (float, optional): Risk per trade as a fraction of portfolio value
 - `max_portfolio_risk` (float, optional): Maximum overall portfolio risk exposure
+- `risk_manager` (RiskManager, optional): Pre-configured risk coordinator used to enforce trading halts and position throttles.
+- `drawdown_guard` (DrawdownGuard, optional): Convenience shortcut to attach a guard without manually creating a `RiskManager`. Mutually exclusive with `risk_manager`.
 
 **Example:**
 ```python
@@ -94,6 +96,19 @@ pm = PortfolioManager(10000, max_risk_per_trade=0.02, max_portfolio_risk=0.10)
 # Open a position without a stop loss
 qty = pm.open_position("AAPL", price=150)
 print(f"AAPL position: {qty} shares")
+```
+
+```python
+from quanttradeai.trading import DrawdownGuard, PortfolioManager
+
+# Wire a drawdown guard directly into the portfolio manager
+guard = DrawdownGuard({
+    "drawdown_protection": {
+        "max_drawdown_pct": 0.05,
+        "hard_stop_threshold": 1.0,
+    }
+})
+pm = PortfolioManager(10000, drawdown_guard=guard)
 ```
 
 ## Risk Management Workflows
