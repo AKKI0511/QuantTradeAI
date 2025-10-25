@@ -16,8 +16,8 @@ data:
   refresh: false
   max_workers: 1
   # Time-aware test window used by CLI training
-  test_start: '2025-01-01'
-  test_end: '2025-01-31'
+  test_start: '2024-09-01'
+  test_end: '2024-12-31'
 
 # Feature Engineering Parameters
 features:

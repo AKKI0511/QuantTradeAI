@@ -93,6 +93,19 @@ def time_aware_split(
     test_start = data_cfg.get("test_start")
     test_end = data_cfg.get("test_end")
 
+    def _fraction_split() -> Tuple[pd.DataFrame, pd.DataFrame]:
+        test_size = float(train_cfg.get("test_size", 0.2))
+        if not 0 < test_size < 1:
+            raise ValueError(
+                "training.test_size must be between 0 and 1 for chronological fallback splits."
+            )
+        n = len(df)
+        split_idx = max(1, int(n * (1 - test_size)))
+        train_part = df.iloc[:split_idx]
+        test_part = df.iloc[split_idx:]
+        return train_part, test_part
+
+    fallback_used = False
     if test_start:
         start_dt = pd.to_datetime(test_start)
         if test_end:
@@ -102,16 +115,28 @@ def time_aware_split(
         else:
             train_df = df[df.index < start_dt]
             test_df = df[df.index >= start_dt]
+
+        if len(train_df) == 0 or len(test_df) == 0:
+            fallback_used = True
+            fallback_test_size = float(train_cfg.get("test_size", 0.2))
+            logger.warning(
+                "Requested test window %s to %s not present in data; falling back to chronological split using training.test_size=%.3f.",
+                test_start,
+                test_end or "data end",
+                fallback_test_size,
+            )
+            train_df, test_df = _fraction_split()
     else:
-        test_size = float(train_cfg.get("test_size", 0.2))
-        n = len(df)
-        split_idx = max(1, int(n * (1 - test_size)))
-        train_df = df.iloc[:split_idx]
-        test_df = df.iloc[split_idx:]
+        train_df, test_df = _fraction_split()
 
     if len(train_df) == 0 or len(test_df) == 0:
+        window_msg = (
+            "chronological fallback split"
+            if fallback_used or not test_start
+            else "requested test window"
+        )
         raise ValueError(
-            "Invalid train/test window produced empty split. Adjust test_start/test_end or test_size."
+            f"Invalid train/test window produced empty split when using {window_msg}. Adjust data.test_* or training.test_size."
         )
     return train_df, test_df
 

@@ -1,9 +1,13 @@
+import logging
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
+from pydantic import ValidationError
 import yaml
 
 from quanttradeai.main import time_aware_split, run_pipeline
+from quanttradeai.utils.config_schemas import ModelConfigSchema
 
 
 def test_time_aware_split_with_window():
@@ -34,6 +38,36 @@ def test_time_aware_split_fallback_fraction():
     train, test = time_aware_split(df, cfg)
     assert len(train) == 8 and len(test) == 2
     assert train.index.max() < test.index.min()
+
+
+def test_time_aware_split_warns_and_falls_back(caplog):
+    idx = pd.date_range("2024-01-01", periods=5, freq="D")
+    df = pd.DataFrame({"Close": range(5)}, index=idx)
+    cfg = {
+        "data": {"test_start": "2024-01-10", "test_end": "2024-01-12"},
+        "training": {"test_size": 0.4},
+    }
+
+    with caplog.at_level(logging.WARNING):
+        train, test = time_aware_split(df, cfg)
+
+    assert len(train) == 3 and len(test) == 2
+    assert "falling back to chronological split" in caplog.text
+
+
+def test_model_config_rejects_out_of_range_test_window():
+    with pytest.raises(ValidationError) as excinfo:
+        ModelConfigSchema(
+            data={
+                "symbols": ["AAA"],
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-31",
+                "timeframe": "1d",
+                "test_start": "2023-12-31",
+            }
+        )
+
+    assert "test_start" in str(excinfo.value)
 
 
 def test_pipeline_handles_secondary_timeframes(tmp_path):
