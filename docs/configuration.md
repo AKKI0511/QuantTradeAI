@@ -32,7 +32,7 @@ data:
   refresh: false
   max_workers: 1
   # Optional time-aware test window used by CLI training
-  test_start: '2024-10-01'
+  test_start: '2024-09-01'
   test_end: '2024-12-31'
 ```
 
@@ -45,6 +45,9 @@ data:
 - `refresh`: Force fresh data download
 - `max_workers`: Parallel processing workers
 - `test_start`/`test_end`: Optional test window for time-aware train/test split (if unset, last `training.test_size` fraction is used chronologically)
+
+!!! info "Date validation and fallback"
+    QuantTradeAI now validates that any configured `test_start`/`test_end` values fall within the overall `start_date` → `end_date` range and that the window is well ordered. If the requested window passes validation but your downloaded data is missing rows inside that range, the pipeline emits a warning and automatically falls back to the chronological `training.test_size` split so phase‑1 training can proceed.
 
 ### Model Parameters
 

@@ -9,8 +9,9 @@ Key Components:
     - :class:`FeaturesConfigSchema`
 """
 
+from datetime import datetime
 from typing import List, Optional, Dict, Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class DataSection(BaseModel):
@@ -27,6 +28,41 @@ class DataSection(BaseModel):
     test_start: Optional[str] = None
     test_end: Optional[str] = None
     max_workers: Optional[int] = 1
+
+    @staticmethod
+    def _parse_date(value: str, field_name: str) -> datetime:
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError as exc:  # pragma: no cover - defensive guard
+            raise ValueError(
+                f"data.{field_name} must be in ISO format YYYY-MM-DD. Received: {value!r}."
+            ) from exc
+
+    @model_validator(mode="after")
+    def validate_test_window(self) -> "DataSection":
+        start_dt = self._parse_date(self.start_date, "start_date")
+        end_dt = self._parse_date(self.end_date, "end_date")
+        if start_dt > end_dt:
+            raise ValueError("data.start_date must be on or before data.end_date.")
+
+        test_start_dt = None
+        if self.test_start is not None:
+            test_start_dt = self._parse_date(self.test_start, "test_start")
+            if not (start_dt <= test_start_dt <= end_dt):
+                raise ValueError(
+                    "data.test_start must fall within the configured data.start_date and data.end_date range."
+                )
+
+        if self.test_end is not None:
+            test_end_dt = self._parse_date(self.test_end, "test_end")
+            if not (start_dt <= test_end_dt <= end_dt):
+                raise ValueError(
+                    "data.test_end must fall within the configured data.start_date and data.end_date range."
+                )
+            if test_start_dt and test_start_dt > test_end_dt:
+                raise ValueError("data.test_start must be on or before data.test_end.")
+
+        return self
 
 
 class ModelConfigSchema(BaseModel):
