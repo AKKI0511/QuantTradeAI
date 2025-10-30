@@ -83,6 +83,31 @@ class SentimentConfig(BaseModel):
     extra: Optional[Dict[str, Any]] = None
 
 
+class MultiTimeframeOperation(BaseModel):
+    """Configuration for a derived multi-timeframe feature."""
+
+    type: Literal["ratio", "delta", "pct_change", "rolling_divergence"]
+    timeframe: str
+    base: Literal["open", "high", "low", "close", "volume"]
+    stat: Optional[str] = None
+    primary_column: Optional[str] = None
+    feature_name: Optional[str] = None
+    rolling_window: Optional[int] = Field(default=None, gt=1)
+
+    @model_validator(mode="after")
+    def validate_rolling_window(self) -> "MultiTimeframeOperation":
+        if self.type == "rolling_divergence" and self.rolling_window is None:
+            raise ValueError(
+                "multi_timeframe_features.operations rolling_divergence requires a rolling_window value greater than 1."
+            )
+        return self
+
+
+class MultiTimeframeConfig(BaseModel):
+    enabled: bool = False
+    operations: List[MultiTimeframeOperation] = Field(default_factory=list)
+
+
 class FeaturesConfigSchema(BaseModel):
     pipeline: PipelineConfig
     price_features: Optional[Any] = None
@@ -93,6 +118,7 @@ class FeaturesConfigSchema(BaseModel):
     sentiment: Optional[SentimentConfig] = None
     feature_selection: Optional[Dict[str, Any]] = None
     preprocessing: Optional[Dict[str, Any]] = None
+    multi_timeframe_features: Optional[MultiTimeframeConfig] = None
 
 
 class TransactionCostConfig(BaseModel):

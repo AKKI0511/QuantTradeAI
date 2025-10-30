@@ -83,6 +83,7 @@ preprocessing:
 pipeline:
   steps:
     - generate_technical_indicators
+    - generate_multi_timeframe_features
     - generate_volume_features
     - generate_custom_features
     - generate_sentiment
@@ -90,3 +91,18 @@ pipeline:
     - remove_outliers
     - scale_features
     - select_features
+
+# Multi-timeframe Features
+multi_timeframe_features:
+  enabled: false
+  operations:
+    - type: ratio
+      timeframe: "1h"
+      base: close
+      stat: last
+      feature_name: mtf_ratio_close_1h_last
+    - type: pct_change
+      timeframe: "30m"
+      base: volume
+      stat: sum
+      rolling_window: 5
