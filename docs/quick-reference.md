@@ -54,6 +54,28 @@ df_processed = processor.process_data(raw_df)
 df_labeled = processor.generate_labels(df_processed, forward_returns=5, threshold=0.01)
 ```
 
+#### Multi-timeframe Features
+Configure derived intraday signals directly in `config/features_config.yaml`:
+
+```yaml
+multi_timeframe_features:
+  enabled: true
+  operations:
+    - type: ratio          # Options: ratio, delta, pct_change, rolling_divergence
+      timeframe: "1h"      # Matches secondary_timeframes in model config
+      base: close          # open, high, low, close, or volume
+      stat: last           # Optional override; defaults to loader aggregate
+    - type: rolling_divergence
+      timeframe: "30m"
+      base: volume
+      stat: sum
+      rolling_window: 5    # Required for rolling_divergence
+```
+
+When enabled, the processor emits columns such as `mtf_ratio_close_1h_last`
+after the technical indicator step, making secondary timeframe aggregates
+immediately available to the model pipeline.
+
 ### Model Training
 ```python
 from quanttradeai import MomentumClassifier

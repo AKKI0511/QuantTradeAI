@@ -15,15 +15,18 @@ Typical Usage:
     ```
 """
 
-import pandas as pd
-import numpy as np
-
 import logging
+
+import numpy as np
+import pandas as pd
 import yaml  # Added for YAML loading
 from pydantic import ValidationError
 import pandas_ta_classic as ta  # For efficient technical analysis calculations
 
-from quanttradeai.utils.config_schemas import FeaturesConfigSchema
+from quanttradeai.utils.config_schemas import (
+    FeaturesConfigSchema,
+    MultiTimeframeOperation,
+)
 from quanttradeai.features import technical as ft
 from quanttradeai.features import custom as cf
 from quanttradeai.features.sentiment import SentimentAnalyzer
@@ -55,9 +58,19 @@ class DataProcessor:
                 config = yaml.safe_load(f)
 
             try:
-                FeaturesConfigSchema(**config)
+                features_schema = FeaturesConfigSchema(**config)
             except ValidationError as exc:
                 raise ValueError(f"Invalid feature configuration: {exc}") from exc
+
+            self.multi_timeframe_config = features_schema.multi_timeframe_features
+            self.multi_timeframe_enabled = bool(
+                self.multi_timeframe_config and self.multi_timeframe_config.enabled
+            )
+            self.multi_timeframe_operations: list[MultiTimeframeOperation] = (
+                list(self.multi_timeframe_config.operations)
+                if self.multi_timeframe_config
+                else []
+            )
 
             # Price-based features -- handle both mapping and list style configs
             price_cfg = config.get("price_features", {})
@@ -174,6 +187,7 @@ class DataProcessor:
             )
             self.pipeline = pipe_cfg or [
                 "generate_technical_indicators",
+                "generate_multi_timeframe_features",
                 "generate_volume_features",
                 "generate_custom_features",
                 "handle_missing_values",
@@ -181,6 +195,20 @@ class DataProcessor:
                 "scale_features",
                 "select_features",
             ]
+
+            if (
+                self.multi_timeframe_enabled
+                and "generate_multi_timeframe_features" not in self.pipeline
+            ):
+                insertion_index = 0
+                if "generate_technical_indicators" in self.pipeline:
+                    insertion_index = (
+                        self.pipeline.index("generate_technical_indicators") + 1
+                    )
+                self.pipeline.insert(
+                    insertion_index,
+                    "generate_multi_timeframe_features",
+                )
 
             logger.info("Successfully loaded feature parameters from %s", config_path)
 
@@ -206,8 +234,12 @@ class DataProcessor:
             self.outlier_limits = [0.01, 0.99]
             self.feature_selection_method = "recursive"
             self.n_features = None
+            self.multi_timeframe_config = None
+            self.multi_timeframe_enabled = False
+            self.multi_timeframe_operations = []
             self.pipeline = [
                 "generate_technical_indicators",
+                "generate_multi_timeframe_features",
                 "generate_volume_features",
                 "generate_custom_features",
                 "handle_missing_values",
@@ -238,8 +270,12 @@ class DataProcessor:
             self.outlier_limits = [0.01, 0.99]
             self.feature_selection_method = "recursive"
             self.n_features = None
+            self.multi_timeframe_config = None
+            self.multi_timeframe_enabled = False
+            self.multi_timeframe_operations = []
             self.pipeline = [
                 "generate_technical_indicators",
+                "generate_multi_timeframe_features",
                 "generate_volume_features",
                 "generate_custom_features",
                 "handle_missing_values",
@@ -275,6 +311,7 @@ class DataProcessor:
 
         step_map = {
             "generate_technical_indicators": self._generate_technical_indicators,
+            "generate_multi_timeframe_features": self._generate_multi_timeframe_features,
             "generate_volume_features": self._add_volume_features,
             "generate_custom_features": self._generate_custom_features,
             "generate_sentiment": self._add_sentiment_features,
@@ -426,6 +463,96 @@ class DataProcessor:
                 col_name = f"ratio_{pair[0]}_{pair[1]}"
                 with np.errstate(divide="ignore", invalid="ignore"):
                     df[col_name] = df[pair[0]] / df[pair[1]]
+
+        return df
+
+    def _generate_multi_timeframe_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Create derived features that combine secondary timeframe aggregates."""
+
+        if not self.multi_timeframe_enabled or not self.multi_timeframe_operations:
+            return df
+
+        primary_column_map = {
+            "open": "Open",
+            "high": "High",
+            "low": "Low",
+            "close": "Close",
+            "volume": "Volume",
+        }
+        default_stat_map = {
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "sum",
+        }
+
+        for operation in self.multi_timeframe_operations:
+            base = operation.base.lower()
+            primary_col = operation.primary_column or primary_column_map.get(base)
+            if not primary_col or primary_col not in df.columns:
+                logger.debug(
+                    "Skipping multi-timeframe feature for base %s: primary column %s missing",
+                    base,
+                    primary_col,
+                )
+                continue
+
+            stat = (operation.stat or default_stat_map.get(base) or "")
+            candidate_columns = []
+            if stat:
+                candidate_columns.append(f"{base}_{operation.timeframe}_{stat}")
+            candidate_columns.extend(
+                col
+                for col in df.columns
+                if col.startswith(f"{base}_{operation.timeframe}_")
+            )
+
+            secondary_column = next(
+                (col for col in candidate_columns if col in df.columns),
+                None,
+            )
+
+            if secondary_column is None:
+                logger.debug(
+                    "Secondary timeframe column missing for base %s and timeframe %s",
+                    base,
+                    operation.timeframe,
+                )
+                continue
+
+            feature_name = operation.feature_name
+            if not feature_name:
+                feature_name_parts = [
+                    "mtf",
+                    operation.type,
+                    base,
+                    operation.timeframe,
+                ]
+                if stat:
+                    feature_name_parts.append(stat)
+                if operation.type == "rolling_divergence" and operation.rolling_window:
+                    feature_name_parts.append(str(operation.rolling_window))
+                feature_name = "_".join(feature_name_parts)
+
+            secondary_series = df[secondary_column]
+            primary_series = df[primary_col]
+
+            if operation.type == "ratio":
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    df[feature_name] = secondary_series / primary_series
+            elif operation.type == "delta":
+                df[feature_name] = secondary_series - primary_series
+            elif operation.type == "pct_change":
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    df[feature_name] = (
+                        (secondary_series - primary_series) / primary_series
+                    )
+            elif operation.type == "rolling_divergence":
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    ratio = secondary_series / primary_series
+                window = operation.rolling_window or 5
+                df[feature_name] = ratio - ratio.rolling(window).mean()
 
         return df
 

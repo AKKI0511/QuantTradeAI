@@ -3,8 +3,8 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
-from pydantic import ValidationError
 import yaml
+from pydantic import ValidationError
 
 from quanttradeai.main import time_aware_split, run_pipeline
 from quanttradeai.utils.config_schemas import ModelConfigSchema
@@ -111,13 +111,18 @@ def test_pipeline_handles_secondary_timeframes(tmp_path):
 
         def process_passthrough(input_df):
             assert "close_1h_last" in input_df.columns
-            return input_df
+            enriched = input_df.copy()
+            enriched["mtf_ratio_close_1h_last"] = (
+                input_df["close_1h_last"] / input_df["Close"]
+            )
+            return enriched
 
         processor_instance = mock_processor.return_value
         processor_instance.process_data.side_effect = process_passthrough
 
         def generate_labels_passthrough(input_df, **_):
             assert "volume_30m_sum" in input_df.columns
+            assert "mtf_ratio_close_1h_last" in input_df.columns
             labeled = input_df.copy()
             labeled["label"] = 0
             return labeled
