@@ -177,7 +177,15 @@ class StreamingGateway:
     async def _start(self) -> None:
         await self.websocket_manager.connect_all(monitor=self.provider_monitor)
         for adapter in self.websocket_manager.adapters:
-            self.health_monitor.register_connection(adapter.name)
+
+            async def _reconnect_adapter(adapter=adapter) -> None:
+                await self.websocket_manager._connect_with_retry(
+                    adapter, monitor=self.provider_monitor
+                )
+
+            self.health_monitor.register_connection(
+                adapter.name, reconnect_callback=_reconnect_adapter
+            )
         asyncio.create_task(self.health_monitor.monitor_connection_health())
         if self._api_enabled:
             try:

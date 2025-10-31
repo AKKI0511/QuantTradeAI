@@ -197,6 +197,41 @@ def test_gateway_start_uses_provider_monitor(tmp_path):
 
 
 @patch("quanttradeai.streaming.gateway.ProviderHealthMonitor", new=StubProviderMonitor)
+def test_gateway_registers_reconnect_callback(tmp_path):
+    cfg = {
+        "streaming": {
+            "providers": [
+                {
+                    "name": "alpaca",
+                    "websocket_url": "ws://test",
+                    "auth_method": "none",
+                }
+            ]
+        }
+    }
+    config_file = tmp_path / "streaming.yaml"
+    config_file.write_text(yaml.safe_dump(cfg))
+    gateway = StreamingGateway(str(config_file))
+    adapter = gateway.websocket_manager.adapters[0]
+    gateway.websocket_manager.connect_all = AsyncMock()
+    gateway.websocket_manager.run = AsyncMock()
+    gateway.websocket_manager._connect_with_retry = AsyncMock()
+    adapter.subscribe = AsyncMock()
+    gateway.health_monitor.monitor_connection_health = AsyncMock()
+
+    async def run_start():
+        await gateway._start()
+
+    asyncio.run(run_start())
+
+    callback = gateway.health_monitor.reconnect_callbacks[adapter.name]
+    asyncio.run(callback())
+    gateway.websocket_manager._connect_with_retry.assert_awaited_with(
+        adapter, monitor=gateway.provider_monitor
+    )
+
+
+@patch("quanttradeai.streaming.gateway.ProviderHealthMonitor", new=StubProviderMonitor)
 def test_websocket_manager_reports_failures(tmp_path):
     cfg = {
         "streaming": {
