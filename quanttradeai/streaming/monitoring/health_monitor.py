@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional
+from typing import Awaitable, Callable, Dict, Optional
 
 from .alerts import AlertManager
 from .metrics_collector import MetricsCollector
@@ -44,6 +44,9 @@ class StreamingHealthMonitor:
     """Monitor streaming connections and collect metrics."""
 
     connection_status: Dict[str, ConnectionHealth] = field(default_factory=dict)
+    reconnect_callbacks: Dict[str, Optional[Callable[[], Awaitable[None]]]] = field(
+        default_factory=dict
+    )
     metrics_collector: MetricsCollector = field(default_factory=MetricsCollector)
     alert_manager: AlertManager = field(default_factory=AlertManager)
     recovery_manager: RecoveryManager = field(default_factory=RecoveryManager)
@@ -54,8 +57,16 @@ class StreamingHealthMonitor:
     _running: bool = field(default=False, init=False)
 
     # ------------------------------------------------------------------
-    def register_connection(self, name: str) -> None:
+    def register_connection(
+        self,
+        name: str,
+        reconnect_callback: Optional[Callable[[], Awaitable[None]]] = None,
+    ) -> None:
         self.connection_status.setdefault(name, ConnectionHealth())
+        if reconnect_callback is not None:
+            self.reconnect_callbacks[name] = reconnect_callback
+        else:
+            self.reconnect_callbacks.setdefault(name, None)
 
     def record_message(
         self,
@@ -135,7 +146,8 @@ class StreamingHealthMonitor:
         health.status = "reconnecting"
         health.reconnect_attempts += 1
         self.metrics_collector.increment_reconnect(name)
-        success = await self.recovery_manager.reconnect(name)
+        reconnect_cb = self.reconnect_callbacks.get(name)
+        success = await self.recovery_manager.reconnect(name, reconnect_cb)
         if success:
             now = time.time()
             health.status = "connected"

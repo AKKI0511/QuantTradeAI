@@ -57,6 +57,20 @@ class CountingRecovery(RecoveryManager):
         return True
 
 
+class CallbackRecovery(RecoveryManager):
+    def __init__(self):
+        super().__init__(max_attempts=1)
+        self.connect = None
+        self.invocations = 0
+
+    async def reconnect(self, name: str, connect=None) -> bool:  # pragma: no cover - simple override
+        self.invocations += 1
+        self.connect = connect
+        if connect is not None:
+            await connect()
+        return True
+
+
 async def run_latency_check() -> CollectingAlertManager:
     alerts = CollectingAlertManager()
     monitor = StreamingHealthMonitor(
@@ -114,3 +128,28 @@ def test_last_message_ts_reset_after_reconnect():
     asyncio.run(monitor._check_connections_once())
     assert recovery.calls == first
     assert stale.last_message_ts > time.time() - 1
+
+
+def test_recovery_receives_and_invokes_callback():
+    alerts = CollectingAlertManager()
+    recovery = CallbackRecovery()
+    stale = ConnectionHealth()
+    stale.last_message_ts = time.time() - 10
+    monitor = StreamingHealthMonitor(
+        connection_status={"c": stale},
+        metrics_collector=MetricsCollector(),
+        alert_manager=alerts,
+        recovery_manager=recovery,
+        check_interval=0.1,
+    )
+
+    called = False
+
+    async def reconnect_callback() -> None:
+        nonlocal called
+        called = True
+
+    monitor.register_connection("c", reconnect_callback=reconnect_callback)
+    asyncio.run(monitor._check_connections_once())
+    assert recovery.connect is reconnect_callback
+    assert called

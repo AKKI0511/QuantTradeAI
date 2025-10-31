@@ -28,6 +28,7 @@ import yaml
 from .stream_buffer import StreamBuffer
 from .websocket_manager import WebSocketManager
 from .adapters.alpaca_adapter import AlpacaAdapter
+from .adapters.base_adapter import DataProviderAdapter
 from .adapters.ib_adapter import IBAdapter
 from .processors import MessageProcessor
 from .monitoring import (
@@ -154,6 +155,21 @@ class StreamingGateway:
         self._callbacks.setdefault("quotes", []).append(callback)
 
     # Runtime ----------------------------------------------------------
+    async def _apply_subscriptions(self, adapter: DataProviderAdapter) -> None:
+        for channel, symbols in self._subscriptions:
+
+            async def _subscribe(
+                adapter=adapter,
+                channel=channel,
+                symbols=symbols,
+            ) -> None:
+                await adapter.subscribe(channel, symbols)
+
+            await self.provider_monitor.execute_with_health(
+                adapter.name,
+                _subscribe,
+            )
+
     async def _dispatch(self, provider: str, message: Dict) -> None:
         symbol = message.get("symbol", "")
         self.metrics.record_message(provider, symbol)
@@ -177,7 +193,16 @@ class StreamingGateway:
     async def _start(self) -> None:
         await self.websocket_manager.connect_all(monitor=self.provider_monitor)
         for adapter in self.websocket_manager.adapters:
-            self.health_monitor.register_connection(adapter.name)
+
+            async def _reconnect_adapter(adapter=adapter) -> None:
+                await self.websocket_manager._connect_with_retry(
+                    adapter, monitor=self.provider_monitor
+                )
+                await self._apply_subscriptions(adapter)
+
+            self.health_monitor.register_connection(
+                adapter.name, reconnect_callback=_reconnect_adapter
+            )
         asyncio.create_task(self.health_monitor.monitor_connection_health())
         if self._api_enabled:
             try:
@@ -202,20 +227,8 @@ class StreamingGateway:
             asyncio.create_task(
                 self.websocket_manager.connection_pool.health_check_loop(interval)
             )
-        for channel, symbols in self._subscriptions:
-            for adapter in self.websocket_manager.adapters:
-
-                async def _subscribe(
-                    adapter=adapter,
-                    channel=channel,
-                    symbols=symbols,
-                ) -> None:
-                    await adapter.subscribe(channel, symbols)
-
-                await self.provider_monitor.execute_with_health(
-                    adapter.name,
-                    _subscribe,
-                )
+        for adapter in self.websocket_manager.adapters:
+            await self._apply_subscriptions(adapter)
         await self.websocket_manager.run(self._dispatch)
 
     def start_streaming(self) -> None:
