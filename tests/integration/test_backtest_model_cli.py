@@ -199,10 +199,17 @@ def test_backtest_model_cli_risk_config_passed_to_drawdown_guard():
         with open(risk_path, "w", encoding="utf-8") as f:
             yaml.safe_dump({"risk_management": {"drawdown_protection": {"max_drawdown_pct": 0.1}}}, f)
 
-        fake_result = pd.DataFrame(
+        fake_symbol_result = pd.DataFrame(
             {
                 "strategy_return": [0.01, -0.005],
                 "equity_curve": [1.01, 1.00495],
+            },
+            index=pd.date_range("2020-01-05", periods=2, freq="D"),
+        )
+        fake_portfolio_result = pd.DataFrame(
+            {
+                "strategy_return": [0.005, 0.002],
+                "equity_curve": [1.005, 1.00701],
             },
             index=pd.date_range("2020-01-05", periods=2, freq="D"),
         )
@@ -211,7 +218,13 @@ def test_backtest_model_cli_risk_config_passed_to_drawdown_guard():
             patch("quanttradeai.main.DataProcessor", FakeProcessor), \
             patch("quanttradeai.main.MomentumClassifier", FakeClassifier), \
             patch("quanttradeai.main.DrawdownGuard") as mock_guard, \
-            patch("quanttradeai.main.simulate_trades", return_value=fake_result) as mock_sim, \
+            patch(
+                "quanttradeai.main.simulate_trades",
+                return_value={
+                    "AAA": fake_symbol_result,
+                    "portfolio": fake_portfolio_result,
+                },
+            ) as mock_sim, \
             patch("quanttradeai.main.compute_metrics", return_value={"net": 1.0}):
 
             result = runner.invoke(

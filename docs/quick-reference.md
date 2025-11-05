@@ -121,6 +121,7 @@ poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL
 
 # Artifacts are saved under:
 # reports/backtests/<run_timestamp>/<SYMBOL>/{metrics.json,equity_curve.csv,ledger.csv}
+# reports/backtests/<run_timestamp>/portfolio/{metrics.json,equity_curve.csv}
 ```
 
 ## 🔧 Technical Indicators
