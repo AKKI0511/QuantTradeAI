@@ -489,11 +489,14 @@ def run_model_backtest(
             summary[symbol] = {"error": str(exc)}
 
     if prepared_data:
+        # Instantiate the portfolio manager without wiring the drawdown guard so
+        # that turnover enforcement continues to operate on the historical bar
+        # timestamps recorded during simulation rather than the wall-clock times
+        # used when seeding portfolio allocations.
         portfolio_manager = PortfolioManager(
             capital=initial_capital,
             max_risk_per_trade=max_risk_per_trade,
             max_portfolio_risk=max_portfolio_risk,
-            drawdown_guard=drawdown_guard,
         )
         try:
             results = simulate_trades(
