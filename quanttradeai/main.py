@@ -514,19 +514,27 @@ def run_model_backtest(
 
         for symbol, result_df in results.items():
             out_dir = artifact_dirs.get(symbol, base_dir / symbol)
-            out_dir.mkdir(parents=True, exist_ok=True)
-            cols_to_save = [
-                c for c in ["strategy_return", "equity_curve"] if c in result_df.columns
-            ]
-            if cols_to_save:
-                result_df[cols_to_save].to_csv(out_dir / "equity_curve.csv", index=True)
-            ledger = result_df.attrs.get("ledger")
-            if ledger is not None and not ledger.empty:
-                ledger.to_csv(out_dir / "ledger.csv", index=False)
-            metrics = compute_metrics(result_df)
-            metrics_text = json.dumps(metrics, indent=2)
-            with open(out_dir / "metrics.json", "w") as f:
-                f.write(metrics_text)
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+                cols_to_save = [
+                    c for c in ["strategy_return", "equity_curve"] if c in result_df.columns
+                ]
+                if cols_to_save:
+                    result_df[cols_to_save].to_csv(
+                        out_dir / "equity_curve.csv", index=True
+                    )
+                ledger = result_df.attrs.get("ledger")
+                if ledger is not None and not ledger.empty:
+                    ledger.to_csv(out_dir / "ledger.csv", index=False)
+                metrics = compute_metrics(result_df)
+                metrics_text = json.dumps(metrics, indent=2)
+                with open(out_dir / "metrics.json", "w") as f:
+                    f.write(metrics_text)
+            except Exception as exc:  # noqa: PERF203 - specific to artifact persistence
+                logger.error("Backtest artifact write failed for %s: %s", symbol, exc)
+                summary[symbol] = {"error": str(exc)}
+                continue
+
             logger.info("%s backtest metrics: %s", symbol, metrics)
             summary[symbol] = {
                 "metrics": metrics,
