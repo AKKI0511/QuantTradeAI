@@ -513,11 +513,13 @@ def run_model_backtest(
             return summary
 
         for symbol, result_df in results.items():
-            out_dir = artifact_dirs.get(symbol, base_dir / symbol)
+            out_dir: Path = artifact_dirs.get(symbol, base_dir / symbol)
             try:
                 out_dir.mkdir(parents=True, exist_ok=True)
                 cols_to_save = [
-                    c for c in ["strategy_return", "equity_curve"] if c in result_df.columns
+                    c
+                    for c in ["strategy_return", "equity_curve"]
+                    if c in result_df.columns
                 ]
                 if cols_to_save:
                     result_df[cols_to_save].to_csv(
@@ -538,7 +540,7 @@ def run_model_backtest(
             logger.info("%s backtest metrics: %s", symbol, metrics)
             summary[symbol] = {
                 "metrics": metrics,
-                "output_dir": str(out_dir),
+                "output_dir": out_dir.as_posix(),
             }
 
     return summary
