@@ -67,6 +67,8 @@ This runs an end-to-end evaluation using the model’s saved `feature_columns` a
 - equity_curve.csv: equity curve time series
 - ledger.csv: per-trade fills and costs (when trades occur)
 
+You'll also find a consolidated `reports/backtests/<run_timestamp>/portfolio/` folder containing portfolio-level metrics and equity curve that aggregate every successful symbol in the run.
+
 ## 📊 Understanding the Output
 
 After running the training pipeline, you'll find:

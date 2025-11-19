@@ -70,8 +70,9 @@ training:
   
 # Trading Parameters
 trading:
+  initial_capital: 100000  # Starting capital used for portfolio aggregation
   position_size: 0.2  # Percentage of portfolio per position
   stop_loss: 0.02    # 2% stop loss
   take_profit: 0.04  # 4% take profit
   max_positions: 5   # Maximum number of simultaneous positions
-  transaction_cost: 0.001  # 0.1% per trade 
+  transaction_cost: 0.001  # 0.1% per trade

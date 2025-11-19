@@ -20,6 +20,7 @@ import pandas as pd
 from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
 from quanttradeai.models.classifier import MomentumClassifier
 from quanttradeai.trading.drawdown_guard import DrawdownGuard
+from quanttradeai.trading.portfolio import PortfolioManager
 from typing import Tuple
 import yaml
 import json
@@ -410,6 +411,56 @@ def run_model_backtest(
     base_dir.mkdir(parents=True, exist_ok=True)
 
     summary: dict = {}
+    prepared_data: dict[str, pd.DataFrame] = {}
+    artifact_dirs: dict[str, Path] = {}
+
+    trading_cfg = (cfg or {}).get("trading", {})
+    stop_loss = trading_cfg.get("stop_loss")
+    take_profit = trading_cfg.get("take_profit")
+
+    def _resolve_float(
+        value: float | int | None, default: float, *, key: str, positive: bool = False
+    ) -> float:
+        if value is None:
+            return default
+        try:
+            resolved = float(value)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Invalid trading.%s=%r; defaulting to %.4f", key, value, default
+            )
+            return default
+        if positive and resolved <= 0:
+            logger.warning(
+                "trading.%s must be positive; defaulting to %.4f", key, default
+            )
+            return default
+        if not positive and resolved < 0:
+            logger.warning(
+                "trading.%s must be non-negative; defaulting to %.4f", key, default
+            )
+            return default
+        return resolved
+
+    initial_capital = _resolve_float(
+        trading_cfg.get("initial_capital"),
+        100_000.0,
+        key="initial_capital",
+        positive=True,
+    )
+    max_risk_per_trade = _resolve_float(
+        trading_cfg.get("max_risk_per_trade"),
+        0.02,
+        key="max_risk_per_trade",
+        positive=True,
+    )
+    max_portfolio_risk = _resolve_float(
+        trading_cfg.get("max_portfolio_risk"),
+        0.10,
+        key="max_portfolio_risk",
+        positive=True,
+    )
+
     for symbol, df in data_dict.items():
         try:
             df_proc = processor.process_data(df)
@@ -431,42 +482,66 @@ def run_model_backtest(
                 bt_df["Volume"] = 1e12  # effectively infinite liquidity
             bt_df["label"] = preds
 
-            trading_cfg = (cfg or {}).get("trading", {})
-            stop_loss = trading_cfg.get("stop_loss")
-            take_profit = trading_cfg.get("take_profit")
+            prepared_data[symbol] = bt_df
+            artifact_dirs[symbol] = base_dir / symbol
+        except Exception as exc:
+            logger.error("Backtest failed for %s: %s", symbol, exc)
+            summary[symbol] = {"error": str(exc)}
 
-            result_df = simulate_trades(
-                bt_df,
+    if prepared_data:
+        # Instantiate the portfolio manager without wiring the drawdown guard so
+        # that turnover enforcement continues to operate on the historical bar
+        # timestamps recorded during simulation rather than the wall-clock times
+        # used when seeding portfolio allocations.
+        portfolio_manager = PortfolioManager(
+            capital=initial_capital,
+            max_risk_per_trade=max_risk_per_trade,
+            max_portfolio_risk=max_portfolio_risk,
+        )
+        try:
+            results = simulate_trades(
+                prepared_data,
                 stop_loss_pct=stop_loss,
                 take_profit_pct=take_profit,
                 execution=exec_cfg,
+                portfolio=portfolio_manager,
                 drawdown_guard=drawdown_guard,
             )
-            metrics = compute_metrics(result_df)
+        except Exception as exc:
+            logger.error("Portfolio backtest failed: %s", exc)
+            summary["portfolio"] = {"error": str(exc)}
+            return summary
 
-            # Persist artifacts
-            out_dir = base_dir / symbol
-            out_dir.mkdir(parents=True, exist_ok=True)
-            result_df[["strategy_return", "equity_curve"]].to_csv(
-                out_dir / "equity_curve.csv",
-                index=True,
-            )
-            ledger = result_df.attrs.get("ledger")
-            if ledger is not None and not ledger.empty:
-                ledger.to_csv(out_dir / "ledger.csv", index=False)
-            # Write metrics atomically to avoid partial JSON on serialization errors
-            metrics_text = json.dumps(metrics, indent=2)
-            with open(out_dir / "metrics.json", "w") as f:
-                f.write(metrics_text)
+        for symbol, result_df in results.items():
+            out_dir: Path = artifact_dirs.get(symbol, base_dir / symbol)
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+                cols_to_save = [
+                    c
+                    for c in ["strategy_return", "equity_curve"]
+                    if c in result_df.columns
+                ]
+                if cols_to_save:
+                    result_df[cols_to_save].to_csv(
+                        out_dir / "equity_curve.csv", index=True
+                    )
+                ledger = result_df.attrs.get("ledger")
+                if ledger is not None and not ledger.empty:
+                    ledger.to_csv(out_dir / "ledger.csv", index=False)
+                metrics = compute_metrics(result_df)
+                metrics_text = json.dumps(metrics, indent=2)
+                with open(out_dir / "metrics.json", "w") as f:
+                    f.write(metrics_text)
+            except Exception as exc:  # noqa: PERF203 - specific to artifact persistence
+                logger.error("Backtest artifact write failed for %s: %s", symbol, exc)
+                summary[symbol] = {"error": str(exc)}
+                continue
 
             logger.info("%s backtest metrics: %s", symbol, metrics)
             summary[symbol] = {
                 "metrics": metrics,
-                "output_dir": str(out_dir),
+                "output_dir": out_dir.as_posix(),
             }
-        except Exception as exc:
-            logger.error("Backtest failed for %s: %s", symbol, exc)
-            summary[symbol] = {"error": str(exc)}
 
     return summary
 

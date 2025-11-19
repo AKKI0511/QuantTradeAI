@@ -91,11 +91,14 @@ Note: Hyperparameter tuning uses `TimeSeriesSplit(n_splits=cv_folds)` to avoid l
 
 ```yaml
 trading:
+  initial_capital: 100000   # Starting capital for saved-model backtests
   position_size: 0.2
   stop_loss: 0.02
   take_profit: 0.04
   max_positions: 5
   transaction_cost: 0.001
+  max_risk_per_trade: 0.02  # Optional overrides for portfolio manager sizing
+  max_portfolio_risk: 0.10
 ```
 
 ### Backtest Execution
