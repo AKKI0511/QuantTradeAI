@@ -14,13 +14,14 @@ Typical Usage:
     ```
 """
 
-import pandas as pd
-from typing import List, Dict, Optional
 import logging
 from datetime import datetime, timedelta
 import yaml
 from pydantic import ValidationError
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Optional
+
+import pandas as pd
 
 from quanttradeai.utils.config_schemas import ModelConfigSchema
 from quanttradeai.data.datasource import DataSource, YFinanceDataSource
@@ -50,6 +51,7 @@ class DataLoader:
         data_cfg = schema.data
         self.config = raw_cfg
         self.symbols = data_cfg.symbols
+        self.asset_classes = data_cfg.asset_classes
         self.start_date = data_cfg.start_date
         self.end_date = data_cfg.end_date
         self.timeframe = data_cfg.timeframe or "1d"

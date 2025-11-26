@@ -418,17 +418,39 @@ def simulate_trades(
         dictionary, returns a dictionary with per-symbol results as well as an
         aggregated ``"portfolio"`` entry containing the combined equity curve.
     """
-    exec_cfg = execution.copy() if execution else {}
-    if transaction_cost:
-        exec_cfg.setdefault("transaction_costs", {})
-        exec_cfg["transaction_costs"].update(
-            {"enabled": True, "mode": "bps", "value": transaction_cost * 10000}
-        )
-    if slippage:
-        exec_cfg.setdefault("slippage", {})
-        exec_cfg["slippage"].update(
-            {"enabled": True, "mode": "bps", "value": slippage * 10000}
-        )
+    exec_cfg_input = execution or {}
+    exec_cfg_global: dict = {}
+    exec_cfg_by_symbol: dict[str, dict] | None = None
+
+    def _apply_legacy_overrides(cfg: dict) -> dict:
+        updated = cfg.copy()
+        if transaction_cost:
+            updated.setdefault("transaction_costs", {})
+            updated["transaction_costs"].update(
+                {
+                    "enabled": True,
+                    "mode": "bps",
+                    "value": transaction_cost * 10000,
+                }
+            )
+        if slippage:
+            updated.setdefault("slippage", {})
+            updated["slippage"].update(
+                {"enabled": True, "mode": "bps", "value": slippage * 10000}
+            )
+        return updated
+
+    if isinstance(df, dict) and isinstance(exec_cfg_input, dict):
+        symbol_keys = {k for k in exec_cfg_input if k in df}
+        if symbol_keys and symbol_keys == set(exec_cfg_input.keys()):
+            exec_cfg_by_symbol = {
+                symbol: _apply_legacy_overrides(cfg)
+                for symbol, cfg in exec_cfg_input.items()
+            }
+        else:
+            exec_cfg_global = _apply_legacy_overrides(exec_cfg_input.copy())
+    elif isinstance(exec_cfg_input, dict):
+        exec_cfg_global = _apply_legacy_overrides(exec_cfg_input.copy())
 
     if isinstance(df, dict):
         if portfolio is None:
@@ -436,11 +458,16 @@ def simulate_trades(
         combined = None
         results: dict[str, pd.DataFrame] = {}
         for symbol, data in df.items():
+            symbol_exec_cfg = (
+                exec_cfg_by_symbol.get(symbol, exec_cfg_global)
+                if exec_cfg_by_symbol is not None
+                else exec_cfg_global
+            )
             res = _simulate_single(
                 data,
                 stop_loss_pct=stop_loss_pct,
                 take_profit_pct=take_profit_pct,
-                execution=exec_cfg,
+                execution=symbol_exec_cfg,
                 drawdown_guard=drawdown_guard,
             )
             results[symbol] = res
@@ -467,7 +494,7 @@ def simulate_trades(
             df,
             stop_loss_pct=stop_loss_pct,
             take_profit_pct=take_profit_pct,
-            execution=exec_cfg,
+            execution=exec_cfg_global,
             drawdown_guard=drawdown_guard,
         )
         if drawdown_guard is not None:
