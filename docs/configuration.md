@@ -19,7 +19,11 @@ The framework uses several configuration files:
 
 ```yaml
 data:
-  symbols: ['AAPL', 'META', 'TSLA', 'JPM', 'AMZN']
+  symbols:
+    - ticker: 'AAPL'
+      asset_class: equities
+    - ticker: 'ES'
+      asset_class: futures
   start_date: '2015-01-01'
   end_date: '2024-12-31'
   cache_dir: 'data/raw'
@@ -37,7 +41,8 @@ data:
 ```
 
 **Key Parameters:**
-- `symbols`: List of stock symbols to process
+- `symbols`: List of stock symbols to process. Each entry can be a string or a
+  mapping with `ticker` and optional `asset_class` (defaults to `equities`).
 - `start_date`/`end_date`: Data date range
 - `cache_dir`: Directory for cached data
 - `secondary_timeframes`: Optional list of higher-frequency bars to resample into the primary `timeframe` using OHLCV aggregations (`open→first`, `high→max`, `low→min`, `close→last`, `volume→sum`)
@@ -146,6 +151,25 @@ and their buy/sell counterparts control the chosen model, while `decay`,
 `decay_volume_coeff`, and `spread_model` enable dynamic spread and volume-based
 decay. Default parameter sets per asset class can be defined in
 `config/impact_config.yaml`.
+
+```yaml
+asset_classes:
+  equities:
+    enabled: true
+    alpha: 0.1
+    beta: 0.05
+    model: linear
+  futures:
+    enabled: true
+    alpha: 0.2
+    beta: 0.1
+    model: square_root
+```
+
+During saved-model backtests, per-symbol execution settings inherit the
+asset-class defaults from this file. Values specified in
+`config/backtest_config.yaml` or passed via CLI flags override these defaults,
+keeping CLI options highest priority.
 
 The `borrow_fee` block applies financing costs to short positions, and the
 `intrabar` block enables tick-level fill simulation with optional synthetic

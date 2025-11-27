@@ -10,12 +10,35 @@ Key Components:
 """
 
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional, Dict, Any, Literal
+
+import yaml
 from pydantic import BaseModel, Field, model_validator
+
+
+IMPACT_CONFIG_PATH = Path("config/impact_config.yaml")
+
+
+def _known_asset_classes(config_path: Path = IMPACT_CONFIG_PATH) -> set[str]:
+    if not config_path.is_file():
+        return set()
+
+    try:
+        with config_path.open("r") as file:
+            cfg = yaml.safe_load(file) or {}
+    except yaml.YAMLError:  # pragma: no cover - defensive guard
+        return set()
+
+    asset_classes = cfg.get("asset_classes", {})
+    if isinstance(asset_classes, dict):
+        return set(asset_classes)
+    return set()
 
 
 class DataSection(BaseModel):
     symbols: List[str]
+    asset_classes: Dict[str, str] = Field(default_factory=dict)
     start_date: str
     end_date: str
     timeframe: Optional[str] = "1d"
@@ -28,6 +51,47 @@ class DataSection(BaseModel):
     test_start: Optional[str] = None
     test_end: Optional[str] = None
     max_workers: Optional[int] = 1
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_symbols(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        raw_symbols = values.get("symbols")
+        if raw_symbols is None:
+            return values
+
+        if not isinstance(raw_symbols, list):
+            raise ValueError("data.symbols must be a list of tickers or mappings.")
+
+        known_assets = _known_asset_classes()
+        tickers: list[str] = []
+        asset_map: dict[str, str] = {}
+        for item in raw_symbols:
+            if isinstance(item, str):
+                ticker = item
+                asset_class = "equities"
+            elif isinstance(item, dict):
+                ticker = item.get("ticker")
+                if not ticker:
+                    raise ValueError(
+                        "data.symbols entries must include a 'ticker' field when using mapping syntax."
+                    )
+                asset_class = item.get("asset_class", "equities")
+            else:
+                raise ValueError(
+                    "data.symbols entries must be strings or mappings with 'ticker' and optional 'asset_class'."
+                )
+
+            if known_assets and asset_class not in known_assets:
+                raise ValueError(
+                    f"data.symbols asset_class '{asset_class}' is not defined in config/impact_config.yaml."
+                )
+
+            tickers.append(ticker)
+            asset_map[ticker] = asset_class
+
+        values["symbols"] = tickers
+        values["asset_classes"] = asset_map
+        return values
 
     @staticmethod
     def _parse_date(value: str, field_name: str) -> datetime:

@@ -13,19 +13,25 @@ Typer app to preserve the existing console entry points.
 
 import logging
 from pathlib import Path
-from quanttradeai.data.loader import DataLoader
-from quanttradeai.data.processor import DataProcessor
-from quanttradeai.data.datasource import WebSocketDataSource
-import pandas as pd
-from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
-from quanttradeai.models.classifier import MomentumClassifier
-from quanttradeai.trading.drawdown_guard import DrawdownGuard
-from quanttradeai.trading.portfolio import PortfolioManager
 from typing import Tuple
+
+import pandas as pd
 import yaml
 import json
 from datetime import datetime
 import os
+
+from quanttradeai.data.loader import DataLoader
+from quanttradeai.data.processor import DataProcessor
+from quanttradeai.data.datasource import WebSocketDataSource
+from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
+from quanttradeai.models.classifier import MomentumClassifier
+from quanttradeai.trading.drawdown_guard import DrawdownGuard
+from quanttradeai.trading.portfolio import PortfolioManager
+from quanttradeai.utils.impact_loader import (
+    load_impact_config,
+    merge_execution_with_impact,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -385,6 +391,7 @@ def run_model_backtest(
         slippage_fixed=slippage_fixed,
         liquidity_max_participation=liquidity_max_participation,
     )
+    impact_defaults = load_impact_config()
 
     drawdown_guard: DrawdownGuard | None = None
     if risk_config:
@@ -461,6 +468,10 @@ def run_model_backtest(
         positive=True,
     )
 
+    def _execution_for(symbol: str) -> dict:
+        asset_class = loader.asset_classes.get(symbol, "equities")
+        return merge_execution_with_impact(exec_cfg, impact_defaults, asset_class)
+
     for symbol, df in data_dict.items():
         try:
             df_proc = processor.process_data(df)
@@ -498,12 +509,15 @@ def run_model_backtest(
             max_risk_per_trade=max_risk_per_trade,
             max_portfolio_risk=max_portfolio_risk,
         )
+        exec_cfg_by_symbol = {
+            symbol: _execution_for(symbol) for symbol in prepared_data
+        }
         try:
             results = simulate_trades(
                 prepared_data,
                 stop_loss_pct=stop_loss,
                 take_profit_pct=take_profit,
-                execution=exec_cfg,
+                execution=exec_cfg_by_symbol,
                 portfolio=portfolio_manager,
                 drawdown_guard=drawdown_guard,
             )
