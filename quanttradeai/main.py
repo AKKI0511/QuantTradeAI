@@ -112,22 +112,42 @@ def time_aware_split(
         test_part = df.iloc[split_idx:]
         return train_part, test_part
 
+    def _window_has_full_coverage(
+        start_dt: pd.Timestamp, end_dt: pd.Timestamp | None, test_slice: pd.DataFrame
+    ) -> bool:
+        """Return True if the dataset fully spans the requested test window."""
+
+        if end_dt is None:
+            return True
+
+        if df.index.min() > start_dt or df.index.max() < end_dt:
+            return False
+
+        inferred_freq = pd.infer_freq(df.index)
+        if inferred_freq:
+            expected_points = len(pd.date_range(start_dt, end_dt, freq=inferred_freq))
+            return len(test_slice) >= expected_points
+
+        return True
+
     fallback_used = False
     if test_start:
         start_dt = pd.to_datetime(test_start)
-        if test_end:
-            end_dt = pd.to_datetime(test_end)
-            train_df = df[df.index < start_dt]
-            test_df = df[(df.index >= start_dt) & (df.index <= end_dt)]
-        else:
-            train_df = df[df.index < start_dt]
-            test_df = df[df.index >= start_dt]
+        end_dt = pd.to_datetime(test_end) if test_end else None
+        train_df = df[df.index < start_dt]
+        test_df = (
+            df[(df.index >= start_dt) & (df.index <= end_dt)]
+            if end_dt
+            else df[df.index >= start_dt]
+        )
 
-        if len(train_df) == 0 or len(test_df) == 0:
+        coverage_ok = _window_has_full_coverage(start_dt, end_dt, test_df)
+
+        if len(train_df) == 0 or len(test_df) == 0 or not coverage_ok:
             fallback_used = True
             fallback_test_size = float(train_cfg.get("test_size", 0.2))
             logger.warning(
-                "Requested test window %s to %s not present in data; falling back to chronological split using training.test_size=%.3f.",
+                "Requested test window %s to %s not fully present in data; falling back to chronological split using training.test_size=%.3f.",
                 test_start,
                 test_end or "data end",
                 fallback_test_size,

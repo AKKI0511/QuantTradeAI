@@ -55,6 +55,22 @@ def test_time_aware_split_warns_and_falls_back(caplog):
     assert "falling back to chronological split" in caplog.text
 
 
+def test_time_aware_split_warns_on_partial_window(caplog):
+    idx = pd.date_range("2024-01-01", periods=8, freq="D")
+    df = pd.DataFrame({"Close": range(8)}, index=idx)
+    cfg = {
+        "data": {"test_start": "2024-01-03", "test_end": "2024-01-10"},
+        "training": {"test_size": 0.25},
+    }
+
+    with caplog.at_level(logging.WARNING):
+        train, test = time_aware_split(df, cfg)
+
+    assert len(train) == 6 and len(test) == 2
+    assert train.index.max() < test.index.min()
+    assert "not fully present in data; falling back" in caplog.text
+
+
 def test_model_config_rejects_out_of_range_test_window():
     with pytest.raises(ValidationError) as excinfo:
         ModelConfigSchema(
