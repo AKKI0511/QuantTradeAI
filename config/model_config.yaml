@@ -19,6 +19,13 @@ data:
   test_start: '2024-09-01'
   test_end: '2024-12-31'
 
+# Optional news ingestion to power sentiment features
+news:
+  enabled: false  # Set to true to fetch headlines alongside OHLCV data
+  provider: yfinance  # Supported: yfinance
+  lookback_days: 30  # Pull this many days prior to start_date for context
+  symbols: []  # Optional subset of tickers to fetch news for; empty uses data.symbols
+
 # Feature Engineering Parameters
 features:
   technical_indicators:

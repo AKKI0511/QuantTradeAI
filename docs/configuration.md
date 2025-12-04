@@ -38,6 +38,12 @@ data:
   # Optional time-aware test window used by CLI training
   test_start: '2024-09-01'
   test_end: '2024-12-31'
+
+news:
+  enabled: false
+  provider: yfinance
+  lookback_days: 30
+  symbols: []
 ```
 
 **Key Parameters:**
@@ -50,6 +56,7 @@ data:
 - `refresh`: Force fresh data download
 - `max_workers`: Parallel processing workers
 - `test_start`/`test_end`: Optional test window for time-aware train/test split (if unset, last `training.test_size` fraction is used chronologically)
+- `news`: Optional block that fetches timestamped headlines to populate a `text` column for the `generate_sentiment` step. Configure `enabled`, `provider` (currently `yfinance`), optional `symbols` filter, and `lookback_days` to pull context before `start_date`.
 
 !!! info "Date validation and fallback"
     QuantTradeAI now validates that any configured `test_start`/`test_end` values fall within the overall `start_date` → `end_date` range and that the window is well ordered. If the requested window passes validation but your downloaded data does not fully cover that range (e.g., ends before `test_end` or contains gaps), the pipeline emits a warning and automatically falls back to the chronological `training.test_size` split so phase‑1 training can proceed.

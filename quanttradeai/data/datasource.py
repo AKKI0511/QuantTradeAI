@@ -26,6 +26,7 @@ from typing import Optional, List, AsyncIterator
 import os
 import pandas as pd
 import json
+from datetime import datetime
 
 
 class DataSource(ABC):
@@ -50,6 +51,43 @@ class DataSource(ABC):
             should document the supported values.
         """
         raise NotImplementedError
+
+
+class NewsDataSource:
+    """Lightweight news provider used to supply text for sentiment scoring."""
+
+    def __init__(self, provider: str = "yfinance") -> None:
+        self.provider = provider
+
+    def fetch(self, symbol: str, start: str, end: str) -> pd.DataFrame:
+        """Retrieve timestamped headlines for a symbol within a date range."""
+
+        if self.provider == "yfinance":
+            return self._fetch_yfinance(symbol, start, end)
+
+        raise ValueError(f"Unsupported news provider: {self.provider}")
+
+    def _fetch_yfinance(self, symbol: str, start: str, end: str) -> pd.DataFrame:
+        import yfinance as yf
+
+        ticker = yf.Ticker(symbol)
+        items = ticker.news or []
+        if not items:
+            return pd.DataFrame(columns=["Datetime", "text"])
+
+        records = []
+        start_dt = datetime.fromisoformat(str(start))
+        end_dt = datetime.fromisoformat(str(end))
+        for item in items:
+            timestamp = item.get("providerPublishTime") or item.get("published_at")
+            title = item.get("title") or item.get("content")
+            if not timestamp or not title:
+                continue
+            dt = datetime.fromtimestamp(timestamp)
+            if start_dt <= dt <= end_dt:
+                records.append({"Datetime": dt, "text": title})
+
+        return pd.DataFrame(records, columns=["Datetime", "text"])
 
 
 class YFinanceDataSource(DataSource):
