@@ -23,6 +23,7 @@ from .datasource import (
     YFinanceDataSource,
     AlphaVantageDataSource,
     WebSocketDataSource,
+    NewsDataSource,
 )
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "YFinanceDataSource",
     "AlphaVantageDataSource",
     "WebSocketDataSource",
+    "NewsDataSource",
 ]

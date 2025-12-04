@@ -340,7 +340,15 @@ class DataProcessor:
             return df
 
         try:
-            df["sentiment_score"] = df["text"].apply(self.sentiment_analyzer.score)
+            text_series = df["text"]
+            valid_mask = text_series.notna()
+            if not valid_mask.any():
+                logger.warning("Sentiment enabled but no non-null text rows found.")
+                return df
+
+            df.loc[valid_mask, "sentiment_score"] = text_series[valid_mask].apply(
+                self.sentiment_analyzer.score
+            )
         except Exception as exc:
             logger.error(f"Error generating sentiment scores: {exc}")
             raise

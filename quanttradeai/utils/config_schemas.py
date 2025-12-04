@@ -129,8 +129,24 @@ class DataSection(BaseModel):
         return self
 
 
+class NewsConfig(BaseModel):
+    """Configuration for optional news ingestion used by sentiment features."""
+
+    enabled: bool = False
+    provider: Optional[str] = "yfinance"
+    lookback_days: int = 30
+    symbols: Optional[List[str]] = None
+
+    @model_validator(mode="after")
+    def validate_lookback(self) -> "NewsConfig":
+        if self.lookback_days < 0:
+            raise ValueError("news.lookback_days must be non-negative")
+        return self
+
+
 class ModelConfigSchema(BaseModel):
     data: DataSection
+    news: Optional[NewsConfig] = None
 
 
 class PipelineConfig(BaseModel):

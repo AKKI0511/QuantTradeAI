@@ -24,7 +24,11 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from quanttradeai.utils.config_schemas import ModelConfigSchema
-from quanttradeai.data.datasource import DataSource, YFinanceDataSource
+from quanttradeai.data.datasource import (
+    DataSource,
+    NewsDataSource,
+    YFinanceDataSource,
+)
 import os
 
 logging.basicConfig(level=logging.INFO)
@@ -38,6 +42,7 @@ class DataLoader:
         self,
         config_path: str = "config/model_config.yaml",
         data_source: Optional[DataSource] = None,
+        news_data_source: Optional[NewsDataSource] = None,
     ):
         """Initialize DataLoader with configuration and validate it."""
         with open(config_path, "r") as file:
@@ -63,6 +68,17 @@ class DataLoader:
         self.default_refresh = data_cfg.refresh
         self.max_workers = data_cfg.max_workers or 1
         self.data_source = data_source or YFinanceDataSource()
+        self.news_config = schema.news
+        self.news_enabled = bool(self.news_config and self.news_config.enabled)
+        self.news_symbols = (
+            set(self.news_config.symbols) if self.news_config and self.news_config.symbols else None
+        )
+        self.news_lookback_days = (
+            self.news_config.lookback_days if self.news_config else 0
+        )
+        self.news_data_source = news_data_source or NewsDataSource(
+            provider=self.news_config.provider if self.news_config else "yfinance"
+        )
 
     def _is_cache_valid(self, cache_file: str) -> bool:
         """Return True if the cache file exists and is not expired."""
@@ -91,6 +107,9 @@ class DataLoader:
                 return None
 
             df = df.sort_index()
+
+            if self.news_enabled and self._news_allowed_for_symbol(symbol):
+                df = self._attach_news(df=df, symbol=symbol, refresh=refresh)
 
             for secondary_tf in self.secondary_timeframes:
                 secondary_cache = os.path.join(
@@ -204,6 +223,93 @@ class DataLoader:
             )
 
         return df
+
+    def _news_allowed_for_symbol(self, symbol: str) -> bool:
+        if self.news_symbols is None:
+            return True
+        return symbol in self.news_symbols
+
+    def _attach_news(self, df: pd.DataFrame, symbol: str, refresh: bool) -> pd.DataFrame:
+        """Fetch and merge news headlines with price data for sentiment features."""
+
+        news_cache = os.path.join(self.cache_dir, f"{symbol}_news.parquet")
+        if self.use_cache and not refresh and self._is_cache_valid(news_cache):
+            logger.info("Loading cached news for %s from %s", symbol, news_cache)
+            news_df = pd.read_parquet(news_cache)
+        else:
+            start_dt = datetime.fromisoformat(self.start_date) - timedelta(
+                days=self.news_lookback_days
+            )
+            news_df = self.news_data_source.fetch(
+                symbol, start_dt.isoformat(), self.end_date
+            )
+            if news_df is None:
+                news_df = pd.DataFrame()
+
+            if self.use_cache:
+                os.makedirs(self.cache_dir, exist_ok=True)
+                news_df.to_parquet(news_cache)
+                logger.info("Cached news for %s at %s", symbol, news_cache)
+
+        if news_df.empty:
+            logger.info("No news returned for %s; proceeding without text column", symbol)
+            return df
+
+        merged = self._merge_news_with_prices(df, news_df)
+        return merged
+
+    def _merge_news_with_prices(
+        self, price_df: pd.DataFrame, news_df: pd.DataFrame
+    ) -> pd.DataFrame:
+        if "Datetime" not in news_df.columns or "text" not in news_df.columns:
+            logger.warning("News data missing required columns 'Datetime' and 'text'.")
+            return price_df
+
+        working_news = news_df.copy()
+        working_news["Datetime"] = pd.to_datetime(
+            working_news["Datetime"], errors="coerce"
+        )
+        working_news = working_news.dropna(subset=["Datetime", "text"])
+
+        if working_news.empty:
+            return price_df
+
+        try:
+            working_news["Datetime"] = working_news["Datetime"].dt.tz_convert(None)
+        except TypeError:
+            # Datetime column is already timezone naive
+            pass
+
+        prices = price_df.copy()
+        prices_index = pd.to_datetime(prices.index)
+
+        if self.timeframe.endswith("d") or self.timeframe.endswith("wk") or self.timeframe.endswith("mo"):
+            working_news["Date"] = working_news["Datetime"].dt.normalize()
+            prices["Date"] = prices_index.normalize()
+            aggregated = (
+                working_news.groupby("Date")["text"]
+                .apply(lambda texts: " ".join(map(str, texts)))
+                .reset_index()
+            )
+            prices = prices.reset_index().rename(columns={"index": "Datetime"})
+            merged = prices.merge(aggregated, on="Date", how="left")
+            merged = merged.drop(columns=["Date"])
+            merged = merged.set_index("Datetime")
+        else:
+            news_sorted = working_news.sort_values("Datetime")[
+                ["Datetime", "text"]
+            ]
+            prices = prices.reset_index().rename(columns={"index": "Datetime"})
+            merged = pd.merge_asof(
+                prices.sort_values("Datetime"),
+                news_sorted,
+                on="Datetime",
+                direction="backward",
+            )
+            merged = merged.set_index("Datetime")
+
+        merged.index = pd.to_datetime(merged.index)
+        return merged
 
     def _resample_secondary(
         self,
