@@ -16,6 +16,7 @@ Typical Usage:
 """
 
 import logging
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -52,37 +53,32 @@ class DataProcessor:
         default_volume_ema_periods = [5, 10, 20]
         self.sentiment_enabled = False
         self.sentiment_analyzer: SentimentAnalyzer | None = None
+        self.price_feature_flags: set[str] = set()
+        self.atr_periods: list[int] = []
+        self.keltner_periods: list[int] = []
+        self.keltner_atr_multiple: float = 2.0
+        self.price_momentum_periods: list[int] = []
+        self.volume_momentum_periods: list[int] = []
+        self.mean_reversion_lookbacks: list[int] = []
+        self.volatility_breakout_config: dict[str, Any] | None = None
+        self.volume_price_trend_enabled = False
+        self.obv_enabled = True
 
         try:
             with open(config_path, "r") as f:
-                config = yaml.safe_load(f)
+                raw_config = yaml.safe_load(f) or {}
 
             try:
-                features_schema = FeaturesConfigSchema(**config)
+                features_schema = FeaturesConfigSchema(**raw_config)
             except ValidationError as exc:
                 raise ValueError(f"Invalid feature configuration: {exc}") from exc
 
-            self.multi_timeframe_config = features_schema.multi_timeframe_features
-            self.multi_timeframe_enabled = bool(
-                self.multi_timeframe_config and self.multi_timeframe_config.enabled
-            )
-            self.multi_timeframe_operations: list[MultiTimeframeOperation] = (
-                list(self.multi_timeframe_config.operations)
-                if self.multi_timeframe_config
-                else []
-            )
+            price_cfg = features_schema.price_features
+            self.price_feature_flags = set(price_cfg.enabled)
+            self.sma_periods = price_cfg.sma_periods or default_sma_periods
+            self.ema_periods = price_cfg.ema_periods or default_ema_periods
 
-            # Price-based features -- handle both mapping and list style configs
-            price_cfg = config.get("price_features", {})
-            if isinstance(price_cfg, dict):
-                self.sma_periods = price_cfg.get("sma_periods", default_sma_periods)
-                self.ema_periods = price_cfg.get("ema_periods", default_ema_periods)
-            else:  # fallback when provided as a simple list
-                self.sma_periods = default_sma_periods
-                self.ema_periods = default_ema_periods
-
-            # Momentum features
-            momentum_cfg = config.get("momentum_features", {})
+            momentum_cfg = raw_config.get("momentum_features", {})
             if isinstance(momentum_cfg, dict):
                 self.rsi_period = momentum_cfg.get("rsi_period", default_rsi_period)
                 self.macd_params = momentum_cfg.get("macd_params", default_macd_params)
@@ -94,43 +90,51 @@ class DataProcessor:
                 self.macd_params = default_macd_params
                 self.stoch_params = default_stoch_params
 
-            # Bollinger Bands parameters
-            volatility_cfg = config.get("volatility_features", {})
-            bb_config = {}
-            if isinstance(volatility_cfg, dict):
-                bb_config = volatility_cfg.get("bollinger_bands", {})
-            elif isinstance(volatility_cfg, list):
-                for item in volatility_cfg:
-                    if isinstance(item, dict) and "bollinger_bands" in item:
-                        bb_config = item["bollinger_bands"]
-                        break
+            volatility_cfg = features_schema.volatility_features
+            self.atr_periods = list(volatility_cfg.atr_periods)
             self.bb_period = (
-                bb_config.get("period", default_bb_period)
-                if isinstance(bb_config, dict)
+                volatility_cfg.bollinger_bands.period
+                if volatility_cfg.bollinger_bands
                 else default_bb_period
             )
             self.bb_std = (
-                bb_config.get("std_dev", default_bb_std)
-                if isinstance(bb_config, dict)
+                volatility_cfg.bollinger_bands.std_dev
+                if volatility_cfg.bollinger_bands
                 else default_bb_std
             )
+            if volatility_cfg.keltner_channels:
+                self.keltner_periods = list(volatility_cfg.keltner_channels.periods)
+                self.keltner_atr_multiple = volatility_cfg.keltner_channels.atr_multiple
 
-            # Volume indicator parameters
-            volume_cfg = config.get("volume_features", {})
-            vol_sma_cfg, vol_ema_cfg = {}, {}
-            if isinstance(volume_cfg, dict):
-                vol_sma_cfg = volume_cfg.get("volume_sma", {})
-                vol_ema_cfg = volume_cfg.get("volume_ema", {})
-            elif isinstance(volume_cfg, list):
-                for item in volume_cfg:
-                    if isinstance(item, dict):
-                        if "volume_sma" in item:
-                            vol_sma_cfg = item["volume_sma"]
-                        if "volume_ema" in item:
-                            vol_ema_cfg = item["volume_ema"]
+            volume_cfg = features_schema.volume_features
+            self.volume_sma_periods = list(volume_cfg.volume_sma.periods)
+            self.volume_ema_periods = list(volume_cfg.volume_ema.periods)
+            self.volume_sma_ratio_periods = list(volume_cfg.volume_sma_ratios)
+            self.volume_ema_ratio_periods = list(volume_cfg.volume_ema_ratios)
+            self.volume_price_trend_enabled = volume_cfg.volume_price_trend
+            self.obv_enabled = volume_cfg.on_balance_volume
 
-            # Sentiment configuration
-            sentiment_cfg = config.get("sentiment", {}) or {}
+            custom_cfg = features_schema.custom_features
+            self.price_momentum_periods = list(custom_cfg.price_momentum)
+            self.volume_momentum_periods = list(custom_cfg.volume_momentum)
+            self.mean_reversion_lookbacks = list(custom_cfg.mean_reversion)
+            self.volatility_breakout_config = (
+                custom_cfg.volatility_breakout.model_dump()
+                if custom_cfg.volatility_breakout
+                else None
+            )
+
+            self.multi_timeframe_config = features_schema.multi_timeframe_features
+            self.multi_timeframe_enabled = bool(
+                self.multi_timeframe_config and self.multi_timeframe_config.enabled
+            )
+            self.multi_timeframe_operations: list[MultiTimeframeOperation] = (
+                list(self.multi_timeframe_config.operations)
+                if self.multi_timeframe_config
+                else []
+            )
+
+            sentiment_cfg = raw_config.get("sentiment", {}) or {}
             self.sentiment_enabled = sentiment_cfg.get("enabled", False)
             if self.sentiment_enabled:
                 try:
@@ -143,15 +147,8 @@ class DataProcessor:
                 except Exception as exc:
                     logger.error(f"Error initializing sentiment analyzer: {exc}")
                     raise
-            self.volume_sma_periods = vol_sma_cfg.get(
-                "periods", default_volume_sma_periods
-            )
-            self.volume_ema_periods = vol_ema_cfg.get(
-                "periods", default_volume_ema_periods
-            )
 
-            # Feature combinations for cross/ratio indicators
-            comb_cfg = config.get("feature_combinations", [])
+            comb_cfg = raw_config.get("feature_combinations", [])
             cross_cfg, ratio_cfg = [], []
             if isinstance(comb_cfg, list):
                 for item in comb_cfg:
@@ -164,8 +161,7 @@ class DataProcessor:
             self.cross_indicators = cross_cfg
             self.ratio_indicators = ratio_cfg
 
-            # Feature preprocessing and selection
-            prep_cfg = config.get("preprocessing", {})
+            prep_cfg = raw_config.get("preprocessing", {})
             scale_cfg = (
                 prep_cfg.get("scaling", {}) if isinstance(prep_cfg, dict) else {}
             )
@@ -176,13 +172,13 @@ class DataProcessor:
             self.outlier_method = out_cfg.get("method", "winsorize")
             self.outlier_limits = out_cfg.get("limits", [0.01, 0.99])
 
-            fs_cfg = config.get("feature_selection", {})
+            fs_cfg = raw_config.get("feature_selection", {})
             self.feature_selection_method = fs_cfg.get("method", "recursive")
             self.n_features = fs_cfg.get("n_features", None)
 
             pipe_cfg = (
-                config.get("pipeline", {}).get("steps")
-                if isinstance(config.get("pipeline", {}), dict)
+                raw_config.get("pipeline", {}).get("steps")
+                if isinstance(raw_config.get("pipeline", {}), dict)
                 else None
             )
             self.pipeline = pipe_cfg or [
@@ -226,6 +222,8 @@ class DataProcessor:
             self.bb_std = default_bb_std
             self.volume_sma_periods = default_volume_sma_periods
             self.volume_ema_periods = default_volume_ema_periods
+            self.volume_sma_ratio_periods = default_volume_sma_periods
+            self.volume_ema_ratio_periods = default_volume_ema_periods
             self.cross_indicators = []
             self.ratio_indicators = []
             self.scaling_method = "standard"
@@ -262,6 +260,8 @@ class DataProcessor:
             self.bb_std = default_bb_std
             self.volume_sma_periods = default_volume_sma_periods
             self.volume_ema_periods = default_volume_ema_periods
+            self.volume_sma_ratio_periods = default_volume_sma_periods
+            self.volume_ema_ratio_periods = default_volume_ema_periods
             self.cross_indicators = []
             self.ratio_indicators = []
             self.scaling_method = "standard"
@@ -354,6 +354,34 @@ class DataProcessor:
             raise
         return df
 
+    def _add_price_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add price-derived ratios configured in the YAML file."""
+
+        if not self.price_feature_flags:
+            return df
+
+        close = df["Close"]
+        open_ = df["Open"]
+        high = df["High"]
+        low = df["Low"]
+
+        if "close_to_open" in self.price_feature_flags:
+            df["close_to_open"] = (close - open_) / open_.replace(0, np.nan)
+
+        if "high_to_low" in self.price_feature_flags:
+            df["high_to_low"] = (high - low) / low.replace(0, np.nan)
+
+        if "close_to_high" in self.price_feature_flags:
+            df["close_to_high"] = (close - high) / high.replace(0, np.nan)
+
+        if "close_to_low" in self.price_feature_flags:
+            df["close_to_low"] = (close - low) / low.replace(0, np.nan)
+
+        if "price_range" in self.price_feature_flags:
+            df["price_range"] = (high - low) / close.replace(0, np.nan)
+
+        return df
+
     def _add_momentum_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add required momentum indicators."""
         try:
@@ -407,22 +435,59 @@ class DataProcessor:
 
         return df
 
+    def _add_volatility_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add ATR, Bollinger Bands and Keltner Channels based on configuration."""
+
+        if self.bb_period:
+            df = self._add_bollinger_bands(df)
+
+        for period in self.atr_periods:
+            df[f"atr_{period}"] = ta.atr(df["High"], df["Low"], df["Close"], length=period)
+
+        for period in self.keltner_periods:
+            typical_price = (df["High"] + df["Low"] + df["Close"]) / 3
+            middle_band = ft.ema(typical_price, period)
+            atr = ta.atr(df["High"], df["Low"], df["Close"], length=period)
+            df[f"keltner_middle_{period}"] = middle_band
+            df[f"keltner_upper_{period}"] = middle_band + self.keltner_atr_multiple * atr
+            df[f"keltner_lower_{period}"] = middle_band - self.keltner_atr_multiple * atr
+
+        return df
+
     def _add_volume_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add volume-based indicators such as moving averages and OBV."""
         try:
             for period in self.volume_sma_periods:
                 df[f"volume_sma_{period}"] = ft.sma(df["Volume"], period)
+
+            for period in self.volume_sma_ratio_periods:
+                if f"volume_sma_{period}" not in df.columns:
+                    df[f"volume_sma_{period}"] = ft.sma(df["Volume"], period)
                 df[f"volume_sma_ratio_{period}"] = (
                     df["Volume"] / df[f"volume_sma_{period}"]
                 )
 
             for period in self.volume_ema_periods:
                 df[f"volume_ema_{period}"] = ft.ema(df["Volume"], period)
+
+            for period in self.volume_ema_ratio_periods:
+                if f"volume_ema_{period}" not in df.columns:
+                    df[f"volume_ema_{period}"] = ft.ema(df["Volume"], period)
                 df[f"volume_ema_ratio_{period}"] = (
                     df["Volume"] / df[f"volume_ema_{period}"]
                 )
 
-            df["obv"] = ta.obv(df["Close"], df["Volume"])
+            if self.obv_enabled:
+                df["obv"] = ta.obv(df["Close"], df["Volume"])
+
+            if self.volume_price_trend_enabled:
+                df["volume_price_trend"] = (
+                    df["Volume"]
+                    * (
+                        (df["Close"] - df["Close"].shift(1))
+                        / df["Close"].shift(1)
+                    )
+                ).cumsum()
         except Exception as e:
             logger.error(f"Error calculating volume features: {str(e)}")
             raise
@@ -451,8 +516,9 @@ class DataProcessor:
         return df
 
     def _generate_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = self._add_price_features(df)
         df = self._add_momentum_indicators(df)
-        df = self._add_bollinger_bands(df)
+        df = self._add_volatility_features(df)
         df = self._add_return_features(df)
         return df
 
@@ -572,27 +638,43 @@ class DataProcessor:
     def _add_custom_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add custom features unique to our strategy."""
         try:
-            df["momentum_score"] = cf.momentum_score(
-                df["Close"],
-                df["sma_20"],
-                df["rsi"],
-                df["macd"],
-                df["macd_signal"],
-            )
+            for period in self.price_momentum_periods:
+                df[f"price_momentum_{period}"] = df["Close"].pct_change(period)
 
-            # 2. Volume-Price Trend
-            # Measures buying/selling pressure
+            for period in self.volume_momentum_periods:
+                df[f"volume_momentum_{period}"] = df["Volume"].pct_change(period)
 
-            df["vpt"] = (
-                df["Volume"]
-                * ((df["Close"] - df["Close"].shift(1)) / df["Close"].shift(1))
-            ).cumsum()
+            for lookback in self.mean_reversion_lookbacks:
+                rolling_mean = df["Close"].rolling(lookback).mean()
+                rolling_std = df["Close"].rolling(lookback).std()
+                df[f"mean_reversion_{lookback}"] = (
+                    df["Close"] - rolling_mean
+                ) / rolling_std
 
-            df["volatility_breakout"] = cf.volatility_breakout(
-                df["High"],
-                df["Low"],
-                df["Close"],
-            )
+            if self.volatility_breakout_config:
+                lookbacks = self.volatility_breakout_config.get("lookback") or []
+                threshold = self.volatility_breakout_config.get("threshold", 2.0)
+                for lookback in lookbacks:
+                    column_name = f"volatility_breakout_{lookback}"
+                    df[column_name] = cf.volatility_breakout(
+                        df["High"],
+                        df["Low"],
+                        df["Close"],
+                        lookback=lookback,
+                        threshold=threshold,
+                    )
+                if lookbacks:
+                    df["volatility_breakout"] = df[f"volatility_breakout_{lookbacks[0]}"]
+
+            required_cols = {"sma_20", "rsi", "macd", "macd_signal"}
+            if required_cols.issubset(df.columns):
+                df["momentum_score"] = cf.momentum_score(
+                    df["Close"],
+                    df["sma_20"],
+                    df["rsi"],
+                    df["macd"],
+                    df["macd_signal"],
+                )
 
             # Keep features in native scale; normalization handled by scaler
 
