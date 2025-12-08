@@ -11,7 +11,7 @@ Key Components:
 
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Literal
+from typing import List, Optional, Dict, Any, Literal, Set
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
@@ -188,12 +188,156 @@ class MultiTimeframeConfig(BaseModel):
     operations: List[MultiTimeframeOperation] = Field(default_factory=list)
 
 
+class PriceFeaturesConfig(BaseModel):
+    enabled: Set[
+        Literal[
+            "close_to_open",
+            "high_to_low",
+            "close_to_high",
+            "close_to_low",
+            "price_range",
+        ]
+    ] = Field(default_factory=set)
+    sma_periods: List[int] = Field(default_factory=lambda: [5, 10, 20, 50, 200])
+    ema_periods: List[int] = Field(default_factory=lambda: [5, 10, 20, 50, 200])
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_price_features(cls, value: Any) -> Dict[str, Any]:
+        if value is None:
+            return {}
+        if isinstance(value, list):
+            enabled = {item for item in value if isinstance(item, str)}
+            return {"enabled": enabled}
+        if isinstance(value, dict):
+            enabled = {
+                name
+                for name, flag in value.items()
+                if name not in {"sma_periods", "ema_periods"} and flag
+            }
+            parsed = {"enabled": enabled}
+            if "sma_periods" in value:
+                parsed["sma_periods"] = value["sma_periods"]
+            if "ema_periods" in value:
+                parsed["ema_periods"] = value["ema_periods"]
+            return parsed
+        raise ValueError(
+            "price_features must be a list of feature names or mapping of booleans"
+        )
+
+
+class VolumeMovingAverageConfig(BaseModel):
+    periods: List[int] = Field(default_factory=list)
+
+
+class VolumeFeaturesConfig(BaseModel):
+    volume_sma: VolumeMovingAverageConfig = Field(
+        default_factory=VolumeMovingAverageConfig
+    )
+    volume_ema: VolumeMovingAverageConfig = Field(
+        default_factory=VolumeMovingAverageConfig
+    )
+    volume_sma_ratios: List[int] = Field(default_factory=list)
+    volume_ema_ratios: List[int] = Field(default_factory=list)
+    on_balance_volume: bool = True
+    volume_price_trend: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_volume_features(cls, value: Any) -> Dict[str, Any]:
+        if value is None:
+            return {}
+        parsed: Dict[str, Any] = {}
+        items = value if isinstance(value, list) else [value]
+        for item in items:
+            if isinstance(item, str):
+                if item == "on_balance_volume":
+                    parsed["on_balance_volume"] = True
+                if item == "volume_price_trend":
+                    parsed["volume_price_trend"] = True
+            elif isinstance(item, dict):
+                for key, entry in item.items():
+                    parsed[key] = entry
+        return parsed
+
+
+class BollingerBandsConfig(BaseModel):
+    period: int = 20
+    std_dev: float = 2.0
+
+
+class KeltnerChannelsConfig(BaseModel):
+    periods: List[int] = Field(default_factory=list)
+    atr_multiple: float = 2.0
+
+
+class VolatilityFeaturesConfig(BaseModel):
+    atr_periods: List[int] = Field(default_factory=list)
+    bollinger_bands: Optional[BollingerBandsConfig] = Field(
+        default_factory=BollingerBandsConfig
+    )
+    keltner_channels: Optional[KeltnerChannelsConfig] = Field(
+        default_factory=KeltnerChannelsConfig
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_volatility_features(cls, value: Any) -> Dict[str, Any]:
+        if value is None:
+            return {}
+        parsed: Dict[str, Any] = {}
+        items = value if isinstance(value, list) else [value]
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            for key, entry in item.items():
+                parsed[key] = entry
+        if isinstance(value, dict):
+            parsed.update({k: v for k, v in value.items() if k not in parsed})
+        return parsed
+
+
+class VolatilityBreakoutConfig(BaseModel):
+    lookback: List[int] = Field(default_factory=list)
+    threshold: float = 2.0
+
+
+class CustomFeaturesConfig(BaseModel):
+    price_momentum: List[int] = Field(default_factory=list)
+    volume_momentum: List[int] = Field(default_factory=list)
+    mean_reversion: List[int] = Field(default_factory=list)
+    volatility_breakout: Optional[VolatilityBreakoutConfig] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_custom_features(cls, value: Any) -> Dict[str, Any]:
+        if value is None:
+            return {}
+        parsed: Dict[str, Any] = {}
+        items = value if isinstance(value, list) else [value]
+        for item in items:
+            if isinstance(item, dict):
+                for key, entry in item.items():
+                    if isinstance(entry, dict) and key != "volatility_breakout":
+                        if "periods" in entry:
+                            parsed[key] = entry.get("periods", [])
+                        elif "lookback" in entry:
+                            parsed[key] = entry.get("lookback", [])
+                        else:
+                            parsed[key] = entry
+                    else:
+                        parsed[key] = entry
+        return parsed
+
+
 class FeaturesConfigSchema(BaseModel):
     pipeline: PipelineConfig
-    price_features: Optional[Any] = None
-    volume_features: Optional[Any] = None
-    volatility_features: Optional[Any] = None
-    custom_features: Optional[Any] = None
+    price_features: PriceFeaturesConfig = Field(default_factory=PriceFeaturesConfig)
+    volume_features: VolumeFeaturesConfig = Field(default_factory=VolumeFeaturesConfig)
+    volatility_features: VolatilityFeaturesConfig = Field(
+        default_factory=VolatilityFeaturesConfig
+    )
+    custom_features: CustomFeaturesConfig = Field(default_factory=CustomFeaturesConfig)
     feature_combinations: Optional[Any] = None
     sentiment: Optional[SentimentConfig] = None
     feature_selection: Optional[Dict[str, Any]] = None

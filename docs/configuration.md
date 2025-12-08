@@ -382,25 +382,36 @@ models:
     learning_rate: 0.05
 ```
 
-### Research Configuration
+### Feature Engineering (`features_config.yaml`)
 ```yaml
-data:
-  symbols: ['AAPL', 'TSLA']
-  start_date: '2020-01-01'
-  end_date: '2024-12-31'
-  refresh: true
+price_features:
+  - close_to_open
+  - price_range
 
-features:
-  price_features:
-    sma_periods: [5, 10, 20, 50]
-    ema_periods: [5, 10, 20, 50]
-  
-  momentum_features:
-    rsi_period: 14
-    macd_params:
-      fast: 12
-      slow: 26
-      signal: 9
+volume_features:
+  - volume_sma: {periods: [5, 10]}
+  - volume_sma_ratios: [5, 10]
+  - on_balance_volume
+  - volume_price_trend
+
+volatility_features:
+  - atr_periods: [14]
+  - bollinger_bands: {period: 20, std_dev: 2}
+  - keltner_channels: {periods: [20], atr_multiple: 1.5}
+
+custom_features:
+  - price_momentum: {periods: [5, 10]}
+  - volume_momentum: {periods: [5, 10]}
+  - mean_reversion: {lookback: [10, 20]}
+  - volatility_breakout: {lookback: [20], threshold: 2.0}
+
+pipeline:
+  steps:
+    - generate_technical_indicators
+    - generate_volume_features
+    - generate_custom_features
+    - handle_missing_values
+    - scale_features
 ```
 
 ## 🔍 Configuration Validation
