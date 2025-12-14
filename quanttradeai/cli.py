@@ -44,11 +44,16 @@ def cmd_fetch_data(
 def cmd_train(
     config: str = typer.Option(
         "config/model_config.yaml", "-c", "--config", help="Path to config file"
-    )
+    ),
+    skip_validation: bool = typer.Option(
+        False,
+        "--skip-validation",
+        help="Skip data-quality validation before training",
+    ),
 ):
     """Run full training pipeline."""
 
-    run_pipeline(config)
+    run_pipeline(config, skip_validation=skip_validation)
 
 
 @app.command("evaluate")
@@ -57,10 +62,15 @@ def cmd_evaluate(
     config: str = typer.Option(
         "config/model_config.yaml", "-c", "--config", help="Path to config file"
     ),
+    skip_validation: bool = typer.Option(
+        False,
+        "--skip-validation",
+        help="Skip data-quality validation before evaluation",
+    ),
 ):
     """Evaluate a saved model on current dataset."""
 
-    evaluate_model(config, model_path)
+    evaluate_model(config, model_path, skip_validation=skip_validation)
 
 
 @app.command("backtest")
@@ -133,6 +143,11 @@ def cmd_backtest_model(
     liquidity_max_participation: Optional[float] = typer.Option(
         None, help="Liquidity max participation"
     ),
+    skip_validation: bool = typer.Option(
+        False,
+        "--skip-validation",
+        help="Skip data-quality validation before backtesting",
+    ),
 ):
     """Backtest a saved model on the configured test window with execution costs."""
 
@@ -146,6 +161,7 @@ def cmd_backtest_model(
         slippage_bps=slippage_bps,
         slippage_fixed=slippage_fixed,
         liquidity_max_participation=liquidity_max_participation,
+        skip_validation=skip_validation,
     )
     typer.echo(json.dumps(summary, indent=2))
 

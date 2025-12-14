@@ -124,6 +124,7 @@ def test_pipeline_handles_secondary_timeframes(tmp_path):
     ) as mock_processor, patch("quanttradeai.main.MomentumClassifier") as mock_model:
         loader_instance = mock_loader.return_value
         loader_instance.fetch_data.return_value = {"AAA": df}
+        loader_instance.validate_data.return_value = (True, {"AAA": {"passed": True}})
 
         def process_passthrough(input_df):
             assert "close_1h_last" in input_df.columns

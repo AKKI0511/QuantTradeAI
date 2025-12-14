@@ -51,22 +51,24 @@ aapl_data = data['AAPL']
 print(f"AAPL data shape: {aapl_data.shape}")
 ```
 
-### `validate_data(data_dict: Dict[str, pd.DataFrame]) -> bool`
+### `validate_data(data_dict: Dict[str, pd.DataFrame]) -> tuple[bool, dict]`
 
-Validates the fetched data meets requirements.
+Validates the fetched data meets requirements and returns a per-symbol report with
+missing columns, date span, NaN ratios, and pass/fail flags.
 
 **Parameters:**
 - `data_dict` (Dict[str, pd.DataFrame]): Dictionary of DataFrames with OHLCV data
 
 **Returns:**
-- `bool`: True if data is valid, False otherwise
+- `Tuple[bool, dict]`: Overall validity flag and a detailed report
 
 **Example:**
 ```python
 # Validate fetched data
-is_valid = loader.validate_data(data_dict)
+is_valid, report = loader.validate_data(data_dict)
 if not is_valid:
     print("Data validation failed")
+    print(report)
 ```
 
 ### `save_data(data_dict: Dict[str, pd.DataFrame], path: Optional[str] = None)`
@@ -284,9 +286,10 @@ df = df.fillna(method='ffill')
 ```python
 try:
     # Validate data
-    is_valid = loader.validate_data(data_dict)
+    is_valid, report = loader.validate_data(data_dict)
     if not is_valid:
         print("Data validation failed")
+        print(report)
 except Exception as e:
     print(f"Validation error: {e}")
 ```

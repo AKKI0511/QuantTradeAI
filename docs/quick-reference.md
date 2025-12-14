@@ -14,6 +14,7 @@ poetry run quanttradeai fetch-data --refresh
 
 # Train models
 poetry run quanttradeai train
+poetry run quanttradeai train --skip-validation  # bypass data-quality gate
 
 # Evaluate model
 poetry run quanttradeai evaluate -m models/trained/AAPL
@@ -25,7 +26,8 @@ poetry run quanttradeai backtest --cost-bps 5 --slippage-bps 10
 # Backtest a saved model (end-to-end)
 poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> \
   -c config/model_config.yaml -b config/backtest_config.yaml \
-  --cost-bps 5 --slippage-fixed 0.01 --liquidity-max-participation 0.25
+  --cost-bps 5 --slippage-fixed 0.01 --liquidity-max-participation 0.25 \
+  --skip-validation  # optional
 ```
 
 ## 📊 Python API Patterns
@@ -38,8 +40,12 @@ from quanttradeai import DataLoader
 loader = DataLoader("config/model_config.yaml")
 data = loader.fetch_data(symbols=['AAPL', 'TSLA'], refresh=True)
 
-# Validate data
-is_valid = loader.validate_data(data)
+# Validate data and inspect per-symbol report
+is_valid, report = loader.validate_data(data)
+if not is_valid:
+    print(report)
+    # CLI commands write this report to models/experiments/<timestamp>/validation.json
+    # or reports/backtests/<timestamp>/validation.json
 ```
 
 ### Feature Engineering

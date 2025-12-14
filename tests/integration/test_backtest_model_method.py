@@ -133,6 +133,7 @@ def test_run_model_backtest_happy_path():
                 model_config=model_cfg,
                 model_path=model_dir,
                 backtest_config=None,
+                skip_validation=True,
             )
 
         mock_sim.assert_called_once()
@@ -170,6 +171,7 @@ def test_run_model_backtest_missing_features_sets_error():
                 model_config=model_cfg,
                 model_path=model_dir,
                 backtest_config=None,
+                skip_validation=True,
             )
 
         mock_sim.assert_not_called()

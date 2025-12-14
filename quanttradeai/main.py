@@ -56,6 +56,26 @@ def setup_directories(cache_dir: str = "data/raw"):
         Path(dir_path).mkdir(parents=True, exist_ok=True)
 
 
+def _write_validation_report(report_path: Path, report: dict) -> None:
+    """Persist validation results to JSON and CSV formats."""
+
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2, default=float)
+
+    try:
+        import pandas as pd
+
+        rows = []
+        for symbol, details in report.items():
+            row = {"symbol": symbol, **details}
+            rows.append(row)
+        df = pd.DataFrame(rows)
+        df.to_csv(report_path.with_suffix(".csv"), index=False)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to write CSV validation report: %s", exc)
+
+
 def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
     """Ensure the DataFrame index is a DatetimeIndex.
 
@@ -168,7 +188,46 @@ def time_aware_split(
     return train_df, test_df
 
 
-def run_pipeline(config_path: str = "config/model_config.yaml"):
+def _validate_or_raise(
+    *,
+    loader: DataLoader,
+    data: dict,
+    report_path: Path,
+    skip_validation: bool,
+) -> dict:
+    """Validate fetched data and persist a report unless skipped."""
+
+    if skip_validation:
+        logger.warning(
+            "Skipping data validation as requested; downstream results may be unreliable."
+        )
+        return {}
+
+    validation_result = loader.validate_data(data)
+    if isinstance(validation_result, tuple) and len(validation_result) == 2:
+        is_valid, report = validation_result
+    else:
+        is_valid = bool(validation_result)
+        report = {}
+    _write_validation_report(report_path, report)
+
+    if not is_valid:
+        failed = [symbol for symbol, res in report.items() if not res.get("passed")]
+        raise ValueError(
+            f"Data validation failed for symbols: {', '.join(failed) if failed else 'unknown'}"
+        )
+
+    logger.info(
+        "Data validation passed for %d symbols. Report saved to %s",
+        len(report),
+        report_path,
+    )
+    return report
+
+
+def run_pipeline(
+    config_path: str = "config/model_config.yaml", *, skip_validation: bool = False
+):
     """Run the end-to-end training pipeline.
 
     Loads data, generates features and labels, tunes hyperparameters,
@@ -204,6 +263,15 @@ def run_pipeline(config_path: str = "config/model_config.yaml"):
         logger.info("Fetching data...")
         refresh = config.get("data", {}).get("refresh", False)
         data_dict = data_loader.fetch_data(refresh=refresh)
+
+        # Validate data quality
+        validation_path = Path(experiment_dir) / "validation.json"
+        _validate_or_raise(
+            loader=data_loader,
+            data=data_dict,
+            report_path=validation_path,
+            skip_validation=skip_validation,
+        )
 
         # Process each stock
         results = {}
@@ -284,7 +352,9 @@ def fetch_data_only(config_path: str, refresh: bool = False) -> None:
     data_loader.save_data(data)
 
 
-def evaluate_model(config_path: str, model_path: str) -> None:
+def evaluate_model(
+    config_path: str, model_path: str, *, skip_validation: bool = False
+) -> None:
     """Evaluate a persisted model on current config’s dataset.
 
     Example
@@ -297,6 +367,13 @@ def evaluate_model(config_path: str, model_path: str) -> None:
     model.load_model(model_path)
 
     data_dict = data_loader.fetch_data()
+    validation_path = Path(model_path) / "validation.json"
+    _validate_or_raise(
+        loader=data_loader,
+        data=data_dict,
+        report_path=validation_path,
+        skip_validation=skip_validation,
+    )
     results = {}
     for symbol, df in data_dict.items():
         df_processed = data_processor.process_data(df)
@@ -382,6 +459,7 @@ def run_model_backtest(
     slippage_bps: float | None = None,
     slippage_fixed: float | None = None,
     liquidity_max_participation: float | None = None,
+    skip_validation: bool = False,
 ) -> dict:
     """Backtest a saved model’s predictions on the configured test window.
 
@@ -432,8 +510,15 @@ def run_model_backtest(
                 risk_path,
             )
 
-    data_dict = loader.fetch_data()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    data_dict = loader.fetch_data()
+    validation_path = Path(f"reports/backtests/{timestamp}") / "validation.json"
+    _validate_or_raise(
+        loader=loader,
+        data=data_dict,
+        report_path=validation_path,
+        skip_validation=skip_validation,
+    )
     base_dir = Path(f"reports/backtests/{timestamp}")
     base_dir.mkdir(parents=True, exist_ok=True)
 
