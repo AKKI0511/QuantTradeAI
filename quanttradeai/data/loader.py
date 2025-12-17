@@ -371,7 +371,12 @@ class DataLoader:
             nan_ratio_by_column = {
                 col: float(df[col].isnull().mean()) for col in df.columns
             }
-            max_nan_ratio = max(nan_ratio_by_column.values(), default=0.0)
+            nan_ratio_required_columns = {
+                col: nan_ratio_by_column[col]
+                for col in required_columns
+                if col in nan_ratio_by_column
+            }
+            max_nan_ratio = max(nan_ratio_required_columns.values(), default=0.0)
 
             errors = []
             if missing_columns:
