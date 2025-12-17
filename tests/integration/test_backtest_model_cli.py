@@ -90,14 +90,15 @@ def test_backtest_model_cli_creates_artifacts_and_outputs_summary():
             # Run the CLI
             result = runner.invoke(
                 app,
-                [
-                    "backtest-model",
-                    "-m",
-                    model_dir,
-                    "-c",
-                    model_cfg_path,
-                ],
-            )
+                    [
+                        "backtest-model",
+                        "-m",
+                        model_dir,
+                        "-c",
+                        model_cfg_path,
+                        "--skip-validation",
+                    ],
+                )
 
     assert result.exit_code == 0, result.stdout
     # Parse the JSON summary and validate outputs exist
@@ -152,15 +153,16 @@ def test_backtest_model_cli_overrides_plumb_through():
                     "-m",
                     model_dir,
                     "-c",
-                    model_cfg_path,
-                    "--cost-bps",
-                    "5",
-                    "--slippage-fixed",
-                    "0.01",
-                    "--liquidity-max-participation",
-                    "0.5",
-                ],
-            )
+                        model_cfg_path,
+                        "--cost-bps",
+                        "5",
+                        "--slippage-fixed",
+                        "0.01",
+                        "--liquidity-max-participation",
+                        "0.5",
+                        "--skip-validation",
+                    ],
+                )
 
     assert result.exit_code == 0, result.stdout
     # Ensure summary JSON contains the symbol and metrics
@@ -237,6 +239,7 @@ def test_backtest_model_cli_risk_config_passed_to_drawdown_guard():
                     model_cfg_path,
                     "--risk-config",
                     risk_path,
+                    "--skip-validation",
                 ],
             )
 

@@ -349,37 +349,58 @@ class DataLoader:
         resampled = resampled.reindex(target_index)
         return resampled
 
-    def validate_data(self, data_dict: Dict[str, pd.DataFrame]) -> bool:
+    def validate_data(self, data_dict: Dict[str, pd.DataFrame]) -> tuple[bool, dict]:
         """
-        Validate the fetched data meets requirements.
+        Validate the fetched data meets requirements and return a detailed report.
 
         Args:
             data_dict: Dictionary of DataFrames with OHLCV data.
 
         Returns:
-            bool: True if data is valid, False otherwise.
+            Tuple[bool, dict]: Overall validity flag and a per-symbol report with
+            missing column checks, date span, NaN ratios, and pass/fail status.
         """
         required_columns = ["Open", "High", "Low", "Close", "Volume"]
 
+        overall_valid = True
+        report: Dict[str, dict] = {}
+
         for symbol, df in data_dict.items():
-            # Check required columns
-            if not all(col in df.columns for col in required_columns):
-                logger.error(f"Missing required columns for {symbol}")
-                return False
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            date_span_days = int((df.index.max() - df.index.min()).days) if not df.empty else 0
+            nan_ratio_by_column = {
+                col: float(df[col].isnull().mean()) for col in df.columns
+            }
+            nan_ratio_required_columns = {
+                col: nan_ratio_by_column[col]
+                for col in required_columns
+                if col in nan_ratio_by_column
+            }
+            max_nan_ratio = max(nan_ratio_required_columns.values(), default=0.0)
 
-            # Check data range
-            date_range = (df.index.max() - df.index.min()).days
-            if date_range < 365:  # At least one year of data
-                logger.error(f"Insufficient data range for {symbol}")
-                return False
+            errors = []
+            if missing_columns:
+                errors.append(f"Missing required columns: {', '.join(missing_columns)}")
+            if date_span_days < 365:
+                errors.append("Insufficient data range (<365 days)")
+            if max_nan_ratio > 0.01:
+                errors.append(f"Too many missing values (max ratio={max_nan_ratio:.4f})")
 
-            # Check for excessive missing values
-            # Check missing value ratio per column
-            if df.isnull().mean().max() > 0.01:  # Max 1% missing values
-                logger.error(f"Too many missing values for {symbol}")
-                return False
+            passed = len(errors) == 0
+            if not passed:
+                overall_valid = False
+                logger.error("Data validation failed for %s: %s", symbol, "; ".join(errors))
 
-        return True
+            report[symbol] = {
+                "missing_columns": missing_columns,
+                "date_span_days": date_span_days,
+                "nan_ratio_by_column": nan_ratio_by_column,
+                "max_nan_ratio": max_nan_ratio,
+                "passed": passed,
+                "errors": errors,
+            }
+
+        return overall_valid, report
 
     def save_data(
         self, data_dict: Dict[str, pd.DataFrame], path: Optional[str] = None
