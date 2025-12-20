@@ -12,6 +12,15 @@ The framework uses several configuration files:
 - **`config/impact_config.yaml`** - Market impact parameters by asset class
 - **`config/risk_config.yaml`** - Drawdown protection and turnover limits
 - **`config/position_manager.yaml`** - Live position tracking and intraday risk controls
+- **`config/streaming.yaml`** - Streaming providers and health monitoring settings
+
+Use the CLI preflight to validate all of them at once before running training or backtests:
+
+```bash
+poetry run quanttradeai validate-config --output-dir reports/config_validation
+```
+
+This command loads each YAML with the same schemas used in production, then writes JSON/CSV summaries indicating which files passed and any errors found. It exits non-zero if any validation fails so you can gate CI or notebooks on clean configs.
 
 ## 🔧 Model Configuration
 

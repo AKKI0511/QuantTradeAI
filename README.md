@@ -88,6 +88,7 @@ poetry run quanttradeai train -c config/model_config.yaml                      #
 poetry run quanttradeai evaluate -m <model_dir> -c config/model_config.yaml    # Evaluate a saved model
 poetry run quanttradeai backtest -c config/backtest_config.yaml                # CSV backtest (uses data_path)
 poetry run quanttradeai backtest-model -m <model_dir> -c config/model_config.yaml -b config/backtest_config.yaml --risk-config config/risk_config.yaml
+poetry run quanttradeai validate-config                                        # Preflight validation for all YAML configs
 poetry run quanttradeai live-trade --url wss://example -c config/model_config.yaml
 ```
 
