@@ -21,6 +21,7 @@ from .main import (
     run_model_backtest,
 )
 from .backtest.backtester import simulate_trades, compute_metrics
+from .utils.config_validator import validate_all, DEFAULT_CONFIG_PATHS
 import yaml
 import pandas as pd
 
@@ -176,6 +177,68 @@ def cmd_live_trade(
     """Run real-time trading pipeline using streaming input."""
 
     asyncio.run(run_live_pipeline(config, url))
+
+
+@app.command("validate-config")
+def cmd_validate_config(
+    model_config: str = typer.Option(
+        DEFAULT_CONFIG_PATHS["model_config"],
+        "--model-config",
+        help="Path to model configuration YAML",
+    ),
+    features_config: str = typer.Option(
+        DEFAULT_CONFIG_PATHS["features_config"],
+        "--features-config",
+        help="Path to features configuration YAML",
+    ),
+    backtest_config: str = typer.Option(
+        DEFAULT_CONFIG_PATHS["backtest_config"],
+        "--backtest-config",
+        help="Path to backtest configuration YAML",
+    ),
+    impact_config: str = typer.Option(
+        DEFAULT_CONFIG_PATHS["impact_config"],
+        "--impact-config",
+        help="Path to impact configuration YAML",
+    ),
+    risk_config: str = typer.Option(
+        DEFAULT_CONFIG_PATHS["risk_config"],
+        "--risk-config",
+        help="Path to risk configuration YAML",
+    ),
+    streaming_config: str = typer.Option(
+        DEFAULT_CONFIG_PATHS["streaming_config"],
+        "--streaming-config",
+        help="Path to streaming configuration YAML",
+    ),
+    position_manager_config: str = typer.Option(
+        DEFAULT_CONFIG_PATHS["position_manager_config"],
+        "--position-manager-config",
+        help="Path to position manager configuration YAML",
+    ),
+    output_dir: str = typer.Option(
+        "reports/config_validation",
+        "--output-dir",
+        help="Directory to write validation summaries",
+    ),
+):
+    """Validate all configuration files and emit a consolidated report."""
+
+    summary = validate_all(
+        {
+            "model_config": model_config,
+            "features_config": features_config,
+            "backtest_config": backtest_config,
+            "impact_config": impact_config,
+            "risk_config": risk_config,
+            "streaming_config": streaming_config,
+            "position_manager_config": position_manager_config,
+        },
+        output_dir=output_dir,
+    )
+    typer.echo(json.dumps(summary, indent=2))
+    if not summary.get("all_passed", False):
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
