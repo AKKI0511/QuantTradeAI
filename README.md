@@ -140,7 +140,7 @@ Export the key and run the pipeline. A `sentiment_score` column is added when a 
 
 ## Streaming (Optional)
 
-- CLI: `poetry run quanttradeai live-trade --url wss://... -c config/model_config.yaml`
+- CLI: `poetry run quanttradeai live-trade -m models/experiments/<run>/AAPL --config config/model_config.yaml --streaming-config config/streaming.yaml`
 - YAML‑driven gateway via `config/streaming.yaml`:
 
 ```yaml
@@ -167,6 +167,9 @@ gw.subscribe_to_trades(["AAPL"], lambda m: print("TRADE", m))
 - Provider adapters are discovered dynamically via `quanttradeai.streaming.providers.ProviderDiscovery`,
   validated with `ProviderConfigValidator`, and monitored through `ProviderHealthMonitor`. See
   [docs/api/streaming.md](docs/api/streaming.md) for detailed provider configuration and health tooling.
+- The live trading pipeline (`quanttradeai.streaming.live_trading.LiveTradingEngine`) combines the
+  streaming gateway, feature generation, model inference, risk controls, and optional health API. Use
+  `--health-api true` to expose `/health` and `/metrics` while streaming.
 
 ### Streaming Health Monitoring
 

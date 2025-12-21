@@ -23,7 +23,6 @@ import os
 
 from quanttradeai.data.loader import DataLoader
 from quanttradeai.data.processor import DataProcessor
-from quanttradeai.data.datasource import WebSocketDataSource
 from quanttradeai.backtest.backtester import simulate_trades, compute_metrics
 from quanttradeai.models.classifier import MomentumClassifier
 from quanttradeai.trading.drawdown_guard import DrawdownGuard
@@ -387,21 +386,36 @@ def evaluate_model(
         json.dump(results, f, indent=4)
 
 
-async def run_live_pipeline(config_path: str, url: str) -> None:
-    """Run a minimal real-time pipeline using WebSocket input.
+async def run_live_pipeline(
+    *,
+    model_config: str = "config/model_config.yaml",
+    model_path: str,
+    streaming_config: str = "config/streaming.yaml",
+    risk_config: str | None = "config/risk_config.yaml",
+    position_manager_config: str | None = "config/position_manager.yaml",
+    enable_health_api: bool | None = None,
+    initial_capital: float = 1_000_000.0,
+    history_window: int = 512,
+    min_history_for_features: int = 220,
+    stop_loss_pct: float = 0.01,
+) -> None:
+    """Run end-to-end real-time trading using the streaming gateway."""
 
-    Example
-    -------
-    >>> # asyncio.run(run_live_pipeline("config/model_config.yaml", "wss://example"))
-    """
+    from quanttradeai.streaming.live_trading import LiveTradingEngine
 
-    processor = DataProcessor()
-    loader = DataLoader(config_path, data_source=WebSocketDataSource(url))
-
-    def handle(df: pd.DataFrame) -> None:
-        logger.info("Received update:\n%s", df.tail(1))
-
-    await loader.stream_data(processor, callback=handle)
+    engine = LiveTradingEngine(
+        model_config=model_config,
+        model_path=model_path,
+        streaming_config=streaming_config,
+        risk_config=risk_config,
+        position_manager_config=position_manager_config,
+        enable_health_api=enable_health_api,
+        initial_capital=initial_capital,
+        history_window=history_window,
+        min_history_for_features=min_history_for_features,
+        stop_loss_pct=stop_loss_pct,
+    )
+    await engine.start()
 
 
 def _load_execution_cfg(

@@ -12,6 +12,7 @@ from .providers import (
     ProviderRegistry,
     StreamingProviderAdapter,
 )
+from .live_trading import LiveTradingEngine
 
 __all__ = [
     "StreamingGateway",
@@ -24,4 +25,5 @@ __all__ = [
     "ProviderHealthMonitor",
     "ProviderRegistry",
     "StreamingProviderAdapter",
+    "LiveTradingEngine",
 ]
