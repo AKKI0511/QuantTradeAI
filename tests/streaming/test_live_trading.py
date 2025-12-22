@@ -84,6 +84,41 @@ async def test_live_trading_engine_opens_position_and_records_metrics():
 
 
 @pytest.mark.asyncio
+async def test_live_trading_engine_normalizes_provider_payloads():
+    gateway = FakeGateway()
+    engine = LiveTradingEngine(
+        model_config="config/model_config.yaml",
+        model_path="unused",
+        gateway=gateway,
+        data_processor=DummyProcessor(),
+        model=DummyModel(outputs=[1]),
+        min_history_for_features=1,
+        history_window=4,
+        risk_config=None,
+        position_manager_config=None,
+    )
+
+    consumer = asyncio.create_task(engine._consume_buffer())
+    await gateway.buffer.put(
+        {
+            "S": "TSLA",
+            "p": "123.45",
+            "t": "2024-01-01T00:00:00Z",
+            "v": 10,
+        }
+    )
+    await asyncio.sleep(0.05)
+    consumer.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await consumer
+
+    assert engine.execution_log
+    assert engine.execution_log[0]["symbol"] == "TSLA"
+    assert "TSLA" in engine._history
+    assert engine._history["TSLA"]["Close"].iloc[-1] == pytest.approx(123.45)
+
+
+@pytest.mark.asyncio
 async def test_live_trading_engine_closes_position_on_sell_signal():
     gateway = FakeGateway()
     engine = LiveTradingEngine(

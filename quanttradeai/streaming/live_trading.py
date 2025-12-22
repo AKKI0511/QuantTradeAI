@@ -128,6 +128,8 @@ class LiveTradingEngine:
         ts = (
             message.get("timestamp")
             or message.get("time")
+            or message.get("t")
+            or message.get("T")
             or message.get("Datetime")
             or message.get("Date")
         )
@@ -139,16 +141,103 @@ class LiveTradingEngine:
             else pd.Timestamp(ts)
         )
 
+    @staticmethod
+    def _coerce_float(value: Optional[object], default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _normalize_message(self, message: dict) -> dict:
+        normalized = dict(message) if message else {}
+        symbol = (
+            message.get("symbol")
+            or message.get("S")
+            or message.get("sym")
+            or message.get("Symbol")
+            or message.get("ticker")
+        )
+        if symbol:
+            normalized["symbol"] = symbol
+
+        ts = (
+            message.get("timestamp")
+            or message.get("time")
+            or message.get("t")
+            or message.get("T")
+            or message.get("Datetime")
+            or message.get("Date")
+        )
+        if ts:
+            normalized["timestamp"] = ts
+
+        price = (
+            message.get("price")
+            or message.get("p")
+            or message.get("close")
+            or message.get("c")
+            or message.get("ap")
+            or message.get("bp")
+            or message.get("mid")
+            or message.get("Mid")
+            or message.get("last_price")
+        )
+        if price is not None:
+            coerced = self._coerce_float(price, default=0.0)
+            normalized.setdefault("price", coerced)
+            normalized.setdefault("close", coerced)
+
+        open_price = message.get("open") or message.get("o")
+        if open_price is not None:
+            normalized.setdefault("open", open_price)
+
+        high = message.get("high") or message.get("h")
+        if high is not None:
+            normalized.setdefault("high", high)
+
+        low = message.get("low") or message.get("l")
+        if low is not None:
+            normalized.setdefault("low", low)
+
+        volume = message.get("volume") or message.get("v") or message.get("V")
+        if volume is not None:
+            normalized.setdefault("volume", volume)
+
+        return normalized
+
     def _extract_price_fields(
         self, message: dict
     ) -> tuple[float, float, float, float, float]:
-        price = message.get("price") or message.get("close") or message.get("Close")
-        open_price = message.get("open") or message.get("Open") or price
-        high = message.get("high") or message.get("High") or price
-        low = message.get("low") or message.get("Low") or price
-        close = message.get("close") or message.get("Close") or price
-        volume = message.get("volume") or message.get("Volume") or 0.0
-        return float(open_price), float(high), float(low), float(close), float(volume)
+        price = (
+            message.get("price")
+            or message.get("close")
+            or message.get("Close")
+            or message.get("p")
+            or message.get("c")
+            or message.get("mid")
+            or message.get("Mid")
+            or 0.0
+        )
+        open_price = message.get("open") or message.get("Open") or message.get("o")
+        high = message.get("high") or message.get("High") or message.get("h")
+        low = message.get("low") or message.get("Low") or message.get("l")
+        close = (
+            message.get("close") or message.get("Close") or message.get("c") or price
+        )
+        volume = (
+            message.get("volume")
+            or message.get("Volume")
+            or message.get("v")
+            or message.get("V")
+            or 0.0
+        )
+        fallback_price = self._coerce_float(price, default=0.0)
+        open_f = self._coerce_float(open_price, default=fallback_price)
+        high_f = self._coerce_float(high, default=fallback_price)
+        low_f = self._coerce_float(low, default=fallback_price)
+        close_f = self._coerce_float(close, default=fallback_price)
+        volume_f = self._coerce_float(volume, default=0.0)
+        return open_f, high_f, low_f, close_f, volume_f
 
     def _update_history(self, message: dict) -> None:
         symbol = message.get("symbol")
@@ -232,11 +321,12 @@ class LiveTradingEngine:
             message = await self.gateway.buffer.get()
             start = time.perf_counter()
             try:
+                message = self._normalize_message(message)
                 symbol = message.get("symbol")
                 if not symbol:
                     continue
                 self._update_history(message)
-                price = float(
+                price = self._coerce_float(
                     message.get("price")
                     or message.get("close")
                     or message.get("Close")
