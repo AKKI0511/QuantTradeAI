@@ -6,6 +6,7 @@ import pytest
 from quanttradeai.streaming.live_trading import LiveTradingEngine
 from quanttradeai.streaming.monitoring.health_monitor import StreamingHealthMonitor
 from quanttradeai.streaming.stream_buffer import StreamBuffer
+from quanttradeai.trading.position_manager import PositionManager
 
 
 class FakeGateway:
@@ -130,3 +131,55 @@ async def test_live_trading_engine_closes_position_on_sell_signal():
     actions = [entry["action"] for entry in engine.execution_log]
     assert actions == ["buy", "sell"]
     assert "MSFT" not in engine.portfolio.positions
+
+
+@pytest.mark.asyncio
+async def test_position_manager_cash_mirrors_portfolio_without_double_counting():
+    gateway = FakeGateway()
+    position_manager = PositionManager()
+    engine = LiveTradingEngine(
+        model_config="config/model_config.yaml",
+        model_path="unused",
+        gateway=gateway,
+        data_processor=DummyProcessor(),
+        model=DummyModel(outputs=[1, -1]),
+        min_history_for_features=1,
+        history_window=8,
+        risk_config=None,
+        position_manager_config=None,
+    )
+    engine.position_manager = position_manager
+    engine.position_manager.cash = engine.portfolio.cash
+
+    consumer = asyncio.create_task(engine._consume_buffer())
+    await gateway.buffer.put(
+        {
+            "symbol": "GOOG",
+            "price": 100.0,
+            "Open": 100.0,
+            "High": 100.0,
+            "Low": 100.0,
+            "Close": 100.0,
+            "Volume": 10,
+            "timestamp": "2024-01-01T00:00:00Z",
+        }
+    )
+    await gateway.buffer.put(
+        {
+            "symbol": "GOOG",
+            "price": 101.0,
+            "Open": 101.0,
+            "High": 101.0,
+            "Low": 101.0,
+            "Close": 101.0,
+            "Volume": 12,
+            "timestamp": "2024-01-01T00:01:00Z",
+        }
+    )
+    await asyncio.sleep(0.05)
+    consumer.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await consumer
+
+    assert engine.position_manager is not None
+    assert engine.position_manager.cash == pytest.approx(engine.portfolio.cash)

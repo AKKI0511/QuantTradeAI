@@ -210,19 +210,19 @@ class LiveTradingEngine:
             qty = self.portfolio.open_position(
                 symbol, price, stop_loss_pct=self.stop_loss_pct
             )
-            self._sync_position_manager()
             if qty > 0:
                 if self.position_manager is not None:
                     self.position_manager.open_position(symbol, qty, price)
+                    self._sync_position_manager()
                 self._record_execution(
                     {"action": "buy", "symbol": symbol, "qty": qty, "price": price}
                 )
         elif signal < 0 and symbol in self.portfolio.positions:
             qty = self.portfolio.close_position(symbol, price)
-            self._sync_position_manager()
             if qty > 0:
                 if self.position_manager is not None:
                     self.position_manager.close_position(symbol, price)
+                    self._sync_position_manager()
                 self._record_execution(
                     {"action": "sell", "symbol": symbol, "qty": qty, "price": price}
                 )
