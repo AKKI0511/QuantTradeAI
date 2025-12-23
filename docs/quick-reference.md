@@ -28,6 +28,14 @@ poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL
   -c config/model_config.yaml -b config/backtest_config.yaml \
   --cost-bps 5 --slippage-fixed 0.01 --liquidity-max-participation 0.25 \
   --skip-validation  # optional
+
+# Live trading (streaming)
+poetry run quanttradeai live-trade -m models/trained/<SYMBOL> \
+  -c config/model_config.yaml \
+  -s config/streaming.yaml \
+  --risk-config config/risk_config.yaml \
+  --position-manager-config config/position_manager.yaml \
+  --initial-capital 1000000 --min-history 220 --history-window 512
 ```
 
 ## 📊 Python API Patterns
