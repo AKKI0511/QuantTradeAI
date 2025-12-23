@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import math
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -205,6 +206,16 @@ class LiveTradingEngine:
 
         return normalized
 
+    def _mark_to_market(
+        self, symbol: str, price: float, timestamp: pd.Timestamp
+    ) -> None:
+        if symbol in self.portfolio.positions:
+            self.portfolio.positions[symbol]["price"] = price
+        if self.risk_manager is not None:
+            self.risk_manager.update(
+                self.portfolio.portfolio_value, timestamp.to_pydatetime()
+            )
+
     def _extract_price_fields(
         self, message: dict
     ) -> tuple[float, float, float, float, float]:
@@ -327,7 +338,6 @@ class LiveTradingEngine:
                 symbol = message.get("symbol")
                 if not symbol:
                     continue
-                self._update_history(message)
                 price = self._coerce_float(
                     message.get("price")
                     or message.get("close")
@@ -335,6 +345,17 @@ class LiveTradingEngine:
                     or message.get("Mid")
                     or 0.0
                 )
+                timestamp = self._extract_timestamp(message)
+                if price <= 0 or not math.isfinite(price):
+                    logger.warning("invalid_price_update", symbol=symbol, price=price)
+                    continue
+
+                message["timestamp"] = timestamp
+                message["price"] = price
+                message.setdefault("close", price)
+
+                self._mark_to_market(symbol, price, timestamp)
+                self._update_history(message)
                 features = self._prepare_features(symbol)
                 if features is None:
                     continue
@@ -342,6 +363,7 @@ class LiveTradingEngine:
                 if signal is None:
                     continue
                 self._handle_signal(symbol, price, signal)
+                self._mark_to_market(symbol, price, timestamp)
             except Exception as exc:  # pragma: no cover - runtime guard
                 logger.error("live_pipeline_error", error=str(exc))
                 self.health_monitor.trigger_alerts(
