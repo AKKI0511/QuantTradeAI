@@ -169,6 +169,81 @@ async def test_live_trading_engine_closes_position_on_sell_signal():
 
 
 @pytest.mark.asyncio
+async def test_live_trading_engine_orders_and_deduplicates_history():
+    gateway = FakeGateway()
+    engine = LiveTradingEngine(
+        model_config="config/model_config.yaml",
+        model_path="unused",
+        gateway=gateway,
+        data_processor=DummyProcessor(),
+        model=DummyModel(outputs=[1, 1, 1]),
+        min_history_for_features=1,
+        history_window=3,
+        risk_config=None,
+        position_manager_config=None,
+    )
+
+    consumer = asyncio.create_task(engine._consume_buffer())
+    await gateway.buffer.put(
+        {
+            "symbol": "AAPL",
+            "price": 101.0,
+            "Open": 101.0,
+            "High": 101.0,
+            "Low": 101.0,
+            "Close": 101.0,
+            "Volume": 50,
+            "timestamp": "2024-01-01T00:01:00Z",
+        }
+    )
+    await gateway.buffer.put(
+        {
+            "symbol": "AAPL",
+            "price": 100.0,
+            "Open": 100.0,
+            "High": 100.0,
+            "Low": 100.0,
+            "Close": 100.0,
+            "Volume": 40,
+            "timestamp": "2024-01-01T00:00:00Z",
+        }
+    )
+    await gateway.buffer.put(
+        {
+            "symbol": "AAPL",
+            "price": 102.0,
+            "Open": 102.0,
+            "High": 102.0,
+            "Low": 102.0,
+            "Close": 102.0,
+            "Volume": 60,
+            "timestamp": "2024-01-01T00:02:00Z",
+        }
+    )
+    await gateway.buffer.put(
+        {
+            "symbol": "AAPL",
+            "price": 103.0,
+            "Open": 103.0,
+            "High": 103.0,
+            "Low": 103.0,
+            "Close": 103.0,
+            "Volume": 70,
+            "timestamp": "2024-01-01T00:02:00Z",
+        }
+    )
+    await asyncio.sleep(0.05)
+    consumer.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await consumer
+
+    history = engine._history["AAPL"]
+    assert list(history.index) == sorted(history.index)
+    assert len(history) == 3  # deduped window, keeps last duplicate
+    assert history["Close"].iloc[-1] == pytest.approx(103.0)
+
+
+@pytest.mark.asyncio
 async def test_position_manager_cash_mirrors_portfolio_without_double_counting():
     gateway = FakeGateway()
     position_manager = PositionManager()

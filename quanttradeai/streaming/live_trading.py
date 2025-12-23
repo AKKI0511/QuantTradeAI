@@ -251,6 +251,8 @@ class LiveTradingEngine:
         )
         history = self._history.get(symbol)
         history = pd.concat([history, row]) if history is not None else row
+        history = history.sort_index()
+        history = history[~history.index.duplicated(keep="last")]
         self._history[symbol] = history.tail(self.history_window)
 
     def _prepare_features(self, symbol: str) -> Optional[pd.DataFrame]:
