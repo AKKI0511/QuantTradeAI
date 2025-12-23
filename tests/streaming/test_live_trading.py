@@ -368,3 +368,43 @@ async def test_live_trading_engine_skips_invalid_price_updates():
         await consumer
 
     assert "NFLX" not in engine._history
+
+
+@pytest.mark.asyncio
+async def test_live_trading_engine_skips_non_finite_price_updates():
+    gateway = FakeGateway()
+    engine = LiveTradingEngine(
+        model_config="config/model_config.yaml",
+        model_path="unused",
+        gateway=gateway,
+        data_processor=DummyProcessor(),
+        model=DummyModel(outputs=[1]),
+        min_history_for_features=1,
+        history_window=4,
+        risk_config=None,
+        position_manager_config=None,
+    )
+    risk_spy = MagicMock()
+    engine.risk_manager.update = risk_spy
+    engine.portfolio.positions["AAPL"] = {
+        "qty": 1,
+        "price": 10.0,
+        "stop_loss_pct": 0.01,
+    }
+
+    consumer = asyncio.create_task(engine._consume_buffer())
+    await gateway.buffer.put(
+        {
+            "symbol": "AAPL",
+            "price": float("nan"),
+            "timestamp": "2024-01-01T00:00:00Z",
+        }
+    )
+    await asyncio.sleep(0.05)
+    consumer.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await consumer
+
+    assert engine.portfolio.positions["AAPL"]["price"] == pytest.approx(10.0)
+    assert "AAPL" not in engine._history
+    risk_spy.assert_not_called()

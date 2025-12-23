@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import math
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -345,7 +346,7 @@ class LiveTradingEngine:
                     or 0.0
                 )
                 timestamp = self._extract_timestamp(message)
-                if price <= 0:
+                if price <= 0 or not math.isfinite(price):
                     logger.warning("invalid_price_update", symbol=symbol, price=price)
                     continue
 
