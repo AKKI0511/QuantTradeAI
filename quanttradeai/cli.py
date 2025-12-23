@@ -169,14 +169,65 @@ def cmd_backtest_model(
 
 @app.command("live-trade")
 def cmd_live_trade(
-    url: str = typer.Option(..., "--url", help="WebSocket URL for streaming data"),
-    config: str = typer.Option(
-        "config/model_config.yaml", "-c", "--config", help="Path to config file"
+    model_path: str = typer.Option(..., "-m", "--model-path", help="Saved model dir"),
+    model_config: str = typer.Option(
+        "config/model_config.yaml",
+        "-c",
+        "--config",
+        help="Path to model configuration file",
+    ),
+    streaming_config: str = typer.Option(
+        "config/streaming.yaml",
+        "-s",
+        "--streaming-config",
+        help="Path to streaming configuration file",
+    ),
+    risk_config: Optional[str] = typer.Option(
+        "config/risk_config.yaml",
+        "--risk-config",
+        help="Risk management configuration (drawdown/turnover)",
+    ),
+    position_manager_config: Optional[str] = typer.Option(
+        "config/position_manager.yaml",
+        "--position-manager-config",
+        help="Position manager configuration for live execution",
+    ),
+    health_api: Optional[bool] = typer.Option(
+        None,
+        "--health-api",
+        help="Override health API enable flag in streaming config (true/false)",
+    ),
+    initial_capital: float = typer.Option(
+        1_000_000.0, "--initial-capital", help="Starting capital for sizing"
+    ),
+    history_window: int = typer.Option(
+        512, "--history-window", help="History window for feature generation"
+    ),
+    min_history_for_features: int = typer.Option(
+        220,
+        "--min-history",
+        help="Minimum bars required before running inference",
+    ),
+    stop_loss_pct: float = typer.Option(
+        0.01, "--stop-loss-pct", help="Stop loss percentage applied to new trades"
     ),
 ):
     """Run real-time trading pipeline using streaming input."""
 
-    asyncio.run(run_live_pipeline(config, url))
+    asyncio.run(
+        run_live_pipeline(
+            model_config=model_config,
+            model_path=model_path,
+            streaming_config=streaming_config,
+            risk_config=risk_config,
+            position_manager_config=position_manager_config,
+            enable_health_api=health_api,
+            initial_capital=initial_capital,
+            history_window=history_window,
+            min_history_for_features=min_history_for_features,
+            stop_loss_pct=stop_loss_pct,
+        )
+    )
 
 
 @app.command("validate-config")
