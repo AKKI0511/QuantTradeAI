@@ -30,6 +30,10 @@ streaming_health:
     enabled: true
     channels: ["log", "metrics"]
     escalation_threshold: 3
+  metrics:
+    enabled: true
+    host: "0.0.0.0"
+    port: 9000
   api:
     enabled: false
     host: "0.0.0.0"

@@ -181,6 +181,10 @@ streaming_health:
   monitoring:
     enabled: true
     check_interval: 5
+  metrics:
+    enabled: true
+    host: "0.0.0.0"
+    port: 9000
   thresholds:
     max_latency_ms: 100
     min_throughput_msg_per_sec: 50
@@ -208,6 +212,10 @@ Common patterns:
 - Tune `escalation_threshold` to control alert promotion.
 - Increase `max_queue_depth` in high-volume environments.
 - Set `circuit_breaker_timeout` to avoid thrashing unstable providers.
+- Run the standalone metrics exporter (default `0.0.0.0:9000`) when you want Prometheus
+  scraping without enabling the FastAPI health server; if both are enabled on the same
+  host/port, the health API continues to serve `/metrics` and the exporter stays
+  disabled to avoid port collisions.
 
 ## Project Layout
 

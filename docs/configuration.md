@@ -22,6 +22,38 @@ poetry run quanttradeai validate-config --output-dir reports/config_validation
 
 This command loads each YAML with the same schemas used in production, then writes JSON/CSV summaries indicating which files passed and any errors found. It exits non-zero if any validation fails so you can gate CI or notebooks on clean configs.
 
+## 📡 Streaming Health Configuration
+
+Configure streaming providers and observability in `config/streaming.yaml`:
+
+```yaml
+streaming:
+  providers:
+    - name: "alpaca"
+      websocket_url: "wss://stream.data.alpaca.markets/v2/iex"
+      auth_method: "api_key"
+      subscriptions: ["trades", "quotes"]
+  health_check_interval: 30
+
+streaming_health:
+  monitoring:
+    enabled: true
+    check_interval: 5
+  metrics:
+    enabled: true
+    host: "0.0.0.0"
+    port: 9000
+  api:
+    enabled: false
+    host: "0.0.0.0"
+    port: 8000
+```
+
+- `streaming_health.metrics` controls a lightweight Prometheus exporter bound directly to the
+  default registry so you can scrape metrics without enabling the FastAPI health API.
+- If both the exporter and health API are enabled on the same host/port, the exporter stays
+  disabled to avoid double-binding while `/metrics` remains available via the health server.
+
 ## 🔧 Model Configuration
 
 ### Data Settings
