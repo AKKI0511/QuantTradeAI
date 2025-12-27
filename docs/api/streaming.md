@@ -93,6 +93,6 @@ For existing YAML-driven workflows, continue to instantiate `StreamingGateway("c
 
 ## Health API Configuration
 
-`StreamingGateway` exposes the original health monitoring controls via the `streaming_health` section in `config/streaming.yaml`. The provider-centric monitor shares the same recovery manager and metrics subsystem, so alert thresholds, Prometheus integration, and REST endpoints (`/health`, `/status`, `/metrics`) continue to operate as documented in the gateway README.
+`StreamingGateway` exposes the original health monitoring controls via the `streaming_health` section in `config/streaming.yaml`. The provider-centric monitor shares the same recovery manager and metrics subsystem, so alert thresholds, Prometheus integration, and REST endpoints (`/health`, `/status`, `/metrics`) continue to operate as documented in the gateway README. A dedicated Prometheus exporter can also be enabled via `streaming_health.metrics`, which serves the default registry on its own host/port even when the FastAPI health server is disabled.
 
 

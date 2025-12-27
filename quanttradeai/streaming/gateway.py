@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Tuple
 
 import yaml
+from prometheus_client import start_http_server
 
 from .stream_buffer import StreamBuffer
 from .websocket_manager import WebSocketManager
@@ -108,6 +109,10 @@ class StreamingGateway:
         self._api_enabled = api_cfg.get("enabled", False)
         self._api_host = api_cfg.get("host", "0.0.0.0")
         self._api_port = api_cfg.get("port", 8000)
+        metrics_cfg = health_cfg.get("metrics", {})
+        self._metrics_enabled = metrics_cfg.get("enabled", False)
+        self._metrics_host = metrics_cfg.get("host", "0.0.0.0")
+        self._metrics_port = metrics_cfg.get("port", 9000)
         # Top-level symbol list for convenience
         self._config_symbols = cfg.get("symbols", []) or []
         for provider_cfg in cfg.get("providers", []):
@@ -204,6 +209,16 @@ class StreamingGateway:
                 adapter.name, reconnect_callback=_reconnect_adapter
             )
         asyncio.create_task(self.health_monitor.monitor_connection_health())
+        metrics_port_bound_to_api = (
+            self._api_enabled
+            and self._metrics_host == self._api_host
+            and self._metrics_port == self._api_port
+        )
+        if self._metrics_enabled and not metrics_port_bound_to_api:
+            try:
+                start_http_server(self._metrics_port, addr=self._metrics_host)
+            except Exception:
+                logger.warning("metrics_exporter_start_failed")
         if self._api_enabled:
             try:
                 import uvicorn
