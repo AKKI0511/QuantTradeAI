@@ -53,8 +53,17 @@ def cmd_train(
     ),
 ):
     """Run full training pipeline."""
-
-    run_pipeline(config, skip_validation=skip_validation)
+    result = run_pipeline(config, skip_validation=skip_validation)
+    coverage_info = None
+    if isinstance(result, tuple) and len(result) == 2:
+        _, coverage_info = result
+    if coverage_info:
+        fallback = coverage_info.get("fallback_symbols") or []
+        path = coverage_info.get("path")
+        summary = f"Test-window coverage report saved to {path}."
+        if fallback:
+            summary += " Fallback chronological split used for: " + ", ".join(fallback)
+        typer.echo(summary, err=True)
 
 
 @app.command("evaluate")
@@ -164,6 +173,16 @@ def cmd_backtest_model(
         liquidity_max_participation=liquidity_max_participation,
         skip_validation=skip_validation,
     )
+    coverage_info = (
+        summary.get("coverage_report") if isinstance(summary, dict) else None
+    )
+    if coverage_info:
+        fallback = coverage_info.get("fallback_symbols") or []
+        path = coverage_info.get("path")
+        message = f"Test-window coverage report saved to {path}."
+        if fallback:
+            message += " Fallback chronological split used for: " + ", ".join(fallback)
+        typer.echo(message, err=True)
     typer.echo(json.dumps(summary, indent=2))
 
 

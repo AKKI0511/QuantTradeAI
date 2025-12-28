@@ -14,30 +14,36 @@ def test_time_aware_split_with_window():
     idx = pd.date_range("2024-01-01", periods=10, freq="D")
     df = pd.DataFrame({"Close": range(10)}, index=idx)
     cfg = {"data": {"test_start": "2024-01-06", "test_end": "2024-01-08"}}
-    train, test = time_aware_split(df, cfg)
+    train, test, coverage = time_aware_split(df, cfg)
     assert train.index.max() < pd.to_datetime("2024-01-06")
     assert test.index.min() == pd.to_datetime("2024-01-06")
     assert test.index.max() == pd.to_datetime("2024-01-08")
     assert len(train) == 5 and len(test) == 3
+    assert coverage["coverage_ok"] is True
+    assert coverage["fallback_used"] is False
 
 
 def test_time_aware_split_with_start_only():
     idx = pd.date_range("2024-01-01", periods=10, freq="D")
     df = pd.DataFrame({"Close": range(10)}, index=idx)
     cfg = {"data": {"test_start": "2024-01-06"}}
-    train, test = time_aware_split(df, cfg)
+    train, test, coverage = time_aware_split(df, cfg)
     assert train.index.max() < pd.to_datetime("2024-01-06")
     assert test.index.min() == pd.to_datetime("2024-01-06")
     assert len(train) == 5 and len(test) == 5
+    assert coverage["coverage_ok"] is True
+    assert coverage["fallback_used"] is False
 
 
 def test_time_aware_split_fallback_fraction():
     idx = pd.date_range("2024-01-01", periods=10, freq="D")
     df = pd.DataFrame({"Close": range(10)}, index=idx)
     cfg = {"training": {"test_size": 0.2}}
-    train, test = time_aware_split(df, cfg)
+    train, test, coverage = time_aware_split(df, cfg)
     assert len(train) == 8 and len(test) == 2
     assert train.index.max() < test.index.min()
+    assert coverage["test_start"] is None
+    assert coverage["coverage_ok"] is None
 
 
 def test_time_aware_split_warns_and_falls_back(caplog):
@@ -49,10 +55,12 @@ def test_time_aware_split_warns_and_falls_back(caplog):
     }
 
     with caplog.at_level(logging.WARNING):
-        train, test = time_aware_split(df, cfg)
+        train, test, coverage = time_aware_split(df, cfg)
 
     assert len(train) == 3 and len(test) == 2
     assert "falling back to chronological split" in caplog.text
+    assert coverage["coverage_ok"] is False
+    assert coverage["fallback_used"] is True
 
 
 def test_time_aware_split_warns_on_partial_window(caplog):
@@ -64,11 +72,32 @@ def test_time_aware_split_warns_on_partial_window(caplog):
     }
 
     with caplog.at_level(logging.WARNING):
-        train, test = time_aware_split(df, cfg)
+        train, test, coverage = time_aware_split(df, cfg)
 
     assert len(train) == 6 and len(test) == 2
     assert train.index.max() < test.index.min()
     assert "not fully present in data; falling back" in caplog.text
+    assert coverage["coverage_ok"] is False
+    assert coverage["fallback_used"] is True
+
+
+def test_time_aware_split_reports_coverage_fields():
+    idx = pd.date_range("2024-01-01", periods=6, freq="D")
+    df = pd.DataFrame({"Close": range(6)}, index=idx)
+    cfg = {
+        "data": {"test_start": "2024-01-05", "test_end": "2024-01-10"},
+        "training": {"test_size": 0.5},
+    }
+
+    train, test, coverage = time_aware_split(df, cfg)
+
+    assert coverage["data_start"].startswith("2024-01-01")
+    assert coverage["data_end"].startswith("2024-01-06")
+    assert coverage["test_start"].startswith("2024-01-05")
+    assert coverage["test_end"].startswith("2024-01-10")
+    assert coverage["train_size"] == len(train)
+    assert coverage["test_size"] == len(test)
+    assert coverage["split_strategy"] == "fraction_fallback"
 
 
 def test_model_config_rejects_out_of_range_test_window():
@@ -159,9 +188,10 @@ def test_pipeline_handles_secondary_timeframes(tmp_path):
         model_instance.evaluate.return_value = {"accuracy": 1.0}
         model_instance.save_model.return_value = None
 
-        results = run_pipeline(str(config_path))
+        results, coverage_info = run_pipeline(str(config_path))
 
     mock_loader.assert_called_once_with(str(config_path))
     assert "AAA" in results
     assert "hyperparameters" in results["AAA"]
+    assert coverage_info["path"].endswith("test_window_coverage.json")
 
