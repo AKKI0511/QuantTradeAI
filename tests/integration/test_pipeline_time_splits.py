@@ -188,7 +188,9 @@ def test_pipeline_handles_secondary_timeframes(tmp_path):
         model_instance.evaluate.return_value = {"accuracy": 1.0}
         model_instance.save_model.return_value = None
 
-        results, coverage_info = run_pipeline(str(config_path))
+        results, coverage_info = run_pipeline(
+            str(config_path), include_coverage=True
+        )
 
     mock_loader.assert_called_once_with(str(config_path))
     assert "AAA" in results

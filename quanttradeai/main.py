@@ -261,7 +261,10 @@ def _validate_or_raise(
 
 
 def run_pipeline(
-    config_path: str = "config/model_config.yaml", *, skip_validation: bool = False
+    config_path: str = "config/model_config.yaml",
+    *,
+    skip_validation: bool = False,
+    include_coverage: bool = False,
 ):
     """Run the end-to-end training pipeline.
 
@@ -274,6 +277,12 @@ def run_pipeline(
     >>> results = run_pipeline("config/model_config.yaml")
     >>> sorted(results.keys())  # doctest: +ELLIPSIS
     ...
+
+    Set ``include_coverage=True`` to also receive coverage metadata:
+
+    >>> results, coverage = run_pipeline("config/model_config.yaml", include_coverage=True)
+    >>> sorted(coverage.keys())
+    ['fallback_symbols', 'path']
     """
 
     # Load configuration
@@ -385,10 +394,16 @@ def run_pipeline(
             json.dump(results, f, indent=4)
 
         logger.info("\nPipeline completed successfully!")
-        return results, {
-            "path": coverage_path.as_posix(),
-            "fallback_symbols": fallback_symbols,
-        }
+        if include_coverage:
+            return (
+                results,
+                {
+                    "path": coverage_path.as_posix(),
+                    "fallback_symbols": fallback_symbols,
+                },
+            )
+
+        return results
 
     except Exception as e:
         logger.error(f"Error in pipeline: {str(e)}")
