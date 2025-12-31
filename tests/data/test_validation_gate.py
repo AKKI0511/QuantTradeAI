@@ -81,8 +81,11 @@ def test_run_pipeline_skip_validation_allows_progression(
     )
     monkeypatch.setattr(MomentumClassifier, "save_model", lambda self, path: None)
 
-    results = run_pipeline(sample_config_path, skip_validation=True)
+    results, coverage_info = run_pipeline(
+        sample_config_path, skip_validation=True, include_coverage=True
+    )
     assert "AAPL" in results
+    assert coverage_info["path"].endswith("test_window_coverage.json")
 
 
 def test_run_model_backtest_validates_before_execution(

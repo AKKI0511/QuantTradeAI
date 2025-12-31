@@ -75,6 +75,23 @@ def _write_validation_report(report_path: Path, report: dict) -> None:
         logger.warning("Failed to write CSV validation report: %s", exc)
 
 
+def _write_coverage_report(report_path: Path, coverage: dict) -> None:
+    """Persist test-window coverage results to JSON and CSV formats."""
+
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(report_path, "w") as fh:
+        json.dump(coverage, fh, indent=2)
+
+    try:
+        rows = []
+        for symbol, details in coverage.items():
+            row = {"symbol": symbol, **details}
+            rows.append(row)
+        pd.DataFrame(rows).to_csv(report_path.with_suffix(".csv"), index=False)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to write CSV coverage report: %s", exc)
+
+
 def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
     """Ensure the DataFrame index is a DatetimeIndex.
 
@@ -103,7 +120,7 @@ def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
 def time_aware_split(
     df_labeled: pd.DataFrame,
     cfg: dict,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> Tuple[pd.DataFrame, pd.DataFrame, dict]:
     """Return chronological train/test splits using config windows.
 
     Rules
@@ -150,6 +167,10 @@ def time_aware_split(
         return True
 
     fallback_used = False
+    coverage_ok: bool | None = True if test_start else None
+    data_start = df.index.min()
+    data_end = df.index.max()
+    split_strategy = "window" if test_start else "fraction"
     if test_start:
         start_dt = pd.to_datetime(test_start)
         end_dt = pd.to_datetime(test_end) if test_end else None
@@ -184,7 +205,22 @@ def time_aware_split(
         raise ValueError(
             f"Invalid train/test window produced empty split when using {window_msg}. Adjust data.test_* or training.test_size."
         )
-    return train_df, test_df
+    coverage: dict = {
+        "data_start": data_start.isoformat(),
+        "data_end": data_end.isoformat(),
+        "test_start": pd.to_datetime(test_start).isoformat() if test_start else None,
+        "test_end": pd.to_datetime(test_end).isoformat() if test_end else None,
+        "train_start": train_df.index.min().isoformat(),
+        "train_end": train_df.index.max().isoformat(),
+        "test_start_actual": test_df.index.min().isoformat(),
+        "test_end_actual": test_df.index.max().isoformat(),
+        "train_size": len(train_df),
+        "test_size": len(test_df),
+        "coverage_ok": coverage_ok,
+        "fallback_used": fallback_used,
+        "split_strategy": split_strategy if not fallback_used else "fraction_fallback",
+    }
+    return train_df, test_df, coverage
 
 
 def _validate_or_raise(
@@ -225,7 +261,10 @@ def _validate_or_raise(
 
 
 def run_pipeline(
-    config_path: str = "config/model_config.yaml", *, skip_validation: bool = False
+    config_path: str = "config/model_config.yaml",
+    *,
+    skip_validation: bool = False,
+    include_coverage: bool = False,
 ):
     """Run the end-to-end training pipeline.
 
@@ -238,6 +277,12 @@ def run_pipeline(
     >>> results = run_pipeline("config/model_config.yaml")
     >>> sorted(results.keys())  # doctest: +ELLIPSIS
     ...
+
+    Set ``include_coverage=True`` to also receive coverage metadata:
+
+    >>> results, coverage = run_pipeline("config/model_config.yaml", include_coverage=True)
+    >>> sorted(coverage.keys())
+    ['fallback_symbols', 'path']
     """
 
     # Load configuration
@@ -274,6 +319,7 @@ def run_pipeline(
 
         # Process each stock
         results = {}
+        coverage_report: dict[str, dict] = {}
         for symbol, df in data_dict.items():
             logger.info(f"\nProcessing {symbol}...")
 
@@ -284,7 +330,8 @@ def run_pipeline(
             df_labeled = data_processor.generate_labels(df_processed)
 
             # 4. Time-aware Split
-            train_df, test_df = time_aware_split(df_labeled, config)
+            train_df, test_df, coverage = time_aware_split(df_labeled, config)
+            coverage_report[symbol] = coverage
             X_train, y_train = model.prepare_data(train_df)
             X_test, y_test = model.prepare_data(test_df)
             # Log split summary
@@ -327,11 +374,35 @@ def run_pipeline(
             logger.info(f"Train Metrics: {train_metrics}")
             logger.info(f"Test Metrics: {test_metrics}")
 
+        coverage_path = Path(experiment_dir) / "test_window_coverage.json"
+        _write_coverage_report(coverage_path, coverage_report)
+        fallback_symbols = [
+            symbol
+            for symbol, details in coverage_report.items()
+            if details.get("fallback_used")
+        ]
+        if fallback_symbols:
+            logger.warning(
+                "Fallback chronological split applied for symbols: %s. Coverage report: %s",
+                ", ".join(fallback_symbols),
+                coverage_path,
+            )
+        logger.info("Coverage report saved to %s", coverage_path)
+
         # Save experiment results
         with open(f"{experiment_dir}/results.json", "w") as f:
             json.dump(results, f, indent=4)
 
         logger.info("\nPipeline completed successfully!")
+        if include_coverage:
+            return (
+                results,
+                {
+                    "path": coverage_path.as_posix(),
+                    "fallback_symbols": fallback_symbols,
+                },
+            )
+
         return results
 
     except Exception as e:
@@ -539,6 +610,7 @@ def run_model_backtest(
     summary: dict = {}
     prepared_data: dict[str, pd.DataFrame] = {}
     artifact_dirs: dict[str, Path] = {}
+    coverage_report: dict[str, dict] = {}
 
     trading_cfg = (cfg or {}).get("trading", {})
     stop_loss = trading_cfg.get("stop_loss")
@@ -595,7 +667,8 @@ def run_model_backtest(
         try:
             df_proc = processor.process_data(df)
             df_lbl = processor.generate_labels(df_proc)
-            train_df, test_df = time_aware_split(df_lbl, cfg)
+            train_df, test_df, coverage = time_aware_split(df_lbl, cfg)
+            coverage_report[symbol] = coverage
             # Build features from saved order
             missing = [
                 c for c in (clf.feature_columns or []) if c not in test_df.columns
@@ -675,6 +748,25 @@ def run_model_backtest(
                 "metrics": metrics,
                 "output_dir": out_dir.as_posix(),
             }
+
+    coverage_path = base_dir / "test_window_coverage.json"
+    _write_coverage_report(coverage_path, coverage_report)
+    fallback_symbols = [
+        symbol
+        for symbol, details in coverage_report.items()
+        if details.get("fallback_used")
+    ]
+    if fallback_symbols:
+        logger.warning(
+            "Fallback chronological split applied for symbols: %s. Coverage report: %s",
+            ", ".join(fallback_symbols),
+            coverage_path,
+        )
+    logger.info("Coverage report saved to %s", coverage_path)
+    summary["coverage_report"] = {
+        "path": coverage_path.as_posix(),
+        "fallback_symbols": fallback_symbols,
+    }
 
     return summary
 
