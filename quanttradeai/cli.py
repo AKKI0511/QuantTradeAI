@@ -53,9 +53,13 @@ def cmd_train(
     ),
 ):
     """Run full training pipeline."""
-    _, coverage_info = run_pipeline(
+    pipeline_result = run_pipeline(
         config, skip_validation=skip_validation, include_coverage=True
     )
+    coverage_info = None
+    if isinstance(pipeline_result, tuple) and len(pipeline_result) == 2:
+        _, coverage_info = pipeline_result
+
     if coverage_info:
         fallback = coverage_info.get("fallback_symbols") or []
         path = coverage_info.get("path")

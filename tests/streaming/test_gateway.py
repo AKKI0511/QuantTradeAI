@@ -2,6 +2,7 @@ import asyncio
 import json
 import tempfile
 import time
+import warnings
 from typing import Awaitable, Callable, Dict, List, Optional
 from unittest.mock import AsyncMock, patch
 
@@ -11,6 +12,32 @@ from quanttradeai.streaming.monitoring import StreamingHealthMonitor
 
 import pytest
 from quanttradeai.streaming import StreamingGateway
+
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:.*websockets.*:DeprecationWarning",
+    "ignore:.*WebSocketServerProtocol is deprecated:DeprecationWarning",
+)
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"websockets\.legacy is deprecated",
+    category=DeprecationWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"websockets\.server\.WebSocketServerProtocol is deprecated",
+    category=DeprecationWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    module=r"websockets.*",
+)
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    module=r"uvicorn\.protocols\.websockets.*",
+)
 
 
 class StubProviderMonitor:
