@@ -83,6 +83,8 @@ See docs for details: [Configuration Guide](docs/configuration.md), [Quick Refer
 ## CLI Commands
 
 ```bash
+poetry run quanttradeai init --template research -o config/project.yaml           # Generate canonical happy-path project config
+poetry run quanttradeai validate -c config/project.yaml                            # Validate canonical project config and write resolved artifacts
 poetry run quanttradeai fetch-data -c config/model_config.yaml                 # Download + cache data
 poetry run quanttradeai train -c config/model_config.yaml                      # End-to-end training pipeline
 poetry run quanttradeai evaluate -m <model_dir> -c config/model_config.yaml    # Evaluate a saved model

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -21,12 +22,158 @@ from .main import (
     run_model_backtest,
 )
 from .backtest.backtester import simulate_trades, compute_metrics
-from .utils.config_validator import validate_all, DEFAULT_CONFIG_PATHS
+from .utils.config_validator import (
+    DEFAULT_CONFIG_PATHS,
+    validate_all,
+    validate_project_config,
+)
 import yaml
 import pandas as pd
 
 
 app = typer.Typer(add_completion=False, help="QuantTradeAI command line interface")
+
+
+PROJECT_TEMPLATES = {
+    "research": {
+        "project": {"name": "research_lab", "profile": "research"},
+        "profiles": {
+            "research": {"mode": "research"},
+            "paper": {"mode": "paper"},
+            "live": {"mode": "live"},
+        },
+        "data": {
+            "symbols": ["AAPL", "MSFT"],
+            "start_date": "2018-01-01",
+            "end_date": "2024-12-31",
+            "timeframe": "1d",
+            "test_start": "2024-09-01",
+            "test_end": "2024-12-31",
+        },
+        "features": {
+            "definitions": [
+                {"name": "rsi_14", "type": "technical", "params": {"period": 14}}
+            ]
+        },
+        "research": {
+            "enabled": True,
+            "labels": {
+                "type": "forward_return",
+                "horizon": 5,
+                "buy_threshold": 0.01,
+                "sell_threshold": -0.01,
+            },
+            "model": {"kind": "classifier", "family": "voting"},
+            "evaluation": {"split": "time_aware", "use_configured_test_window": True},
+            "backtest": {"costs": {"enabled": True, "bps": 5}},
+        },
+        "agents": [],
+        "deployment": {"target": "docker-compose", "mode": "paper"},
+    },
+    "llm-agent": {
+        "project": {"name": "agent_lab", "profile": "paper"},
+        "profiles": {
+            "research": {"mode": "research"},
+            "paper": {"mode": "paper"},
+            "live": {"mode": "live"},
+        },
+        "data": {
+            "symbols": ["AAPL"],
+            "start_date": "2022-01-01",
+            "end_date": "2024-12-31",
+            "timeframe": "1d",
+            "test_start": "2024-09-01",
+            "test_end": "2024-12-31",
+        },
+        "features": {
+            "definitions": [
+                {"name": "rsi_14", "type": "technical", "params": {"period": 14}}
+            ]
+        },
+        "research": {
+            "enabled": False,
+            "labels": {},
+            "model": {},
+            "evaluation": {},
+            "backtest": {},
+        },
+        "agents": [
+            {
+                "name": "breakout_gpt",
+                "kind": "llm",
+                "mode": "paper",
+                "llm": {
+                    "provider": "openai",
+                    "model": "gpt-5.3",
+                    "prompt_file": "prompts/breakout.md",
+                },
+                "context": {
+                    "features": ["rsi_14"],
+                    "positions": True,
+                    "risk_state": True,
+                },
+                "tools": ["get_quote", "get_position", "place_order"],
+                "risk": {"max_position_pct": 0.05, "max_daily_loss_pct": 0.02},
+            }
+        ],
+        "deployment": {"target": "docker-compose", "mode": "paper"},
+    },
+    "hybrid": {
+        "project": {"name": "hybrid_lab", "profile": "paper"},
+        "profiles": {
+            "research": {"mode": "research"},
+            "paper": {"mode": "paper"},
+            "live": {"mode": "live"},
+        },
+        "data": {
+            "symbols": ["AAPL", "TSLA"],
+            "start_date": "2018-01-01",
+            "end_date": "2024-12-31",
+            "timeframe": "1d",
+            "test_start": "2024-09-01",
+            "test_end": "2024-12-31",
+        },
+        "features": {
+            "definitions": [
+                {"name": "rsi_14", "type": "technical", "params": {"period": 14}},
+                {"name": "volume_spike_20", "type": "custom", "params": {"window": 20}},
+            ]
+        },
+        "research": {
+            "enabled": True,
+            "labels": {
+                "type": "forward_return",
+                "horizon": 5,
+                "buy_threshold": 0.01,
+                "sell_threshold": -0.01,
+            },
+            "model": {"kind": "classifier", "family": "voting"},
+            "evaluation": {"split": "time_aware", "use_configured_test_window": True},
+            "backtest": {"costs": {"enabled": True, "bps": 5}},
+        },
+        "agents": [
+            {
+                "name": "hybrid_swing_agent",
+                "kind": "hybrid",
+                "mode": "paper",
+                "model_signal_sources": ["aapl_daily_classifier"],
+                "llm": {
+                    "provider": "openai",
+                    "model": "gpt-5.3",
+                    "prompt_file": "prompts/hybrid_swing.md",
+                },
+                "context": {
+                    "features": ["rsi_14"],
+                    "model_signals": ["aapl_daily_classifier"],
+                    "positions": True,
+                },
+                "tools": ["get_quote", "place_order"],
+                "risk": {"max_position_pct": 0.05, "max_daily_loss_pct": 0.02},
+            }
+        ],
+        "deployment": {"target": "docker-compose", "mode": "paper"},
+    },
+}
 
 
 @app.command("fetch-data")
@@ -312,6 +459,73 @@ def cmd_validate_config(
     typer.echo(json.dumps(summary, indent=2))
     if not summary.get("all_passed", False):
         raise typer.Exit(code=1)
+
+
+@app.command("init")
+def cmd_init(
+    template: str = typer.Option(
+        ..., "--template", help="Project template to initialize"
+    ),
+    output: str = typer.Option(
+        "config/project.yaml",
+        "-o",
+        "--output",
+        help="Path for generated project config",
+    ),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing file"),
+):
+    """Initialize a canonical project config for the happy path."""
+
+    normalized = template.lower()
+    if normalized not in PROJECT_TEMPLATES:
+        valid = ", ".join(sorted(PROJECT_TEMPLATES))
+        raise typer.BadParameter(f"template must be one of: {valid}")
+
+    output_path = Path(output)
+    if output_path.exists() and not force:
+        typer.echo(f"Refusing to overwrite existing file: {output_path}", err=True)
+        raise typer.Exit(code=1)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(PROJECT_TEMPLATES[normalized], handle, sort_keys=False)
+
+    typer.echo(f"Wrote {normalized} template to {output_path}")
+
+
+@app.command("validate")
+def cmd_validate(
+    config: str = typer.Option(
+        "config/project.yaml", "-c", "--config", help="Path to project config YAML"
+    ),
+):
+    """Validate canonical project config and emit resolved artifacts."""
+
+    try:
+        result = validate_project_config(config_path=config)
+    except Exception as exc:
+        typer.echo(f"Project config validation failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    summary = result["summary"]
+    typer.echo("Resolved project config summary:")
+    typer.echo(
+        f"- project: {summary['project']['name']} ({summary['project']['profile']})"
+    )
+    typer.echo(
+        f"- data: symbols={len(summary['data']['symbols'])}, timeframe={summary['data']['timeframe']}, "
+        f"range={summary['data']['date_range']['start']}..{summary['data']['date_range']['end']}"
+    )
+    typer.echo(
+        f"- features: definitions={summary['feature_definitions']}, "
+        f"research_enabled={summary['research_enabled']}, agents={len(summary['agents'])}"
+    )
+
+    if result.get("warnings"):
+        for warning in result["warnings"]:
+            typer.echo(f"Warning: {warning}", err=True)
+
+    typer.echo(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":

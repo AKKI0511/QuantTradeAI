@@ -23,6 +23,7 @@ from quanttradeai.utils.config_schemas import (
     FeaturesConfigSchema,
     ModelConfigSchema,
     PositionManagerConfig,
+    ProjectConfigSchema,
     RiskManagementConfig,
 )
 from quanttradeai.utils.impact_loader import ImpactConfigError, load_impact_config
@@ -37,6 +38,119 @@ DEFAULT_CONFIG_PATHS: Dict[str, Path] = {
     "streaming_config": Path("config/streaming.yaml"),
     "position_manager_config": Path("config/position_manager.yaml"),
 }
+
+
+REQUIRED_PROJECT_SECTIONS = [
+    "project",
+    "profiles",
+    "data",
+    "features",
+    "research",
+    "agents",
+    "deployment",
+]
+LEGACY_PROJECT_SECTIONS = {
+    "models",
+    "training",
+    "trading",
+    "execution",
+    "risk_management",
+    "pipeline",
+    "news",
+}
+
+
+def _render_project_summary(resolved: dict, warnings: list[str]) -> dict:
+    agents = resolved.get("agents") or []
+    data = resolved.get("data") or {}
+    project = resolved.get("project") or {}
+    deployment = resolved.get("deployment") or {}
+    return {
+        "project": {
+            "name": project.get("name"),
+            "profile": project.get("profile"),
+        },
+        "data": {
+            "symbols": data.get("symbols", []),
+            "timeframe": data.get("timeframe"),
+            "date_range": {
+                "start": data.get("start_date"),
+                "end": data.get("end_date"),
+            },
+            "test_window": {
+                "start": data.get("test_start"),
+                "end": data.get("test_end"),
+            },
+        },
+        "profiles": sorted((resolved.get("profiles") or {}).keys()),
+        "feature_definitions": len(
+            (resolved.get("features") or {}).get("definitions", [])
+        ),
+        "research_enabled": bool(
+            (resolved.get("research") or {}).get("enabled", False)
+        ),
+        "agents": [
+            {
+                "name": agent.get("name"),
+                "kind": agent.get("kind"),
+                "mode": agent.get("mode"),
+            }
+            for agent in agents
+        ],
+        "deployment": deployment,
+        "warnings": warnings,
+    }
+
+
+def validate_project_config(
+    config_path: Path | str = "config/project.yaml",
+    *,
+    output_dir: Path | str = "reports/config_validation",
+) -> Dict:
+    path = Path(config_path)
+    raw = _load_yaml(path)
+
+    missing_sections = [name for name in REQUIRED_PROJECT_SECTIONS if name not in raw]
+    if missing_sections:
+        missing = ", ".join(missing_sections)
+        raise ValueError(f"Project config missing required section(s): {missing}")
+
+    cfg = ProjectConfigSchema(**raw)
+    resolved = cfg.model_dump(mode="json")
+
+    unused_legacy_sections = sorted(LEGACY_PROJECT_SECTIONS.intersection(raw.keys()))
+    warnings = []
+    if unused_legacy_sections:
+        warnings.append(
+            "Legacy sections present but unused for project validation: "
+            + ", ".join(unused_legacy_sections)
+        )
+
+    summary = _render_project_summary(resolved=resolved, warnings=warnings)
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    run_dir = Path(output_dir) / timestamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    resolved_path = run_dir / "resolved_project_config.yaml"
+    with resolved_path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(resolved, f, sort_keys=False)
+
+    summary_path = run_dir / "summary.json"
+    with summary_path.open("w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+
+    return {
+        "timestamp": timestamp,
+        "config_path": str(path),
+        "all_passed": True,
+        "summary": summary,
+        "warnings": warnings,
+        "artifacts": {
+            "resolved_config": str(resolved_path),
+            "summary": str(summary_path),
+        },
+    }
 
 
 @dataclass

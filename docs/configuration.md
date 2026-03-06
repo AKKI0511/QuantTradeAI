@@ -22,6 +22,25 @@ poetry run quanttradeai validate-config --output-dir reports/config_validation
 
 This command loads each YAML with the same schemas used in production, then writes JSON/CSV summaries indicating which files passed and any errors found. It exits non-zero if any validation fails so you can gate CI or notebooks on clean configs.
 
+## ✅ Canonical Happy-Path Config
+
+For Stage 1 workflows, `config/project.yaml` is now the canonical entrypoint.
+Use `quanttradeai init` to generate a starter config and `quanttradeai validate` to verify and resolve it:
+
+```bash
+poetry run quanttradeai init --template research -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+```
+
+Validation writes a resolved config snapshot and JSON summary to timestamped folders under `reports/config_validation/`.
+
+Legacy multi-file configs (`model_config.yaml`, `features_config.yaml`, etc.) remain supported.
+You can still run legacy preflight validation with:
+
+```bash
+poetry run quanttradeai validate-config --output-dir reports/config_validation
+```
+
 ## 📡 Streaming Health Configuration
 
 Configure streaming providers and observability in `config/streaming.yaml`:
