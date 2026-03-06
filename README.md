@@ -254,34 +254,11 @@ Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## Roadmap
 
-### 🚀 Phase 1: Stabilize & Polish (current)
-- Streaming hardening: reconnection, health checks, metrics, provider adapters
-- Backtesting realism: market impact knobs, borrow fees, intrabar fills, richer ledgers
-- Risk & portfolio: position sizing improvements, exposure/turnover limits, drawdown guards
-- Multi‑timeframe groundwork: intraday + daily pipelines with safe, time‑aware resampling
+The roadmap lives in [roadmap.md](roadmap.md) (source of truth) to avoid drift.
 
-### 🤖 Phase 2: Modeling & Features
-- Automated feature discovery/selection; regime detection and cross‑asset features
-- Enhanced labeling and calibration; probability thresholds and evaluation curves
-- LLM sentiment expansion: provider templates, caching, news/transcripts ingestion
-
-### ⚡ Phase 3: Performance & Scale
-- Parallel/distributed training and backtests across assets; memory efficiency
-- Artifact management & experiment tracking; fully reproducible pipelines
-- Low‑latency inference path for streaming signals
-
-### 🧪 Phase 4: Paper → Live Trading
-- Broker/exchange adapters, order routing, pre‑trade risk checks, fail‑safes
-- Paper trading sandbox, live dashboards, incident logging & alerting
-
-### ☁️ Phase 5: Cloud & Ops
-- Containerized jobs & scheduling, remote storage, model registry
-- Service decomposition for streaming, inference, and backtesting
-
-### Stretch (exploration)
-- GPU acceleration for training loops
-- Reinforcement learning strategy research
-- Multi‑modal data sources
+Current direction is explicitly two-track:
+- **ML training loop**: reproducible data → features → time-aware training/eval → backtests → promotion.
+- **Trading agent deployment**: developer-built agents (strategies + tools + prompts) running in parallel, tracked as experiments, deployed via existing platforms (Docker/K8s/managed runners).
 
 ## License
 
