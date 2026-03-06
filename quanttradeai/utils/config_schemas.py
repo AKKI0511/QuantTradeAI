@@ -443,3 +443,56 @@ class PositionManagerConfig(BaseModel):
     impact: MarketImpactConfig = MarketImpactConfig()
     reconciliation: Dict[str, str] = {"intraday": "1m", "daily": "1d"}
     mode: Literal["paper", "live"] = "paper"
+
+
+class ProjectSection(BaseModel):
+    name: str
+    profile: str
+
+
+class ProjectProfileSection(BaseModel):
+    mode: str
+
+
+class FeatureDefinition(BaseModel):
+    name: str
+    type: str
+    params: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectFeaturesSection(BaseModel):
+    definitions: List[FeatureDefinition] = Field(default_factory=list)
+
+
+class ProjectResearchSection(BaseModel):
+    enabled: bool = True
+    labels: Dict[str, Any] = Field(default_factory=dict)
+    model: Dict[str, Any] = Field(default_factory=dict)
+    evaluation: Dict[str, Any] = Field(default_factory=dict)
+    backtest: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectAgentConfig(BaseModel):
+    name: str
+    kind: Literal["rule", "model", "llm", "hybrid"]
+    mode: Literal["backtest", "paper", "live"]
+    llm: Dict[str, Any] = Field(default_factory=dict)
+    context: Dict[str, Any] = Field(default_factory=dict)
+    tools: List[str] = Field(default_factory=list)
+    risk: Dict[str, Any] = Field(default_factory=dict)
+    model_signal_sources: List[str] = Field(default_factory=list)
+
+
+class ProjectDeploymentSection(BaseModel):
+    target: str
+    mode: str
+
+
+class ProjectConfigSchema(BaseModel):
+    project: ProjectSection
+    profiles: Dict[str, ProjectProfileSection]
+    data: DataSection
+    features: ProjectFeaturesSection
+    research: ProjectResearchSection
+    agents: List[ProjectAgentConfig]
+    deployment: ProjectDeploymentSection
