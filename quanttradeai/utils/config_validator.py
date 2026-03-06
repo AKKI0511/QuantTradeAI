@@ -13,7 +13,8 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Dict, Iterable, Mapping
+from copy import deepcopy
+from typing import Any, Callable, Dict, Iterable, Mapping
 
 import yaml
 from pydantic import ValidationError
@@ -102,6 +103,39 @@ def _render_project_summary(resolved: dict, warnings: list[str]) -> dict:
     }
 
 
+def _merge_preserving_unknown(raw_value: Any, validated_value: Any) -> Any:
+    """Merge validated config into raw config while preserving unknown keys.
+
+    This keeps schema-normalized values for known fields while ensuring any
+    forward-compatible/extra settings from the original file remain in the
+    emitted resolved artifact.
+    """
+
+    if isinstance(raw_value, dict) and isinstance(validated_value, dict):
+        merged = deepcopy(raw_value)
+        for key, value in validated_value.items():
+            if key in merged:
+                merged[key] = _merge_preserving_unknown(merged[key], value)
+            else:
+                merged[key] = value
+        return merged
+
+    if isinstance(raw_value, list) and isinstance(validated_value, list):
+        merged_items: list[Any] = []
+        for idx, validated_item in enumerate(validated_value):
+            if idx < len(raw_value):
+                merged_items.append(
+                    _merge_preserving_unknown(raw_value[idx], validated_item)
+                )
+            else:
+                merged_items.append(validated_item)
+        if len(raw_value) > len(validated_value):
+            merged_items.extend(raw_value[len(validated_value) :])
+        return merged_items
+
+    return validated_value
+
+
 def validate_project_config(
     config_path: Path | str = "config/project.yaml",
     *,
@@ -116,7 +150,7 @@ def validate_project_config(
         raise ValueError(f"Project config missing required section(s): {missing}")
 
     cfg = ProjectConfigSchema(**raw)
-    resolved = cfg.model_dump(mode="json")
+    resolved = _merge_preserving_unknown(raw, cfg.model_dump(mode="json"))
 
     unused_legacy_sections = sorted(LEGACY_PROJECT_SECTIONS.intersection(raw.keys()))
     warnings = []

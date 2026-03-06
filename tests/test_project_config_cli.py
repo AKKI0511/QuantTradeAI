@@ -97,3 +97,35 @@ def test_validate_writes_resolved_artifacts(tmp_path: Path, monkeypatch):
     assert resolved_path.is_file()
     assert summary_path.is_file()
     assert resolved_path.parent.parent.name == "config_validation"
+
+
+def test_validate_preserves_unknown_fields_in_resolved_artifact(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False)
+    )
+    config_payload["risk"] = {"enabled": True, "max_drawdown": 0.15}
+    config_payload["data"]["streaming"] = {
+        "enabled": True,
+        "provider": "paper-feed",
+    }
+
+    cfg_path.write_text(yaml.safe_dump(config_payload, sort_keys=False), encoding="utf-8")
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+    assert result.exit_code == 0, result.stdout
+
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    resolved_path = Path(payload["artifacts"]["resolved_config"])
+    resolved = yaml.safe_load(resolved_path.read_text(encoding="utf-8"))
+
+    assert resolved["risk"] == {"enabled": True, "max_drawdown": 0.15}
+    assert resolved["data"]["streaming"] == {
+        "enabled": True,
+        "provider": "paper-feed",
+    }
