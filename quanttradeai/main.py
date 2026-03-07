@@ -260,6 +260,34 @@ def _validate_or_raise(
     return report
 
 
+def _label_generation_kwargs(config: dict) -> dict:
+    labels_cfg = (config or {}).get("labels", {})
+    if not isinstance(labels_cfg, dict):
+        return {}
+
+    try:
+        horizon = int(labels_cfg.get("horizon", 5))
+    except (TypeError, ValueError):
+        horizon = 5
+
+    buy_raw = labels_cfg.get("buy_threshold", 0.01)
+    sell_raw = labels_cfg.get("sell_threshold")
+    try:
+        buy_threshold = float(buy_raw)
+    except (TypeError, ValueError):
+        buy_threshold = 0.01
+
+    if sell_raw is None:
+        threshold = abs(buy_threshold)
+    else:
+        try:
+            threshold = max(abs(float(buy_raw)), abs(float(sell_raw)))
+        except (TypeError, ValueError):
+            threshold = abs(buy_threshold)
+
+    return {"forward_returns": max(1, horizon), "threshold": threshold}
+
+
 def run_pipeline(
     config_path: str = "config/model_config.yaml",
     *,
@@ -329,7 +357,9 @@ def run_pipeline(
             df_processed = data_processor.process_data(df)
 
             # 3. Generate Labels
-            df_labeled = data_processor.generate_labels(df_processed)
+            df_labeled = data_processor.generate_labels(
+                df_processed, **_label_generation_kwargs(config)
+            )
 
             # 4. Time-aware Split
             train_df, test_df, coverage = time_aware_split(df_labeled, config)
@@ -443,6 +473,9 @@ def evaluate_model(
     model = MomentumClassifier(config_path)
     model.load_model(model_path)
 
+    with open(config_path, "r") as file:
+        config = yaml.safe_load(file) or {}
+
     data_dict = data_loader.fetch_data()
     validation_path = Path(model_path) / "validation.json"
     _validate_or_raise(
@@ -454,7 +487,9 @@ def evaluate_model(
     results = {}
     for symbol, df in data_dict.items():
         df_processed = data_processor.process_data(df)
-        df_labeled = data_processor.generate_labels(df_processed)
+        df_labeled = data_processor.generate_labels(
+            df_processed, **_label_generation_kwargs(config)
+        )
         X, y = model.prepare_data(df_labeled)
         metrics = model.evaluate(X, y)
         results[symbol] = metrics
@@ -673,7 +708,7 @@ def run_model_backtest(
     for symbol, df in data_dict.items():
         try:
             df_proc = processor.process_data(df)
-            df_lbl = processor.generate_labels(df_proc)
+            df_lbl = processor.generate_labels(df_proc, **_label_generation_kwargs(cfg))
             train_df, test_df, coverage = time_aware_split(df_lbl, cfg)
             coverage_report[symbol] = coverage
             # Build features from saved order

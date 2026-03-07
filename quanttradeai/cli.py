@@ -501,6 +501,13 @@ def _project_to_runtime_configs(
             "family": research_cfg.get("model", {}).get("family", "voting"),
             "kind": research_cfg.get("model", {}).get("kind", "classifier"),
         },
+        "labels": {
+            "horizon": research_cfg.get("labels", {}).get("horizon", 5),
+            "buy_threshold": research_cfg.get("labels", {}).get("buy_threshold", 0.01),
+            "sell_threshold": research_cfg.get("labels", {}).get(
+                "sell_threshold", -0.01
+            ),
+        },
         "training": {
             "test_size": 0.2,
             "random_state": 42,
@@ -524,6 +531,52 @@ def _project_to_runtime_configs(
     momentum_features: dict[str, Any] = {}
     custom_features: list[dict[str, Any]] = []
 
+    def _coerce_periods(raw_params: dict[str, Any]) -> list[int]:
+        raw_periods = (
+            raw_params.get("periods")
+            or raw_params.get("lookback")
+            or raw_params.get("period")
+            or raw_params.get("window")
+        )
+        if raw_periods is None:
+            return []
+        if isinstance(raw_periods, list):
+            return [int(value) for value in raw_periods]
+        return [int(raw_periods)]
+
+    def _resolve_custom_feature_key(name: str, params: dict[str, Any]) -> str:
+        explicit = params.get("kind")
+        if explicit in {
+            "price_momentum",
+            "volume_momentum",
+            "mean_reversion",
+            "volatility_breakout",
+        }:
+            return str(explicit)
+
+        normalized_name = name.lower().strip()
+        if normalized_name in {
+            "price_momentum",
+            "volume_momentum",
+            "mean_reversion",
+            "volatility_breakout",
+        }:
+            return normalized_name
+        if normalized_name.startswith("volume_"):
+            return "volume_momentum"
+        if normalized_name.startswith("price_"):
+            return "price_momentum"
+        if "reversion" in normalized_name:
+            return "mean_reversion"
+        if "breakout" in normalized_name:
+            return "volatility_breakout"
+
+        raise ValueError(
+            "features.definitions custom feature '"
+            f"{name}' must map to one of: price_momentum, volume_momentum, "
+            "mean_reversion, volatility_breakout. Set params.kind to disambiguate."
+        )
+
     for definition in feature_definitions:
         if not isinstance(definition, dict):
             continue
@@ -543,7 +596,16 @@ def _project_to_runtime_configs(
             if "period" in params:
                 momentum_features["rsi_period"] = int(params["period"])
         elif feature_type == "custom":
-            custom_features.append({definition.get("name", "custom_feature"): params})
+            custom_name = str(definition.get("name") or "custom_feature")
+            custom_key = _resolve_custom_feature_key(custom_name, params)
+            if custom_key == "volatility_breakout":
+                breakout_params = {k: v for k, v in params.items() if k != "kind"}
+                if "lookback" not in breakout_params:
+                    breakout_params["lookback"] = _coerce_periods(params)
+                custom_features.append({"volatility_breakout": breakout_params})
+                continue
+
+            custom_features.append({custom_key: {"periods": _coerce_periods(params)}})
 
     features_runtime_cfg = {
         "pipeline": {
