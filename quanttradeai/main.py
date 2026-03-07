@@ -265,6 +265,8 @@ def run_pipeline(
     *,
     skip_validation: bool = False,
     include_coverage: bool = False,
+    include_metadata: bool = False,
+    features_config_path: str = "config/features_config.yaml",
 ):
     """Run the end-to-end training pipeline.
 
@@ -294,7 +296,7 @@ def run_pipeline(
 
     # Initialize components
     data_loader = DataLoader(config_path)
-    data_processor = DataProcessor()
+    data_processor = DataProcessor(features_config_path)
     model = MomentumClassifier(config_path)
 
     # Create experiment directory
@@ -394,14 +396,19 @@ def run_pipeline(
             json.dump(results, f, indent=4)
 
         logger.info("\nPipeline completed successfully!")
+        coverage_info = {
+            "path": coverage_path.as_posix(),
+            "fallback_symbols": fallback_symbols,
+        }
+        if include_metadata:
+            return {
+                "results": results,
+                "coverage": coverage_info,
+                "experiment_dir": experiment_dir,
+            }
+
         if include_coverage:
-            return (
-                results,
-                {
-                    "path": coverage_path.as_posix(),
-                    "fallback_symbols": fallback_symbols,
-                },
-            )
+            return (results, coverage_info)
 
         return results
 

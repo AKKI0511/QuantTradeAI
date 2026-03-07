@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 
@@ -32,6 +33,8 @@ import pandas as pd
 
 
 app = typer.Typer(add_completion=False, help="QuantTradeAI command line interface")
+research_app = typer.Typer(help="Research workflows")
+app.add_typer(research_app, name="research")
 
 
 PROJECT_TEMPLATES = {
@@ -459,6 +462,263 @@ def cmd_validate_config(
     typer.echo(json.dumps(summary, indent=2))
     if not summary.get("all_passed", False):
         raise typer.Exit(code=1)
+
+
+def _project_to_runtime_configs(
+    project_config: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    data_cfg = dict(project_config.get("data") or {})
+    research_cfg = dict(project_config.get("research") or {})
+    features_cfg = dict(project_config.get("features") or {})
+
+    if not research_cfg.get("enabled", True):
+        raise ValueError(
+            "research.enabled must be true for `quanttradeai research run`."
+        )
+
+    model_cfg = {
+        "data": {
+            "symbols": data_cfg.get("symbols", []),
+            "start_date": data_cfg.get("start_date"),
+            "end_date": data_cfg.get("end_date"),
+            "timeframe": data_cfg.get("timeframe", "1d"),
+            "test_start": data_cfg.get("test_start"),
+            "test_end": data_cfg.get("test_end"),
+            "cache_dir": data_cfg.get("cache_dir", "data/raw"),
+            "cache_path": data_cfg.get("cache_path", "data/raw"),
+            "cache_expiration_days": data_cfg.get("cache_expiration_days", 7),
+            "use_cache": data_cfg.get("use_cache", True),
+            "refresh": data_cfg.get("refresh", False),
+            "max_workers": data_cfg.get("max_workers", 1),
+        },
+        "news": {
+            "enabled": False,
+            "provider": "yfinance",
+            "lookback_days": 30,
+            "symbols": [],
+        },
+        "models": {
+            "family": research_cfg.get("model", {}).get("family", "voting"),
+            "kind": research_cfg.get("model", {}).get("kind", "classifier"),
+        },
+        "training": {
+            "test_size": 0.2,
+            "random_state": 42,
+            "cv_folds": 5,
+        },
+        "trading": {
+            "initial_capital": 100000,
+            "position_size": 0.2,
+            "stop_loss": 0.02,
+            "take_profit": 0.04,
+            "max_positions": 5,
+            "transaction_cost": 0.001,
+            "max_risk_per_trade": 0.02,
+            "max_portfolio_risk": 0.10,
+        },
+    }
+
+    feature_definitions = features_cfg.get("definitions") or []
+    feature_steps = ["generate_technical_indicators"]
+    price_features: list[str] = []
+    momentum_features: dict[str, Any] = {}
+    custom_features: list[dict[str, Any]] = []
+
+    for definition in feature_definitions:
+        if not isinstance(definition, dict):
+            continue
+        feature_type = definition.get("type")
+        params = dict(definition.get("params") or {})
+
+        if feature_type == "technical":
+            price_features.extend(
+                [
+                    "close_to_open",
+                    "high_to_low",
+                    "close_to_high",
+                    "close_to_low",
+                    "price_range",
+                ]
+            )
+            if "period" in params:
+                momentum_features["rsi_period"] = int(params["period"])
+        elif feature_type == "custom":
+            custom_features.append({definition.get("name", "custom_feature"): params})
+
+    features_runtime_cfg = {
+        "pipeline": {
+            "steps": [
+                *feature_steps,
+                "generate_volume_features",
+                "generate_custom_features",
+                "handle_missing_values",
+                "remove_outliers",
+                "scale_features",
+                "select_features",
+            ]
+        },
+        "price_features": price_features,
+        "volume_features": [{"on_balance_volume": True}],
+        "volatility_features": [{"atr_periods": [14]}],
+        "custom_features": custom_features,
+        "feature_combinations": [],
+        "sentiment": {"enabled": False},
+        "feature_selection": {"method": "recursive", "n_features": 20},
+        "preprocessing": {
+            "scaling": {"method": "standard", "target_range": [-1, 1]},
+            "outliers": {"method": "winsorize", "limits": [0.01, 0.99]},
+        },
+    }
+    if momentum_features:
+        features_runtime_cfg["momentum_features"] = momentum_features
+
+    return model_cfg, features_runtime_cfg
+
+
+@research_app.command("run")
+def cmd_research_run(
+    config: str = typer.Option(
+        "config/project.yaml", "-c", "--config", help="Path to project config YAML"
+    ),
+    skip_validation: bool = typer.Option(
+        False,
+        "--skip-validation",
+        help="Skip data-quality validation before training",
+    ),
+):
+    """Run the Stage 1 canonical research workflow from project.yaml."""
+
+    project_path = Path(config)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    run_dir = Path("runs") / timestamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    summary = {
+        "project_name": None,
+        "project_profile": None,
+        "symbols": [],
+        "feature_count": 0,
+        "model_family": None,
+        "timestamps": {"started_at": datetime.now(timezone.utc).isoformat()},
+        "status": "failed",
+        "run_dir": str(run_dir),
+        "artifacts": {},
+    }
+
+    try:
+        validation = validate_project_config(
+            config_path=project_path, output_dir=run_dir
+        )
+        resolved_path = Path(validation["artifacts"]["resolved_config"])
+        summary["artifacts"]["resolved_project_config"] = str(resolved_path)
+
+        with resolved_path.open("r", encoding="utf-8") as handle:
+            resolved_project = yaml.safe_load(handle) or {}
+
+        missing = [
+            name
+            for name in ("data", "features", "research")
+            if name not in resolved_project
+        ]
+        if missing:
+            raise ValueError(
+                "Project config missing required section(s) for research run: "
+                + ", ".join(missing)
+            )
+
+        model_cfg, features_cfg = _project_to_runtime_configs(resolved_project)
+        runtime_model_path = run_dir / "runtime_model_config.yaml"
+        runtime_features_path = run_dir / "runtime_features_config.yaml"
+        runtime_model_path.write_text(
+            yaml.safe_dump(model_cfg, sort_keys=False), encoding="utf-8"
+        )
+        runtime_features_path.write_text(
+            yaml.safe_dump(features_cfg, sort_keys=False), encoding="utf-8"
+        )
+
+        pipeline_output = run_pipeline(
+            str(runtime_model_path),
+            skip_validation=skip_validation,
+            include_metadata=True,
+            features_config_path=str(runtime_features_path),
+        )
+
+        results = (
+            pipeline_output.get("results", {})
+            if isinstance(pipeline_output, dict)
+            else {}
+        )
+        experiment_dir = (
+            pipeline_output.get("experiment_dir")
+            if isinstance(pipeline_output, dict)
+            else None
+        )
+
+        summary.update(
+            {
+                "project_name": resolved_project.get("project", {}).get("name"),
+                "project_profile": resolved_project.get("project", {}).get("profile"),
+                "symbols": (resolved_project.get("data") or {}).get("symbols", []),
+                "feature_count": len(
+                    (resolved_project.get("features") or {}).get("definitions", [])
+                ),
+                "model_family": (
+                    (resolved_project.get("research") or {}).get("model") or {}
+                ).get("family"),
+                "status": "success",
+            }
+        )
+        if experiment_dir:
+            summary["artifacts"]["experiment_dir"] = experiment_dir
+            summary["artifacts"]["results"] = str(Path(experiment_dir) / "results.json")
+            summary["artifacts"]["coverage"] = str(
+                Path(experiment_dir) / "test_window_coverage.json"
+            )
+
+        summary["timestamps"]["completed_at"] = datetime.now(timezone.utc).isoformat()
+
+        metrics_payload = {
+            "status": "available" if results else "placeholder",
+            "metrics_by_symbol": {
+                symbol: details.get("test_metrics", {})
+                for symbol, details in results.items()
+                if isinstance(details, dict)
+            },
+        }
+        if not metrics_payload["metrics_by_symbol"]:
+            metrics_payload["status"] = "placeholder"
+            metrics_payload["message"] = (
+                "No test metrics were produced by the research pipeline."
+            )
+
+    except Exception as exc:
+        summary["status"] = "failed"
+        summary["error"] = str(exc)
+        summary["timestamps"]["completed_at"] = datetime.now(timezone.utc).isoformat()
+        metrics_payload = {
+            "status": "placeholder",
+            "message": "Research pipeline did not complete successfully.",
+            "error": str(exc),
+        }
+
+        (run_dir / "summary.json").write_text(
+            json.dumps(summary, indent=2), encoding="utf-8"
+        )
+        (run_dir / "metrics.json").write_text(
+            json.dumps(metrics_payload, indent=2), encoding="utf-8"
+        )
+        typer.echo(f"Research run failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    (run_dir / "summary.json").write_text(
+        json.dumps(summary, indent=2), encoding="utf-8"
+    )
+    (run_dir / "metrics.json").write_text(
+        json.dumps(metrics_payload, indent=2), encoding="utf-8"
+    )
+
+    typer.echo(f"Research run completed: {run_dir}")
+    typer.echo(json.dumps(summary, indent=2))
 
 
 @app.command("init")

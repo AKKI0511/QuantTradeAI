@@ -85,12 +85,15 @@ See docs for details: [Configuration Guide](docs/configuration.md), [Quick Refer
 ```bash
 poetry run quanttradeai init --template research -o config/project.yaml           # Generate canonical happy-path project config
 poetry run quanttradeai validate -c config/project.yaml                            # Validate canonical project config and write resolved artifacts
-poetry run quanttradeai fetch-data -c config/model_config.yaml                 # Download + cache data
-poetry run quanttradeai train -c config/model_config.yaml                      # End-to-end training pipeline
-poetry run quanttradeai evaluate -m <model_dir> -c config/model_config.yaml    # Evaluate a saved model
-poetry run quanttradeai backtest -c config/backtest_config.yaml                # CSV backtest (uses data_path)
+poetry run quanttradeai research run -c config/project.yaml                        # Run the canonical end-to-end Stage 1 research workflow
+
+# Legacy compatibility path (still supported)
+poetry run quanttradeai fetch-data -c config/model_config.yaml
+poetry run quanttradeai train -c config/model_config.yaml
+poetry run quanttradeai evaluate -m <model_dir> -c config/model_config.yaml
+poetry run quanttradeai backtest -c config/backtest_config.yaml
 poetry run quanttradeai backtest-model -m <model_dir> -c config/model_config.yaml -b config/backtest_config.yaml --risk-config config/risk_config.yaml
-poetry run quanttradeai validate-config                                        # Preflight validation for all YAML configs
+poetry run quanttradeai validate-config
 poetry run quanttradeai live-trade --url wss://example -c config/model_config.yaml
 ```
 
