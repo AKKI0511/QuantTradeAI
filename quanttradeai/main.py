@@ -288,6 +288,25 @@ def _label_generation_kwargs(config: dict) -> dict:
     return {"forward_returns": max(1, horizon), "threshold": threshold}
 
 
+def _generate_labels_with_config(
+    data_processor: DataProcessor, df: pd.DataFrame, config: dict
+) -> pd.DataFrame:
+    label_kwargs = _label_generation_kwargs(config)
+    if not label_kwargs:
+        return data_processor.generate_labels(df)
+
+    try:
+        return data_processor.generate_labels(df, **label_kwargs)
+    except TypeError as exc:
+        if "unexpected keyword argument" in str(exc):
+            logger.debug(
+                "DataProcessor.generate_labels does not accept configured label kwargs; "
+                "falling back to default signature."
+            )
+            return data_processor.generate_labels(df)
+        raise
+
+
 def run_pipeline(
     config_path: str = "config/model_config.yaml",
     *,
@@ -357,8 +376,8 @@ def run_pipeline(
             df_processed = data_processor.process_data(df)
 
             # 3. Generate Labels
-            df_labeled = data_processor.generate_labels(
-                df_processed, **_label_generation_kwargs(config)
+            df_labeled = _generate_labels_with_config(
+                data_processor, df_processed, config
             )
 
             # 4. Time-aware Split
@@ -487,9 +506,7 @@ def evaluate_model(
     results = {}
     for symbol, df in data_dict.items():
         df_processed = data_processor.process_data(df)
-        df_labeled = data_processor.generate_labels(
-            df_processed, **_label_generation_kwargs(config)
-        )
+        df_labeled = _generate_labels_with_config(data_processor, df_processed, config)
         X, y = model.prepare_data(df_labeled)
         metrics = model.evaluate(X, y)
         results[symbol] = metrics
@@ -708,7 +725,7 @@ def run_model_backtest(
     for symbol, df in data_dict.items():
         try:
             df_proc = processor.process_data(df)
-            df_lbl = processor.generate_labels(df_proc, **_label_generation_kwargs(cfg))
+            df_lbl = _generate_labels_with_config(processor, df_proc, cfg)
             train_df, test_df, coverage = time_aware_split(df_lbl, cfg)
             coverage_report[symbol] = coverage
             # Build features from saved order
