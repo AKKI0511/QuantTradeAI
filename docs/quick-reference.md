@@ -8,6 +8,13 @@ Common commands, patterns, and examples for QuantTradeAI.
 # Show help
 poetry run quanttradeai --help
 
+# Initialize and validate canonical project config
+poetry run quanttradeai init --template research -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+
+# Run canonical research workflow
+poetry run quanttradeai research run -c config/project.yaml
+
 # Fetch data
 poetry run quanttradeai fetch-data
 poetry run quanttradeai fetch-data --refresh
@@ -17,7 +24,7 @@ poetry run quanttradeai train
 poetry run quanttradeai train --skip-validation  # bypass data-quality gate
 
 # Evaluate model
-poetry run quanttradeai evaluate -m models/trained/AAPL
+poetry run quanttradeai evaluate -m models/experiments/<timestamp>/<SYMBOL>
 
 # Run backtest
 poetry run quanttradeai backtest --config config/backtest_config.yaml
@@ -30,7 +37,7 @@ poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL
   --skip-validation  # optional
 
 # Live trading (streaming)
-poetry run quanttradeai live-trade -m models/trained/<SYMBOL> \
+poetry run quanttradeai live-trade -m models/experiments/<timestamp>/<SYMBOL> \
   -c config/model_config.yaml \
   -s config/streaming.yaml \
   --risk-config config/risk_config.yaml \
