@@ -52,7 +52,7 @@ Tip: To control the test window, set `data.test_start` (and optional `data.test_
 ### 3. Evaluate Results
 ```bash
 # Evaluate a trained model
-poetry run quanttradeai evaluate -m models/trained/AAPL
+poetry run quanttradeai evaluate -m models/experiments/<timestamp>/<SYMBOL>
 ```
 
 ### 4. Backtest a Saved Model
@@ -73,8 +73,8 @@ You'll also find a consolidated `reports/backtests/<run_timestamp>/portfolio/` f
 
 After running the training pipeline, you'll find:
 
-- **Trained Models**: `models/trained/` - Saved models for each symbol
-- **Experiment Results**: `models/experiments/` - Training logs and metrics
+- **Saved Models**: `models/experiments/<timestamp>/<SYMBOL>/` - Per-symbol model artifacts from each training run
+- **Experiment Results**: `models/experiments/<timestamp>/` - Run-level logs and metrics (`results.json`, validation, coverage)
 - **Cached Data**: `data/raw/` - Downloaded OHLCV data
 - **Processed Data**: `data/processed/` - Feature-engineered data
 
@@ -129,3 +129,4 @@ You've successfully set up QuantTradeAI! You can now:
 - Deploy models for production use
 
 Happy trading! 🚀
+
