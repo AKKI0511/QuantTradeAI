@@ -2,12 +2,43 @@ import json
 from pathlib import Path
 
 import yaml
+import pytest
 from typer.testing import CliRunner
 
-from quanttradeai.cli import PROJECT_TEMPLATES, app
+from quanttradeai.cli import PROJECT_TEMPLATES, _project_to_runtime_configs, app
 
 
 runner = CliRunner()
+
+
+def test_project_to_runtime_configs_maps_custom_features_to_supported_keys():
+    project_cfg = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["hybrid"], sort_keys=False)
+    )
+    project_cfg["features"]["definitions"].append(
+        {
+            "name": "mean_reversion_10",
+            "type": "custom",
+            "params": {"kind": "mean_reversion", "lookback": 10},
+        }
+    )
+
+    _, features_cfg = _project_to_runtime_configs(project_cfg)
+
+    assert {"volume_momentum": {"periods": [20]}} in features_cfg["custom_features"]
+    assert {"mean_reversion": {"periods": [10]}} in features_cfg["custom_features"]
+
+
+def test_project_to_runtime_configs_rejects_unmappable_custom_features():
+    project_cfg = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False)
+    )
+    project_cfg["features"]["definitions"] = [
+        {"name": "alpha_signal", "type": "custom", "params": {"window": 10}}
+    ]
+
+    with pytest.raises(ValueError, match="must map to one of"):
+        _project_to_runtime_configs(project_cfg)
 
 
 def test_init_creates_each_template(tmp_path: Path):
@@ -51,7 +82,9 @@ def test_init_refuses_existing_without_force_and_overwrites_with_force(tmp_path:
     assert pass_result.exit_code == 0
 
     rendered = yaml.safe_load(output.read_text(encoding="utf-8"))
-    assert rendered["project"]["name"] == PROJECT_TEMPLATES["research"]["project"]["name"]
+    assert (
+        rendered["project"]["name"] == PROJECT_TEMPLATES["research"]["project"]["name"]
+    )
 
 
 def test_validate_passes_for_generated_templates(tmp_path: Path):
@@ -71,7 +104,9 @@ def test_validate_passes_for_generated_templates(tmp_path: Path):
 def test_validate_fails_missing_required_sections(tmp_path: Path):
     cfg_path = tmp_path / "broken_project.yaml"
     cfg_path.write_text(
-        yaml.safe_dump({"project": {"name": "demo", "profile": "paper"}}, sort_keys=False),
+        yaml.safe_dump(
+            {"project": {"name": "demo", "profile": "paper"}}, sort_keys=False
+        ),
         encoding="utf-8",
     )
 
@@ -85,12 +120,14 @@ def test_validate_writes_resolved_artifacts(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg_path = Path("config/project.yaml")
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg_path.write_text(yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False), encoding="utf-8")
+    cfg_path.write_text(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False), encoding="utf-8"
+    )
 
     result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
     assert result.exit_code == 0, result.stdout
 
-    payload = json.loads(result.stdout[result.stdout.index("{"):])
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
     resolved_path = Path(payload["artifacts"]["resolved_config"])
     summary_path = Path(payload["artifacts"]["summary"])
 
@@ -115,7 +152,9 @@ def test_validate_preserves_unknown_fields_in_resolved_artifact(
         "provider": "paper-feed",
     }
 
-    cfg_path.write_text(yaml.safe_dump(config_payload, sort_keys=False), encoding="utf-8")
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False), encoding="utf-8"
+    )
 
     result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
     assert result.exit_code == 0, result.stdout
@@ -129,3 +168,132 @@ def test_validate_preserves_unknown_fields_in_resolved_artifact(
         "enabled": True,
         "provider": "paper-feed",
     }
+
+
+def test_research_run_happy_path_writes_run_artifacts(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "research", "--output", str(cfg_path)],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    def _fake_pipeline(*args, **kwargs):
+        experiment_dir = Path("models/experiments/20260101_000000")
+        experiment_dir.mkdir(parents=True, exist_ok=True)
+        (experiment_dir / "results.json").write_text("{}", encoding="utf-8")
+        (experiment_dir / "test_window_coverage.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        return {
+            "results": {"AAPL": {"test_metrics": {"accuracy": 0.75}}},
+            "coverage": {
+                "path": str(experiment_dir / "test_window_coverage.json"),
+                "fallback_symbols": [],
+            },
+            "experiment_dir": str(experiment_dir),
+        }
+
+    monkeypatch.setattr("quanttradeai.cli.run_pipeline", _fake_pipeline)
+
+    run_result = runner.invoke(app, ["research", "run", "--config", str(cfg_path)])
+    assert run_result.exit_code == 0, run_result.stdout
+    assert "Research run completed:" in run_result.stdout
+
+    run_root = Path("runs")
+    run_dirs = sorted(path for path in run_root.iterdir() if path.is_dir())
+    assert run_dirs
+    latest_run = run_dirs[-1]
+
+    summary_path = latest_run / "summary.json"
+    metrics_path = latest_run / "metrics.json"
+    assert summary_path.is_file()
+    assert metrics_path.is_file()
+
+    summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    metrics_payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+
+    assert summary_payload["status"] == "success"
+    assert (
+        summary_payload["project_name"]
+        == PROJECT_TEMPLATES["research"]["project"]["name"]
+    )
+    assert Path(summary_payload["artifacts"]["resolved_project_config"]).is_file()
+    assert metrics_payload["status"] == "available"
+
+
+def test_research_run_forwards_label_settings_to_runtime_model_config(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    project_cfg = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False)
+    )
+    project_cfg["research"]["labels"] = {
+        "type": "forward_return",
+        "horizon": 9,
+        "buy_threshold": 0.02,
+        "sell_threshold": -0.03,
+    }
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(yaml.safe_dump(project_cfg, sort_keys=False), encoding="utf-8")
+
+    def _fake_pipeline(config_path, *args, **kwargs):
+        runtime_cfg = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
+        assert runtime_cfg["labels"]["horizon"] == 9
+        assert runtime_cfg["labels"]["buy_threshold"] == 0.02
+        assert runtime_cfg["labels"]["sell_threshold"] == -0.03
+
+        experiment_dir = Path("models/experiments/20260101_000001")
+        experiment_dir.mkdir(parents=True, exist_ok=True)
+        (experiment_dir / "results.json").write_text("{}", encoding="utf-8")
+        (experiment_dir / "test_window_coverage.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        return {
+            "results": {"AAPL": {"test_metrics": {"accuracy": 0.8}}},
+            "coverage": {
+                "path": str(experiment_dir / "test_window_coverage.json"),
+                "fallback_symbols": [],
+            },
+            "experiment_dir": str(experiment_dir),
+        }
+
+    monkeypatch.setattr("quanttradeai.cli.run_pipeline", _fake_pipeline)
+
+    run_result = runner.invoke(app, ["research", "run", "--config", str(cfg_path)])
+    assert run_result.exit_code == 0, run_result.stdout
+
+
+def test_research_run_fails_for_malformed_project_config(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(
+            {"project": {"name": "broken", "profile": "research"}}, sort_keys=False
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["research", "run", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "research run failed" in result.stderr.lower()
+
+    run_dirs = sorted(path for path in Path("runs").iterdir() if path.is_dir())
+    assert run_dirs
+    latest_run = run_dirs[-1]
+    summary_payload = json.loads(
+        (latest_run / "summary.json").read_text(encoding="utf-8")
+    )
+    metrics_payload = json.loads(
+        (latest_run / "metrics.json").read_text(encoding="utf-8")
+    )
+
+    assert summary_payload["status"] == "failed"
+    assert metrics_payload["status"] == "placeholder"
