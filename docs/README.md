@@ -25,15 +25,19 @@ poetry install
 
 ### Basic Usage
 ```bash
-# Fetch data for all symbols
+# Canonical Stage 1 workflow (project config)
+poetry run quanttradeai init --template research -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+poetry run quanttradeai research run -c config/project.yaml
+
+# Legacy multi-file workflow remains supported
 poetry run quanttradeai fetch-data -c config/model_config.yaml
-
-# Run complete training pipeline
 poetry run quanttradeai train -c config/model_config.yaml
-
-# Evaluate a saved model
-poetry run quanttradeai evaluate -c config/model_config.yaml -m models/trained/AAPL
+poetry run quanttradeai evaluate -c config/model_config.yaml -m models/experiments/<timestamp>/<SYMBOL>
 ```
+
+`train` saves models under `models/experiments/<timestamp>/<SYMBOL>/`, which is
+the expected path shape for `evaluate --model-path`.
 
 ## 📖 Documentation Structure
 
@@ -248,3 +252,4 @@ For questions and support:
 ---
 
 This documentation provides comprehensive coverage of the QuantTradeAI framework. Start with the [Quick Reference Guide](quick-reference.md) for common usage patterns, then refer to the [API Documentation](api/) for detailed function references.
+
