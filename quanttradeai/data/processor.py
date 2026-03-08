@@ -23,6 +23,7 @@ import pandas as pd
 import yaml  # Added for YAML loading
 from pydantic import ValidationError
 import pandas_ta_classic as ta  # For efficient technical analysis calculations
+from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
 
 from quanttradeai.utils.config_schemas import (
     FeaturesConfigSchema,
@@ -34,6 +35,143 @@ from quanttradeai.features.sentiment import SentimentAnalyzer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+EXCLUDED_PREPROCESS_COLUMNS = {
+    "Open",
+    "High",
+    "Low",
+    "Close",
+    "Volume",
+    "forward_returns",
+    "label",
+}
+
+
+class FeaturePreprocessor:
+    """Fit preprocessing state on train data and reuse it for transforms."""
+
+    def __init__(
+        self,
+        *,
+        scaling_method: str = "standard",
+        scaling_range: list[float] | tuple[float, float] = (-1, 1),
+        outlier_method: str = "winsorize",
+        outlier_limits: list[float] | tuple[float, float] = (0.01, 0.99),
+        n_features: int | None = None,
+        excluded_columns: set[str] | None = None,
+        apply_outliers: bool = True,
+        apply_scaling: bool = True,
+        apply_selection: bool = True,
+    ) -> None:
+        self.scaling_method = scaling_method
+        self.scaling_range = tuple(scaling_range)
+        self.outlier_method = outlier_method
+        self.outlier_limits = tuple(outlier_limits)
+        self.n_features = n_features
+        self.excluded_columns = set(excluded_columns or set())
+        self.clip_bounds: dict[str, dict[str, float]] = {}
+        self.feature_columns: list[str] = []
+        self.selected_feature_columns: list[str] = []
+        self.scaler: StandardScaler | MinMaxScaler | RobustScaler | None = None
+        self.apply_outliers = apply_outliers
+        self.apply_scaling = apply_scaling
+        self.apply_selection = apply_selection
+
+    @property
+    def is_active(self) -> bool:
+        return self.apply_outliers or self.apply_scaling or self.apply_selection
+
+    def _feature_columns_for(self, df: pd.DataFrame) -> list[str]:
+        return [
+            column
+            for column in df.select_dtypes(include=[np.number]).columns
+            if column not in self.excluded_columns
+        ]
+
+    def _build_scaler(self):
+        if self.scaling_method == "minmax":
+            return MinMaxScaler(feature_range=self.scaling_range)
+        if self.scaling_method == "robust":
+            return RobustScaler()
+        return StandardScaler()
+
+    def fit(self, df: pd.DataFrame) -> "FeaturePreprocessor":
+        self.feature_columns = self._feature_columns_for(df)
+        self.selected_feature_columns = list(self.feature_columns)
+
+        if not self.feature_columns or not self.is_active:
+            return self
+
+        feature_frame = df[self.feature_columns].copy()
+
+        lower, upper = self.outlier_limits
+        if self.apply_outliers and self.outlier_method in {"winsorize", "clip"}:
+            for column in self.feature_columns:
+                q_low = feature_frame[column].quantile(lower)
+                q_high = feature_frame[column].quantile(upper)
+                self.clip_bounds[column] = {
+                    "lower": float(q_low),
+                    "upper": float(q_high),
+                }
+                feature_frame[column] = feature_frame[column].clip(q_low, q_high)
+
+        if self.apply_scaling:
+            self.scaler = self._build_scaler()
+            self.scaler.fit(feature_frame[self.feature_columns])
+
+        if self.apply_selection and self.n_features is not None:
+            self.selected_feature_columns = self.feature_columns[: self.n_features]
+
+        return self
+
+    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        transformed = df.copy()
+        if not self.feature_columns or not self.is_active:
+            return transformed
+
+        for column, bounds in self.clip_bounds.items():
+            if column in transformed.columns:
+                transformed[column] = transformed[column].clip(
+                    bounds["lower"], bounds["upper"]
+                )
+
+        feature_frame = transformed[self.feature_columns].astype(float).copy()
+        if self.scaler is not None:
+            feature_frame.loc[:, self.feature_columns] = self.scaler.transform(
+                feature_frame[self.feature_columns]
+            )
+        for column in self.feature_columns:
+            transformed[column] = feature_frame[column].astype(float)
+
+        if not self.apply_selection or self.n_features is None:
+            return transformed
+
+        kept_columns = [
+            column
+            for column in transformed.columns
+            if column not in self.feature_columns
+            or column in self.selected_feature_columns
+        ]
+        return transformed.loc[:, kept_columns]
+
+    def fit_transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        return self.fit(df).transform(df)
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "scaling_method": self.scaling_method,
+            "scaling_range": list(self.scaling_range),
+            "outlier_method": self.outlier_method,
+            "outlier_limits": list(self.outlier_limits),
+            "n_features": self.n_features,
+            "apply_outliers": self.apply_outliers,
+            "apply_scaling": self.apply_scaling,
+            "apply_selection": self.apply_selection,
+            "feature_columns": self.feature_columns,
+            "selected_feature_columns": self.selected_feature_columns,
+            "clip_bounds": self.clip_bounds,
+        }
 
 
 class DataProcessor:
@@ -299,17 +437,20 @@ class DataProcessor:
 
     def process_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Process raw OHLCV data and generate all required features.
+        Legacy convenience wrapper for feature generation plus preprocessing.
 
         Args:
             data: DataFrame with OHLCV data
 
         Returns:
-            DataFrame with all technical indicators and features
+            DataFrame with generated features and fitted preprocessing applied
         """
-        df = data.copy()
+        featured = self.generate_features(data)
+        preprocessor = self.create_preprocessor()
+        return preprocessor.fit_transform(featured)
 
-        step_map = {
+    def _step_map(self) -> dict[str, Any]:
+        return {
             "generate_technical_indicators": self._generate_technical_indicators,
             "generate_multi_timeframe_features": self._generate_multi_timeframe_features,
             "generate_volume_features": self._add_volume_features,
@@ -321,14 +462,39 @@ class DataProcessor:
             "select_features": self._select_features,
         }
 
+    def generate_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Generate causal features without fitting dataset-level preprocessing."""
+
+        df = data.copy()
+        step_map = self._step_map()
+        stateful_steps = {"remove_outliers", "scale_features", "select_features"}
+
         for step in self.pipeline:
+            if step in stateful_steps:
+                continue
             func = step_map.get(step)
             if func:
                 df = func(df)
 
-        df = self._clean_data(df)
+        return self._clean_data(df)
 
-        return df
+    def create_preprocessor(self) -> FeaturePreprocessor:
+        """Create a fit/transform preprocessor using the configured settings."""
+
+        apply_outliers = "remove_outliers" in self.pipeline
+        apply_scaling = "scale_features" in self.pipeline
+        apply_selection = "select_features" in self.pipeline and self.n_features is not None
+        return FeaturePreprocessor(
+            scaling_method=self.scaling_method,
+            scaling_range=self.scaling_range,
+            outlier_method=self.outlier_method,
+            outlier_limits=self.outlier_limits,
+            n_features=self.n_features,
+            excluded_columns=EXCLUDED_PREPROCESS_COLUMNS,
+            apply_outliers=apply_outliers,
+            apply_scaling=apply_scaling,
+            apply_selection=apply_selection,
+        )
 
     def _add_sentiment_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add sentiment score using configured LLM if enabled."""
@@ -685,47 +851,43 @@ class DataProcessor:
         return df
 
     def _handle_missing_values(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Fill missing values using forward/backward fill."""
-        return df.ffill().bfill()
+        """Fill missing values using only causal forward fill."""
+        return df.ffill()
 
     def _remove_outliers(self, df: pd.DataFrame) -> pd.DataFrame:
         """Remove or clip outliers based on configuration."""
-        lower, upper = self.outlier_limits
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
-        if self.outlier_method == "winsorize":
-            for col in numeric_cols:
-                q_low = df[col].quantile(lower)
-                q_high = df[col].quantile(upper)
-                df[col] = df[col].clip(q_low, q_high)
-        elif self.outlier_method == "clip":
-            for col in numeric_cols:
-                q_low = df[col].quantile(lower)
-                q_high = df[col].quantile(upper)
-                df[col] = df[col].clip(q_low, q_high)
-        return df
+        preprocessor = FeaturePreprocessor(
+            outlier_method=self.outlier_method,
+            outlier_limits=self.outlier_limits,
+            apply_outliers=True,
+            apply_scaling=False,
+            apply_selection=False,
+        )
+        preprocessor.fit(df)
+        return preprocessor.transform(df)
 
     def _scale_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Scale numerical features using sklearn scalers."""
-        from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
-
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
-        scaler = None
-        if self.scaling_method == "minmax":
-            scaler = MinMaxScaler(feature_range=tuple(self.scaling_range))
-        elif self.scaling_method == "robust":
-            scaler = RobustScaler()
-        else:
-            scaler = StandardScaler()
-
-        df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
-        return df
+        preprocessor = FeaturePreprocessor(
+            scaling_method=self.scaling_method,
+            scaling_range=self.scaling_range,
+            apply_outliers=False,
+            apply_scaling=True,
+            apply_selection=False,
+        )
+        preprocessor.fit(df)
+        return preprocessor.transform(df)
 
     def _select_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Simple feature selection keeping the first n features if specified."""
-        if self.n_features is None:
-            return df
-        selected_cols = list(df.columns[: self.n_features])
-        return df[selected_cols]
+        preprocessor = FeaturePreprocessor(
+            n_features=self.n_features,
+            apply_outliers=False,
+            apply_scaling=False,
+            apply_selection=True,
+        )
+        preprocessor.fit(df)
+        return preprocessor.transform(df)
 
     def _clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """Clean and validate processed data."""

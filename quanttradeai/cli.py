@@ -471,6 +471,9 @@ def _project_to_runtime_configs(
     research_cfg = dict(project_config.get("research") or {})
     features_cfg = dict(project_config.get("features") or {})
 
+    def _or_default(value: Any, default: Any) -> Any:
+        return default if value is None else value
+
     if not research_cfg.get("enabled", True):
         raise ValueError(
             "research.enabled must be true for `quanttradeai research run`."
@@ -481,15 +484,17 @@ def _project_to_runtime_configs(
             "symbols": data_cfg.get("symbols", []),
             "start_date": data_cfg.get("start_date"),
             "end_date": data_cfg.get("end_date"),
-            "timeframe": data_cfg.get("timeframe", "1d"),
+            "timeframe": _or_default(data_cfg.get("timeframe"), "1d"),
             "test_start": data_cfg.get("test_start"),
             "test_end": data_cfg.get("test_end"),
-            "cache_dir": data_cfg.get("cache_dir", "data/raw"),
-            "cache_path": data_cfg.get("cache_path", "data/raw"),
-            "cache_expiration_days": data_cfg.get("cache_expiration_days", 7),
-            "use_cache": data_cfg.get("use_cache", True),
-            "refresh": data_cfg.get("refresh", False),
-            "max_workers": data_cfg.get("max_workers", 1),
+            "cache_dir": _or_default(data_cfg.get("cache_dir"), "data/raw"),
+            "cache_path": _or_default(data_cfg.get("cache_path"), "data/raw"),
+            "cache_expiration_days": _or_default(
+                data_cfg.get("cache_expiration_days"), 7
+            ),
+            "use_cache": _or_default(data_cfg.get("use_cache"), True),
+            "refresh": _or_default(data_cfg.get("refresh"), False),
+            "max_workers": _or_default(data_cfg.get("max_workers"), 1),
         },
         "news": {
             "enabled": False,
@@ -735,6 +740,9 @@ def cmd_research_run(
             summary["artifacts"]["results"] = str(Path(experiment_dir) / "results.json")
             summary["artifacts"]["coverage"] = str(
                 Path(experiment_dir) / "test_window_coverage.json"
+            )
+            summary["artifacts"]["preprocessing"] = str(
+                Path(experiment_dir) / "preprocessing.json"
             )
 
         summary["timestamps"]["completed_at"] = datetime.now(timezone.utc).isoformat()

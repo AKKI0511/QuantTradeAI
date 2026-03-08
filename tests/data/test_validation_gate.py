@@ -63,7 +63,9 @@ def test_run_pipeline_skip_validation_allows_progression(
 ):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(DataLoader, "fetch_data", lambda self, refresh=None: short_data)
-    monkeypatch.setattr(DataProcessor, "process_data", lambda self, df: df.assign(feature=1))
+    monkeypatch.setattr(
+        DataProcessor, "generate_features", lambda self, df: df.assign(feature=1)
+    )
     monkeypatch.setattr(
         DataProcessor, "generate_labels", lambda self, df: df.assign(label=1)
     )

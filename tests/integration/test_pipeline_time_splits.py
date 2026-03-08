@@ -7,6 +7,7 @@ import yaml
 from pydantic import ValidationError
 
 from quanttradeai.main import time_aware_split, run_pipeline
+from quanttradeai.data.processor import FeaturePreprocessor
 from quanttradeai.utils.config_schemas import ModelConfigSchema
 
 
@@ -164,7 +165,8 @@ def test_pipeline_handles_secondary_timeframes(tmp_path):
             return enriched
 
         processor_instance = mock_processor.return_value
-        processor_instance.process_data.side_effect = process_passthrough
+        processor_instance.generate_features.side_effect = process_passthrough
+        processor_instance.create_preprocessor.return_value = FeaturePreprocessor()
 
         def generate_labels_passthrough(input_df, **_):
             assert "volume_30m_sum" in input_df.columns
@@ -196,4 +198,96 @@ def test_pipeline_handles_secondary_timeframes(tmp_path):
     assert "AAA" in results
     assert "hyperparameters" in results["AAA"]
     assert coverage_info["path"].endswith("test_window_coverage.json")
+
+
+def test_run_pipeline_fits_preprocessing_on_train_only(tmp_path):
+    index = pd.date_range("2020-01-01", periods=260, freq="D")
+    alpha_feature = list(range(245)) + [1000] * 15
+    df = pd.DataFrame(
+        {
+            "Open": range(260),
+            "High": range(260),
+            "Low": range(260),
+            "Close": range(260),
+            "Volume": [100] * 260,
+            "alpha_feature": alpha_feature,
+        },
+        index=index,
+    )
+
+    config = {
+        "data": {
+            "symbols": ["AAA"],
+            "start_date": "2020-01-01",
+            "end_date": "2020-09-16",
+            "timeframe": "1d",
+            "cache_path": str(tmp_path),
+            "use_cache": False,
+            "refresh": False,
+            "test_start": str(index[245].date()),
+            "test_end": str(index[-2].date()),
+        },
+        "training": {"test_size": 0.2},
+        "labels": {"horizon": 1, "buy_threshold": 0.01, "sell_threshold": -0.01},
+    }
+    features_config = {
+        "pipeline": {"steps": []},
+        "preprocessing": {
+            "scaling": {"method": "standard", "target_range": [-1, 1]},
+            "outliers": {"method": "winsorize", "limits": [0.0, 1.0]},
+        },
+    }
+
+    config_path = tmp_path / "config.yaml"
+    features_path = tmp_path / "features.yaml"
+    with config_path.open("w", encoding="utf-8") as fh:
+        yaml.safe_dump(config, fh)
+    with features_path.open("w", encoding="utf-8") as fh:
+        yaml.safe_dump(features_config, fh)
+
+    captured_frames: list[pd.DataFrame] = []
+
+    class FakeClassifier:
+        def __init__(self, *args, **kwargs):
+            self.feature_columns = None
+
+        def prepare_data(self, frame):
+            captured_frames.append(frame.copy())
+            X = frame[["alpha_feature"]].to_numpy()
+            y = frame["label"].to_numpy()
+            self.feature_columns = ["alpha_feature"]
+            return X, y
+
+        def optimize_hyperparameters(self, X, y, n_trials=50):
+            return {}
+
+        def train(self, X, y, params=None):
+            return None
+
+        def evaluate(self, X, y):
+            return {"accuracy": 1.0}
+
+        def save_model(self, path):
+            return None
+
+    with patch("quanttradeai.main.DataLoader") as mock_loader, patch(
+        "quanttradeai.main.MomentumClassifier", FakeClassifier
+    ):
+        loader_instance = mock_loader.return_value
+        loader_instance.fetch_data.return_value = {"AAA": df}
+        loader_instance.validate_data.return_value = (True, {"AAA": {"passed": True}})
+
+        run_pipeline(
+            str(config_path),
+            features_config_path=str(features_path),
+        )
+
+    assert len(captured_frames) >= 2
+    train_frame, test_frame = captured_frames[0], captured_frames[1]
+    retained = df.iloc[200:].copy()
+    train_raw = retained.loc[retained.index < index[245], "alpha_feature"]
+    expected = (train_raw.max() - train_raw.mean()) / train_raw.std(ddof=0)
+
+    assert train_frame["alpha_feature"].mean() == pytest.approx(0.0, abs=1e-9)
+    assert test_frame["alpha_feature"].iloc[0] == pytest.approx(expected)
 
