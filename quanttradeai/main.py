@@ -54,9 +54,7 @@ def _save_feature_preprocessor(preprocessor, model_path: str | Path) -> dict[str
     if getattr(preprocessor, "is_active", True):
         joblib.dump(preprocessor, artifact_path)
     return {
-        "preprocessor": artifact_path.as_posix()
-        if artifact_path.exists()
-        else None,
+        "preprocessor": artifact_path.as_posix() if artifact_path.exists() else None,
         "summary": summary_path.as_posix(),
     }
 
@@ -474,7 +472,9 @@ def run_pipeline(
             model_path = f"{experiment_dir}/{symbol}"
             Path(model_path).mkdir(parents=True, exist_ok=True)
             model.save_model(model_path)
-            preprocessor_artifacts = _save_feature_preprocessor(preprocessor, model_path)
+            preprocessor_artifacts = _save_feature_preprocessor(
+                preprocessor, model_path
+            )
 
             logger.info(f"\n{symbol} Results:")
             logger.info(f"Train Metrics: {train_metrics}")

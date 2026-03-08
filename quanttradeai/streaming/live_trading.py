@@ -277,6 +277,21 @@ class LiveTradingEngine:
             processed = self.data_processor.process_data(history.copy())
         else:
             processed = self.data_processor.generate_features(history.copy())
+            preprocessor_columns = (
+                getattr(self.feature_preprocessor, "feature_columns", []) or []
+            )
+            missing_columns = [
+                column
+                for column in preprocessor_columns
+                if column not in processed.columns
+            ]
+            if missing_columns:
+                logger.warning(
+                    "missing_preprocessor_columns",
+                    symbol=symbol,
+                    columns=missing_columns,
+                )
+                return None
             processed = self.feature_preprocessor.transform(processed)
         if processed.empty:
             return None
