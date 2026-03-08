@@ -24,15 +24,39 @@ This command loads each YAML with the same schemas used in production, then writ
 
 ## ✅ Canonical Happy-Path Config
 
-For Stage 1 workflows, `config/project.yaml` is now the canonical entrypoint.
-Use `quanttradeai init` to generate a starter config and `quanttradeai validate` to verify and resolve it:
+For the Stage 1 happy path, use `config/project.yaml` as the main entrypoint.
+
+Initialize a starter config:
 
 ```bash
 poetry run quanttradeai init --template research -o config/project.yaml
+```
+
+Supported templates:
+- `research`: model-first research workflow
+- `llm-agent`: paper-trading LLM agent scaffold
+- `hybrid`: model + LLM hybrid agent scaffold
+
+Then validate and resolve the config:
+
+```bash
 poetry run quanttradeai validate -c config/project.yaml
 ```
 
-Validation writes a resolved config snapshot and JSON summary to timestamped folders under `reports/config_validation/`.
+Validation writes timestamped artifacts under `reports/config_validation/<YYYYMMDD_HHMMSS>/`:
+- `resolved_project_config.yaml`
+- `summary.json`
+
+Your project config must include these top-level sections:
+- `project`
+- `profiles`
+- `data`
+- `features`
+- `research`
+- `agents`
+- `deployment`
+
+Note: `quanttradeai research run -c config/project.yaml` requires `research.enabled: true`.
 
 Legacy multi-file configs (`model_config.yaml`, `features_config.yaml`, etc.) remain supported.
 You can still run legacy preflight validation with:
