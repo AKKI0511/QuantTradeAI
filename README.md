@@ -41,11 +41,10 @@ poetry install
 # Show commands
 poetry run quanttradeai --help
 
-# Fetch OHLCV for configured symbols
-poetry run quanttradeai fetch-data -c config/model_config.yaml
-
-# Train (features → CV tuning → model → artifacts)
-poetry run quanttradeai train -c config/model_config.yaml
+# Canonical Stage 1 happy path
+poetry run quanttradeai init --template research -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+poetry run quanttradeai research run -c config/project.yaml
 ```
 
 3) Evaluate and backtest a saved model
@@ -94,7 +93,7 @@ poetry run quanttradeai evaluate -m <model_dir> -c config/model_config.yaml
 poetry run quanttradeai backtest -c config/backtest_config.yaml
 poetry run quanttradeai backtest-model -m <model_dir> -c config/model_config.yaml -b config/backtest_config.yaml --risk-config config/risk_config.yaml
 poetry run quanttradeai validate-config
-poetry run quanttradeai live-trade --url wss://example -c config/model_config.yaml
+poetry run quanttradeai live-trade -m <model_dir> -c config/model_config.yaml -s config/streaming.yaml
 ```
 
 ## Python API

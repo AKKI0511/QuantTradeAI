@@ -20,6 +20,7 @@ import yaml
 import json
 from datetime import datetime
 import os
+import joblib
 
 from quanttradeai.data.loader import DataLoader
 from quanttradeai.data.processor import DataProcessor
@@ -34,6 +35,51 @@ from quanttradeai.utils.impact_loader import (
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _feature_preprocessor_artifact_path(model_path: str | Path) -> Path:
+    return Path(model_path) / "feature_preprocessor.joblib"
+
+
+def _feature_preprocessor_summary_path(model_path: str | Path) -> Path:
+    return Path(model_path) / "preprocessing_summary.json"
+
+
+def _save_feature_preprocessor(preprocessor, model_path: str | Path) -> dict[str, str]:
+    artifact_path = _feature_preprocessor_artifact_path(model_path)
+    summary_path = _feature_preprocessor_summary_path(model_path)
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    with summary_path.open("w", encoding="utf-8") as handle:
+        json.dump(preprocessor.metadata(), handle, indent=2)
+    if getattr(preprocessor, "is_active", True):
+        joblib.dump(preprocessor, artifact_path)
+    return {
+        "preprocessor": artifact_path.as_posix() if artifact_path.exists() else None,
+        "summary": summary_path.as_posix(),
+    }
+
+
+def _load_feature_preprocessor(model_path: str | Path):
+    artifact_path = _feature_preprocessor_artifact_path(model_path)
+    if not artifact_path.is_file():
+        return None
+    return joblib.load(artifact_path)
+
+
+def _prepare_labeled_dataset(
+    data_processor: DataProcessor,
+    df: pd.DataFrame,
+    config: dict,
+    *,
+    preprocessor=None,
+) -> pd.DataFrame:
+    if preprocessor is None:
+        featured = data_processor.process_data(df)
+        return _generate_labels_with_config(data_processor, featured, config)
+
+    featured = data_processor.generate_features(df)
+    labeled = _generate_labels_with_config(data_processor, featured, config)
+    return preprocessor.transform(labeled)
 
 
 def setup_directories(cache_dir: str = "data/raw"):
@@ -338,7 +384,7 @@ def run_pipeline(
     with open(config_path, "r") as file:
         config = yaml.safe_load(file)
 
-    cache_dir = config.get("data", {}).get("cache_dir", "data/raw")
+    cache_dir = config.get("data", {}).get("cache_dir") or "data/raw"
     setup_directories(cache_dir)
 
     # Initialize components
@@ -369,32 +415,38 @@ def run_pipeline(
         # Process each stock
         results = {}
         coverage_report: dict[str, dict] = {}
+        preprocessing_report: dict[str, dict] = {}
         for symbol, df in data_dict.items():
             logger.info(f"\nProcessing {symbol}...")
 
             # 2. Generate Features
-            df_processed = data_processor.process_data(df)
+            df_featured = data_processor.generate_features(df)
 
             # 3. Generate Labels
             df_labeled = _generate_labels_with_config(
-                data_processor, df_processed, config
+                data_processor, df_featured, config
             )
 
             # 4. Time-aware Split
             train_df, test_df, coverage = time_aware_split(df_labeled, config)
             coverage_report[symbol] = coverage
-            X_train, y_train = model.prepare_data(train_df)
-            X_test, y_test = model.prepare_data(test_df)
+            preprocessor = data_processor.create_preprocessor()
+            train_processed = preprocessor.fit_transform(train_df)
+            test_processed = preprocessor.transform(test_df)
+            preprocessing_report[symbol] = preprocessor.metadata()
+
+            X_train, y_train = model.prepare_data(train_processed)
+            X_test, y_test = model.prepare_data(test_processed)
             # Log split summary
             logger.info(
                 "Split %s -> train[%s..%s]=%d, test[%s..%s]=%d",
                 symbol,
-                str(train_df.index.min()),
-                str(train_df.index.max()),
-                len(train_df),
-                str(test_df.index.min()),
-                str(test_df.index.max()),
-                len(test_df),
+                str(train_processed.index.min()),
+                str(train_processed.index.max()),
+                len(train_processed),
+                str(test_processed.index.min()),
+                str(test_processed.index.max()),
+                len(test_processed),
             )
 
             # 5. Optimize Hyperparameters
@@ -420,13 +472,20 @@ def run_pipeline(
             model_path = f"{experiment_dir}/{symbol}"
             Path(model_path).mkdir(parents=True, exist_ok=True)
             model.save_model(model_path)
+            preprocessor_artifacts = _save_feature_preprocessor(
+                preprocessor, model_path
+            )
 
             logger.info(f"\n{symbol} Results:")
             logger.info(f"Train Metrics: {train_metrics}")
             logger.info(f"Test Metrics: {test_metrics}")
+            results[symbol]["artifacts"] = preprocessor_artifacts
 
         coverage_path = Path(experiment_dir) / "test_window_coverage.json"
         _write_coverage_report(coverage_path, coverage_report)
+        preprocessing_path = Path(experiment_dir) / "preprocessing.json"
+        with preprocessing_path.open("w", encoding="utf-8") as handle:
+            json.dump(preprocessing_report, handle, indent=2)
         fallback_symbols = [
             symbol
             for symbol, details in coverage_report.items()
@@ -454,6 +513,7 @@ def run_pipeline(
                 "results": results,
                 "coverage": coverage_info,
                 "experiment_dir": experiment_dir,
+                "preprocessing": preprocessing_path.as_posix(),
             }
 
         if include_coverage:
@@ -491,6 +551,7 @@ def evaluate_model(
     data_processor = DataProcessor()
     model = MomentumClassifier(config_path)
     model.load_model(model_path)
+    preprocessor = _load_feature_preprocessor(model_path)
 
     with open(config_path, "r") as file:
         config = yaml.safe_load(file) or {}
@@ -505,8 +566,12 @@ def evaluate_model(
     )
     results = {}
     for symbol, df in data_dict.items():
-        df_processed = data_processor.process_data(df)
-        df_labeled = _generate_labels_with_config(data_processor, df_processed, config)
+        df_labeled = _prepare_labeled_dataset(
+            data_processor,
+            df,
+            config,
+            preprocessor=preprocessor,
+        )
         X, y = model.prepare_data(df_labeled)
         metrics = model.evaluate(X, y)
         results[symbol] = metrics
@@ -623,6 +688,7 @@ def run_model_backtest(
     processor = DataProcessor()
     clf = MomentumClassifier(model_config)
     clf.load_model(model_path)
+    preprocessor = _load_feature_preprocessor(model_path)
 
     # Backtest execution config
     exec_cfg = _load_execution_cfg(
@@ -724,8 +790,12 @@ def run_model_backtest(
 
     for symbol, df in data_dict.items():
         try:
-            df_proc = processor.process_data(df)
-            df_lbl = _generate_labels_with_config(processor, df_proc, cfg)
+            df_lbl = _prepare_labeled_dataset(
+                processor,
+                df,
+                cfg,
+                preprocessor=preprocessor,
+            )
             train_df, test_df, coverage = time_aware_split(df_lbl, cfg)
             coverage_report[symbol] = coverage
             # Build features from saved order

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pandas as pd
 import yaml
 import pytest
 from typer.testing import CliRunner
@@ -267,6 +268,107 @@ def test_research_run_forwards_label_settings_to_runtime_model_config(
 
     run_result = runner.invoke(app, ["research", "run", "--config", str(cfg_path)])
     assert run_result.exit_code == 0, run_result.stdout
+
+
+def test_research_run_uses_train_fitted_preprocessing_end_to_end(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    project_cfg = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False)
+    )
+    project_cfg["data"]["start_date"] = "2020-01-01"
+    project_cfg["data"]["end_date"] = "2020-09-16"
+    project_cfg["data"]["test_start"] = "2020-09-02"
+    project_cfg["data"]["test_end"] = "2020-09-15"
+    project_cfg["research"]["labels"]["horizon"] = 1
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(yaml.safe_dump(project_cfg, sort_keys=False), encoding="utf-8")
+
+    index = pd.date_range("2020-01-01", periods=260, freq="D")
+    raw_df = pd.DataFrame(
+        {
+            "Open": range(260),
+            "High": range(260),
+            "Low": range(260),
+            "Close": range(260),
+            "Volume": [100] * 260,
+            "alpha_feature": list(range(245)) + [1000] * 15,
+        },
+        index=index,
+    )
+
+    captured_frames: list[pd.DataFrame] = []
+
+    class FakeClassifier:
+        def __init__(self, *args, **kwargs):
+            self.feature_columns = None
+
+        def prepare_data(self, frame):
+            captured_frames.append(frame.copy())
+            X = frame[["alpha_feature"]].to_numpy()
+            y = frame["label"].to_numpy()
+            self.feature_columns = ["alpha_feature"]
+            return X, y
+
+        def optimize_hyperparameters(self, X, y, n_trials=50):
+            return {}
+
+        def train(self, X, y, params=None):
+            return None
+
+        def evaluate(self, X, y):
+            return {"accuracy": 1.0}
+
+        def save_model(self, path):
+            Path(path).mkdir(parents=True, exist_ok=True)
+
+    from quanttradeai.data.processor import DataProcessor
+
+    monkeypatch.setattr(
+        DataProcessor,
+        "generate_features",
+        lambda self, df: self._clean_data(df.copy()),
+    )
+
+    with monkeypatch.context() as context:
+        from quanttradeai import main as main_module
+
+        loader_mock = type("Loader", (), {})()
+        loader_mock.fetch_data = lambda refresh=False: {"AAPL": raw_df}
+        loader_mock.validate_data = lambda data: (True, {"AAPL": {"passed": True}})
+        context.setattr(main_module, "DataLoader", lambda *args, **kwargs: loader_mock)
+        context.setattr(main_module, "MomentumClassifier", FakeClassifier)
+
+        result = runner.invoke(
+            app,
+            ["research", "run", "--config", str(cfg_path), "--skip-validation"],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    assert len(captured_frames) >= 2
+
+    train_frame, test_frame = captured_frames[0], captured_frames[1]
+    retained = raw_df.iloc[200:].copy()
+    train_raw = retained.loc[retained.index < pd.Timestamp("2020-09-02"), "alpha_feature"]
+    train_clipped = train_raw.clip(
+        lower=train_raw.quantile(0.01),
+        upper=train_raw.quantile(0.99),
+    )
+    expected = (
+        train_raw.quantile(0.99) - train_clipped.mean()
+    ) / train_clipped.std(ddof=0)
+
+    assert train_frame["alpha_feature"].mean() == pytest.approx(0.0, abs=1e-9)
+    assert test_frame["alpha_feature"].iloc[0] == pytest.approx(expected)
+
+    run_dirs = sorted(path for path in Path("runs").iterdir() if path.is_dir())
+    latest_run = run_dirs[-1]
+    summary_payload = json.loads((latest_run / "summary.json").read_text("utf-8"))
+    preprocessing_path = Path(summary_payload["artifacts"]["preprocessing"])
+    assert preprocessing_path.is_file()
 
 
 def test_research_run_fails_for_malformed_project_config(tmp_path: Path, monkeypatch):

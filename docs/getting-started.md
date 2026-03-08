@@ -18,27 +18,28 @@ cd QuantTradeAI
 poetry install
 ```
 
-### Install with pip
+### Install the package with pip
 ```bash
 git clone https://github.com/AKKI0511/QuantTradeAI.git
 cd QuantTradeAI
-pip install -r requirements.txt
+pip install .
 ```
 
 ## 🎯 First Steps
 
-### 1. Fetch Data
+### 1. Run the Canonical Stage 1 Workflow
 ```bash
-# Fetch data for all configured symbols
-poetry run quanttradeai fetch-data
+poetry run quanttradeai init --template research -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+poetry run quanttradeai research run -c config/project.yaml
 ```
 
-This will download OHLCV data for AAPL, META, TSLA, JPM, and AMZN and cache it locally.
+This will generate a single project config, validate the resolved run settings, and execute the end-to-end research workflow.
 
-### 2. Run Training Pipeline
+### 2. Research Workflow Details
 ```bash
-# Run the complete training pipeline
-poetry run quanttradeai train
+# Legacy training workflow remains available
+poetry run quanttradeai train -c config/model_config.yaml
 ```
 
 This will:
@@ -52,7 +53,7 @@ Tip: To control the test window, set `data.test_start` (and optional `data.test_
 ### 3. Evaluate Results
 ```bash
 # Evaluate a trained model
-poetry run quanttradeai evaluate -m models/trained/AAPL
+poetry run quanttradeai evaluate -m models/experiments/<timestamp>/<SYMBOL> -c config/model_config.yaml
 ```
 
 ### 4. Backtest a Saved Model
@@ -80,7 +81,8 @@ After running the training pipeline, you'll find:
 
 ## 🔧 Configuration
 
-The framework uses two main configuration files:
+The canonical happy path uses **`config/project.yaml`**.
+Legacy workflows still use:
 
 - **`config/model_config.yaml`** - Model parameters and data settings
 - **`config/features_config.yaml`** - Feature engineering settings

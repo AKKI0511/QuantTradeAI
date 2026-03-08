@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 
-def load_data_processor():
+def load_processor_module():
     spec = importlib.util.spec_from_file_location(
         "quanttradeai.data.processor", Path("quanttradeai/data/processor.py")
     )
@@ -16,7 +16,11 @@ def load_data_processor():
         raise ImportError("Unable to load quanttradeai.data.processor")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)  # type: ignore[arg-type]
-    return module.DataProcessor
+    return module
+
+
+def load_data_processor():
+    return load_processor_module().DataProcessor
 
 
 def write_config(tmp_path: Path, config: dict) -> Path:
@@ -112,4 +116,48 @@ def test_volatility_and_custom_features_from_yaml(tmp_path: Path):
     assert "volume_momentum_2" in custom_result.columns
     assert "mean_reversion_2" in custom_result.columns
     assert "volatility_breakout_2" in custom_result.columns
+
+
+def test_feature_preprocessor_uses_train_statistics_only():
+    processor_module = load_processor_module()
+    preprocessor = processor_module.FeaturePreprocessor(
+        scaling_method="standard",
+        outlier_method="winsorize",
+        outlier_limits=[0.25, 0.75],
+        excluded_columns={"Open", "High", "Low", "Close", "Volume", "label"},
+    )
+
+    train_df = pd.DataFrame(
+        {
+            "Open": [1.0, 1.0, 1.0, 1.0],
+            "High": [1.0, 1.0, 1.0, 1.0],
+            "Low": [1.0, 1.0, 1.0, 1.0],
+            "Close": [1.0, 1.0, 1.0, 1.0],
+            "Volume": [10.0, 10.0, 10.0, 10.0],
+            "alpha_feature": [0.0, 1.0, 2.0, 3.0],
+            "label": [0, 0, 0, 0],
+        }
+    )
+    test_df = pd.DataFrame(
+        {
+            "Open": [1.0],
+            "High": [1.0],
+            "Low": [1.0],
+            "Close": [1.0],
+            "Volume": [10.0],
+            "alpha_feature": [100.0],
+            "label": [0],
+        }
+    )
+
+    transformed_train = preprocessor.fit_transform(train_df)
+    transformed_test = preprocessor.transform(test_df)
+
+    train_clipped = train_df["alpha_feature"].clip(0.75, 2.25)
+    expected_test = (2.25 - train_clipped.mean()) / train_clipped.std(ddof=0)
+
+    assert preprocessor.clip_bounds["alpha_feature"]["upper"] == pytest.approx(2.25)
+    assert transformed_train["alpha_feature"].mean() == pytest.approx(0.0, abs=1e-9)
+    assert transformed_test["alpha_feature"].iloc[0] == pytest.approx(expected_test)
+    assert transformed_test["Close"].iloc[0] == pytest.approx(1.0)
 

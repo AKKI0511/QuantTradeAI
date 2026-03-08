@@ -31,6 +31,7 @@ from quanttradeai.utils.config_schemas import (
     RiskManagementConfig,
 )
 from quanttradeai.trading.position_manager import PositionManager
+from quanttradeai.main import _load_feature_preprocessor
 
 ExecutionHook = Callable[[dict], None]
 
@@ -95,6 +96,7 @@ class LiveTradingEngine:
     _history: Dict[str, pd.DataFrame] = field(default_factory=dict, init=False)
     _consumer: asyncio.Task | None = field(default=None, init=False)
     execution_log: list[dict] = field(default_factory=list, init=False)
+    feature_preprocessor: object | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self.gateway = self.gateway or StreamingGateway(self.streaming_config)
@@ -105,6 +107,7 @@ class LiveTradingEngine:
         if not self.model_path:
             raise ValueError("model_path is required for live trading.")
         self.model.load_model(self.model_path)
+        self.feature_preprocessor = _load_feature_preprocessor(self.model_path)
         guard = _load_risk_guard(self.risk_config)
         self.risk_manager = RiskManager(drawdown_guard=guard)
         self.portfolio = PortfolioManager(
@@ -270,7 +273,26 @@ class LiveTradingEngine:
         history = self._history.get(symbol)
         if history is None or len(history) < self.min_history_for_features:
             return None
-        processed = self.data_processor.process_data(history.copy())
+        if self.feature_preprocessor is None:
+            processed = self.data_processor.process_data(history.copy())
+        else:
+            processed = self.data_processor.generate_features(history.copy())
+            preprocessor_columns = (
+                getattr(self.feature_preprocessor, "feature_columns", []) or []
+            )
+            missing_columns = [
+                column
+                for column in preprocessor_columns
+                if column not in processed.columns
+            ]
+            if missing_columns:
+                logger.warning(
+                    "missing_preprocessor_columns",
+                    symbol=symbol,
+                    columns=missing_columns,
+                )
+                return None
+            processed = self.feature_preprocessor.transform(processed)
         if processed.empty:
             return None
         return processed.tail(1)

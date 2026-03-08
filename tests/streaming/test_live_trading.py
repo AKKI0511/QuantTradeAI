@@ -24,6 +24,9 @@ class DummyProcessor:
         out["f1"] = 1.0
         return out
 
+    def generate_features(self, df):
+        return self.process_data(df)
+
 
 class DummyModel:
     def __init__(self, outputs=None) -> None:
@@ -37,6 +40,17 @@ class DummyModel:
     def predict(self, X):
         value = self.outputs.pop(0) if self.outputs else 0
         return [value for _ in range(len(X))]
+
+
+class DummyPreprocessor:
+    def __init__(self, feature_columns):
+        self.feature_columns = feature_columns
+
+    def transform(self, df):
+        out = df.copy()
+        for column in self.feature_columns:
+            out[column] = out[column].astype(float)
+        return out
 
 
 @pytest.mark.asyncio
@@ -408,3 +422,43 @@ async def test_live_trading_engine_skips_non_finite_price_updates():
     assert engine.portfolio.positions["AAPL"]["price"] == pytest.approx(10.0)
     assert "AAPL" not in engine._history
     risk_spy.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_live_trading_engine_skips_when_saved_preprocessor_columns_missing():
+    gateway = FakeGateway()
+    alert_spy = MagicMock()
+    gateway.health_monitor.trigger_alerts = alert_spy
+    engine = LiveTradingEngine(
+        model_config="config/model_config.yaml",
+        model_path="unused",
+        gateway=gateway,
+        data_processor=DummyProcessor(),
+        model=DummyModel(outputs=[1]),
+        min_history_for_features=1,
+        history_window=4,
+        risk_config=None,
+        position_manager_config=None,
+    )
+    engine.feature_preprocessor = DummyPreprocessor(["f1", "missing_feature"])
+
+    consumer = asyncio.create_task(engine._consume_buffer())
+    await gateway.buffer.put(
+        {
+            "symbol": "AAPL",
+            "price": 10.0,
+            "Open": 10.0,
+            "High": 10.0,
+            "Low": 10.0,
+            "Close": 10.0,
+            "Volume": 100,
+            "timestamp": "2024-01-01T00:00:00Z",
+        }
+    )
+    await asyncio.sleep(0.05)
+    consumer.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await consumer
+
+    assert engine.execution_log == []
+    alert_spy.assert_not_called()
