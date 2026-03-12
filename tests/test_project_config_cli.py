@@ -322,6 +322,54 @@ def test_research_run_happy_path_writes_run_artifacts(tmp_path: Path, monkeypatc
     assert metrics_payload["backtest_metrics_by_symbol"]["AAPL"]["net_sharpe"] == 1.2
 
 
+def test_research_run_marks_placeholder_when_backtests_have_no_metrics(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "research", "--output", str(cfg_path)],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    def _fake_pipeline(*args, **kwargs):
+        experiment_dir = Path("models/experiments/20260101_000099")
+        experiment_dir.mkdir(parents=True, exist_ok=True)
+        (experiment_dir / "AAPL").mkdir(parents=True, exist_ok=True)
+        (experiment_dir / "results.json").write_text("{}", encoding="utf-8")
+        (experiment_dir / "test_window_coverage.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        return {
+            "results": {},
+            "coverage": {
+                "path": str(experiment_dir / "test_window_coverage.json"),
+                "fallback_symbols": [],
+            },
+            "experiment_dir": str(experiment_dir),
+        }
+
+    monkeypatch.setattr("quanttradeai.cli.run_pipeline", _fake_pipeline)
+    monkeypatch.setattr(
+        "quanttradeai.cli.run_model_backtest",
+        lambda **kwargs: {"AAPL": {"error": "no data"}},
+    )
+
+    run_result = runner.invoke(app, ["research", "run", "--config", str(cfg_path)])
+    assert run_result.exit_code == 0, run_result.stdout
+
+    run_root = Path("runs") / "research"
+    latest_run = sorted(path for path in run_root.iterdir() if path.is_dir())[-1]
+    metrics_payload = json.loads(
+        (latest_run / "metrics.json").read_text(encoding="utf-8")
+    )
+
+    assert metrics_payload["status"] == "placeholder"
+    assert metrics_payload["backtest_metrics_by_symbol"] == {}
+
+
 def test_research_run_forwards_label_settings_to_runtime_model_config(
     tmp_path: Path, monkeypatch
 ):

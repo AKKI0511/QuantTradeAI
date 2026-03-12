@@ -682,6 +682,19 @@ def cmd_research_run(
         summary["warnings"] = list(dict.fromkeys(summary["warnings"]))
         summary["timestamps"]["completed_at"] = datetime.now(timezone.utc).isoformat()
 
+        backtest_metrics_by_symbol = {}
+        for symbol, payload in backtest_payload.items():
+            if not isinstance(payload, dict):
+                continue
+
+            symbol_payload = payload.get(symbol, {})
+            if not isinstance(symbol_payload, dict):
+                continue
+
+            metrics = symbol_payload.get("metrics")
+            if isinstance(metrics, dict) and metrics:
+                backtest_metrics_by_symbol[symbol] = metrics
+
         metrics_payload = {
             "status": "available" if results or backtest_payload else "placeholder",
             "research_metrics_by_symbol": {
@@ -689,11 +702,7 @@ def cmd_research_run(
                 for symbol, details in results.items()
                 if isinstance(details, dict)
             },
-            "backtest_metrics_by_symbol": {
-                symbol: payload.get(symbol, {}).get("metrics", {})
-                for symbol, payload in backtest_payload.items()
-                if isinstance(payload, dict)
-            },
+            "backtest_metrics_by_symbol": backtest_metrics_by_symbol,
         }
         if (
             not metrics_payload["research_metrics_by_symbol"]
