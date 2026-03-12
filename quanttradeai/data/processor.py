@@ -233,7 +233,7 @@ class DataProcessor:
             self.bb_period = (
                 volatility_cfg.bollinger_bands.period
                 if volatility_cfg.bollinger_bands
-                else default_bb_period
+                else 0
             )
             self.bb_std = (
                 volatility_cfg.bollinger_bands.std_dev
@@ -483,7 +483,9 @@ class DataProcessor:
 
         apply_outliers = "remove_outliers" in self.pipeline
         apply_scaling = "scale_features" in self.pipeline
-        apply_selection = "select_features" in self.pipeline and self.n_features is not None
+        apply_selection = (
+            "select_features" in self.pipeline and self.n_features is not None
+        )
         return FeaturePreprocessor(
             scaling_method=self.scaling_method,
             scaling_range=self.scaling_range,
@@ -608,15 +610,21 @@ class DataProcessor:
             df = self._add_bollinger_bands(df)
 
         for period in self.atr_periods:
-            df[f"atr_{period}"] = ta.atr(df["High"], df["Low"], df["Close"], length=period)
+            df[f"atr_{period}"] = ta.atr(
+                df["High"], df["Low"], df["Close"], length=period
+            )
 
         for period in self.keltner_periods:
             typical_price = (df["High"] + df["Low"] + df["Close"]) / 3
             middle_band = ft.ema(typical_price, period)
             atr = ta.atr(df["High"], df["Low"], df["Close"], length=period)
             df[f"keltner_middle_{period}"] = middle_band
-            df[f"keltner_upper_{period}"] = middle_band + self.keltner_atr_multiple * atr
-            df[f"keltner_lower_{period}"] = middle_band - self.keltner_atr_multiple * atr
+            df[f"keltner_upper_{period}"] = (
+                middle_band + self.keltner_atr_multiple * atr
+            )
+            df[f"keltner_lower_{period}"] = (
+                middle_band - self.keltner_atr_multiple * atr
+            )
 
         return df
 
@@ -649,10 +657,7 @@ class DataProcessor:
             if self.volume_price_trend_enabled:
                 df["volume_price_trend"] = (
                     df["Volume"]
-                    * (
-                        (df["Close"] - df["Close"].shift(1))
-                        / df["Close"].shift(1)
-                    )
+                    * ((df["Close"] - df["Close"].shift(1)) / df["Close"].shift(1))
                 ).cumsum()
         except Exception as e:
             logger.error(f"Error calculating volume features: {str(e)}")
@@ -738,7 +743,7 @@ class DataProcessor:
                 )
                 continue
 
-            stat = (operation.stat or default_stat_map.get(base) or "")
+            stat = operation.stat or default_stat_map.get(base) or ""
             candidate_columns = []
             if stat:
                 candidate_columns.append(f"{base}_{operation.timeframe}_{stat}")
@@ -786,8 +791,8 @@ class DataProcessor:
             elif operation.type == "pct_change":
                 with np.errstate(divide="ignore", invalid="ignore"):
                     df[feature_name] = (
-                        (secondary_series - primary_series) / primary_series
-                    )
+                        secondary_series - primary_series
+                    ) / primary_series
             elif operation.type == "rolling_divergence":
                 with np.errstate(divide="ignore", invalid="ignore"):
                     ratio = secondary_series / primary_series
@@ -830,7 +835,9 @@ class DataProcessor:
                         threshold=threshold,
                     )
                 if lookbacks:
-                    df["volatility_breakout"] = df[f"volatility_breakout_{lookbacks[0]}"]
+                    df["volatility_breakout"] = df[
+                        f"volatility_breakout_{lookbacks[0]}"
+                    ]
 
             required_cols = {"sma_20", "rsi", "macd", "macd_signal"}
             if required_cols.issubset(df.columns):

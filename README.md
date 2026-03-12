@@ -45,6 +45,10 @@ poetry run quanttradeai --help
 poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
+
+# Import an existing legacy config/ directory into the canonical workflow
+poetry run quanttradeai validate --legacy-config-dir config
+poetry run quanttradeai research run --legacy-config-dir config
 ```
 
 3) Evaluate and backtest a saved model
@@ -58,17 +62,17 @@ poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL
 ```
 
 Artifacts are written to:
-- `models/experiments/<timestamp>/` (models + results.json)
-- `reports/backtests/<timestamp>/<SYMBOL>/` (`metrics.json`, `equity_curve.csv`, `ledger.csv`)
+- `runs/research/<timestamp>_<project>/` (`resolved_project_config.yaml`, runtime YAMLs, `summary.json`, `metrics.json`, automatic backtest summary)
+- `models/experiments/<timestamp>/` (trained symbol models + `results.json`)
+- `reports/backtests/<timestamp>/<SYMBOL>/` (`metrics.json`, `equity_curve.csv`, `ledger.csv`) for standalone backtest commands
 
 ## Configuration
 
-- `config/model_config.yaml`: symbols, date ranges, caching, training, trading
-- `config/features_config.yaml`: pipeline steps, indicators, selection, sentiment
-- `config/backtest_config.yaml`: execution costs, slippage, liquidity
-- `config/risk_config.yaml`: drawdown protection and turnover limits
-- `config/streaming.yaml`: providers, auth, subscriptions (optional)
-- `config/position_manager.yaml`: live position tracking and impact parameters
+- `config/project.yaml`: canonical Stage 1 config for research, agents, and deployment targets
+- `config/model_config.yaml`, `config/features_config.yaml`, `config/backtest_config.yaml`: legacy compatibility files that can be imported with `--legacy-config-dir`
+- `config/risk_config.yaml`: optional drawdown and turnover guards for standalone backtests and live trading
+- `config/streaming.yaml`: optional provider, auth, and subscription settings for live trading
+- `config/position_manager.yaml`: optional live position tracking and impact parameters
 
 Pass `--risk-config path/to/risk.yaml` to `poetry run quanttradeai backtest-model` to enforce the configured drawdown guard during CLI backtests. If the file is omitted or missing, the backtest proceeds without halts.
 
@@ -85,6 +89,8 @@ See docs for details: [Configuration Guide](docs/configuration.md), [Quick Refer
 poetry run quanttradeai init --template research -o config/project.yaml           # Generate canonical happy-path project config
 poetry run quanttradeai validate -c config/project.yaml                            # Validate canonical project config and write resolved artifacts
 poetry run quanttradeai research run -c config/project.yaml                        # Run the canonical end-to-end Stage 1 research workflow
+poetry run quanttradeai validate --legacy-config-dir config                        # Import legacy YAMLs into canonical validation
+poetry run quanttradeai research run --legacy-config-dir config                    # Import legacy YAMLs and run the canonical research workflow
 
 # Legacy compatibility path (still supported)
 poetry run quanttradeai fetch-data -c config/model_config.yaml
@@ -263,6 +269,10 @@ The roadmap lives in [roadmap.md](roadmap.md) (source of truth) to avoid drift.
 Current direction is explicitly two-track:
 - **ML training loop**: reproducible data → features → time-aware training/eval → backtests → promotion.
 - **Trading agent deployment**: developer-built agents (strategies + tools + prompts) running in parallel, tracked as experiments, deployed via existing platforms (Docker/K8s/managed runners).
+
+Stage 1 research status today:
+- Canonical `config/project.yaml`, `init`, `validate`, legacy import, resolved-config artifacts, and end-to-end `research run` are implemented.
+- First-class agent execution, deployment, promotion, and run-list UX remain roadmap items.
 
 ## License
 

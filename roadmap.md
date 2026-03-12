@@ -1,6 +1,6 @@
 # QuantTradeAI Roadmap
 
-Last updated: 2026-03-05
+Last updated: 2026-03-12
 
 This document is the product source of truth for QuantTradeAI.
 It is written for both human contributors and coding agents.
@@ -314,6 +314,11 @@ Deliverables:
 - Support context blocks for LLM and hybrid agents.
 - Make feature selection explicit and shared across research and agent flows.
 - Fix time-aware preprocessing and evaluation defaults.
+
+Current status:
+
+- Implemented for the research happy path: canonical `config/project.yaml`, `init`, `validate`, legacy config import via flags, resolved-config artifacts, standardized research run directories, automatic backtests from `research run`, and time-aware preprocessing/evaluation defaults.
+- Still open in Stage 1: first-class strategy/agent abstractions, shared feature selection across agent flows, and standardized run records beyond the research workflow.
 
 ### Stage 2: Multi-Agent Lab
 

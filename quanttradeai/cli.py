@@ -1,14 +1,14 @@
 """Typer-based production CLI for QuantTradeAI.
 
 Commands mirror the legacy argparse CLI and add `backtest-model`.
-The console script still points to `quanttradeai.main:main` which delegates
-here, so developer workflow remains unchanged.
+The packaged console entry point resolves to this Typer app directly.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -27,6 +27,10 @@ from .utils.config_validator import (
     DEFAULT_CONFIG_PATHS,
     validate_all,
     validate_project_config,
+)
+from .utils.project_config import (
+    compile_research_runtime_configs,
+    load_project_config,
 )
 import yaml
 import pandas as pd
@@ -66,7 +70,11 @@ PROJECT_TEMPLATES = {
                 "buy_threshold": 0.01,
                 "sell_threshold": -0.01,
             },
-            "model": {"kind": "classifier", "family": "voting"},
+            "model": {
+                "kind": "classifier",
+                "family": "voting",
+                "tuning": {"enabled": True, "trials": 50},
+            },
             "evaluation": {"split": "time_aware", "use_configured_test_window": True},
             "backtest": {"costs": {"enabled": True, "bps": 5}},
         },
@@ -150,7 +158,11 @@ PROJECT_TEMPLATES = {
                 "buy_threshold": 0.01,
                 "sell_threshold": -0.01,
             },
-            "model": {"kind": "classifier", "family": "voting"},
+            "model": {
+                "kind": "classifier",
+                "family": "voting",
+                "tuning": {"enabled": True, "trials": 50},
+            },
             "evaluation": {"split": "time_aware", "use_configured_test_window": True},
             "backtest": {"costs": {"enabled": True, "bps": 5}},
         },
@@ -467,185 +479,31 @@ def cmd_validate_config(
 def _project_to_runtime_configs(
     project_config: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    data_cfg = dict(project_config.get("data") or {})
-    research_cfg = dict(project_config.get("research") or {})
-    features_cfg = dict(project_config.get("features") or {})
+    model_cfg, features_cfg, _ = compile_research_runtime_configs(project_config)
+    return model_cfg, features_cfg
 
-    def _or_default(value: Any, default: Any) -> Any:
-        return default if value is None else value
 
-    if not research_cfg.get("enabled", True):
-        raise ValueError(
-            "research.enabled must be true for `quanttradeai research run`."
-        )
+def _slugify_project_name(name: str | None) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", (name or "project").strip())
+    return normalized.strip("_").lower() or "project"
 
-    model_cfg = {
-        "data": {
-            "symbols": data_cfg.get("symbols", []),
-            "start_date": data_cfg.get("start_date"),
-            "end_date": data_cfg.get("end_date"),
-            "timeframe": _or_default(data_cfg.get("timeframe"), "1d"),
-            "test_start": data_cfg.get("test_start"),
-            "test_end": data_cfg.get("test_end"),
-            "cache_dir": _or_default(data_cfg.get("cache_dir"), "data/raw"),
-            "cache_path": _or_default(data_cfg.get("cache_path"), "data/raw"),
-            "cache_expiration_days": _or_default(
-                data_cfg.get("cache_expiration_days"), 7
-            ),
-            "use_cache": _or_default(data_cfg.get("use_cache"), True),
-            "refresh": _or_default(data_cfg.get("refresh"), False),
-            "max_workers": _or_default(data_cfg.get("max_workers"), 1),
-        },
-        "news": {
-            "enabled": False,
-            "provider": "yfinance",
-            "lookback_days": 30,
-            "symbols": [],
-        },
-        "models": {
-            "family": research_cfg.get("model", {}).get("family", "voting"),
-            "kind": research_cfg.get("model", {}).get("kind", "classifier"),
-        },
-        "labels": {
-            "horizon": research_cfg.get("labels", {}).get("horizon", 5),
-            "buy_threshold": research_cfg.get("labels", {}).get("buy_threshold", 0.01),
-            "sell_threshold": research_cfg.get("labels", {}).get(
-                "sell_threshold", -0.01
-            ),
-        },
-        "training": {
-            "test_size": 0.2,
-            "random_state": 42,
-            "cv_folds": 5,
-        },
-        "trading": {
-            "initial_capital": 100000,
-            "position_size": 0.2,
-            "stop_loss": 0.02,
-            "take_profit": 0.04,
-            "max_positions": 5,
-            "transaction_cost": 0.001,
-            "max_risk_per_trade": 0.02,
-            "max_portfolio_risk": 0.10,
-        },
-    }
 
-    feature_definitions = features_cfg.get("definitions") or []
-    feature_steps = ["generate_technical_indicators"]
-    price_features: list[str] = []
-    momentum_features: dict[str, Any] = {}
-    custom_features: list[dict[str, Any]] = []
-
-    def _coerce_periods(raw_params: dict[str, Any]) -> list[int]:
-        raw_periods = (
-            raw_params.get("periods")
-            or raw_params.get("lookback")
-            or raw_params.get("period")
-            or raw_params.get("window")
-        )
-        if raw_periods is None:
-            return []
-        if isinstance(raw_periods, list):
-            return [int(value) for value in raw_periods]
-        return [int(raw_periods)]
-
-    def _resolve_custom_feature_key(name: str, params: dict[str, Any]) -> str:
-        explicit = params.get("kind")
-        if explicit in {
-            "price_momentum",
-            "volume_momentum",
-            "mean_reversion",
-            "volatility_breakout",
-        }:
-            return str(explicit)
-
-        normalized_name = name.lower().strip()
-        if normalized_name in {
-            "price_momentum",
-            "volume_momentum",
-            "mean_reversion",
-            "volatility_breakout",
-        }:
-            return normalized_name
-        if normalized_name.startswith("volume_"):
-            return "volume_momentum"
-        if normalized_name.startswith("price_"):
-            return "price_momentum"
-        if "reversion" in normalized_name:
-            return "mean_reversion"
-        if "breakout" in normalized_name:
-            return "volatility_breakout"
-
-        raise ValueError(
-            "features.definitions custom feature '"
-            f"{name}' must map to one of: price_momentum, volume_momentum, "
-            "mean_reversion, volatility_breakout. Set params.kind to disambiguate."
-        )
-
-    for definition in feature_definitions:
-        if not isinstance(definition, dict):
-            continue
-        feature_type = definition.get("type")
-        params = dict(definition.get("params") or {})
-
-        if feature_type == "technical":
-            price_features.extend(
-                [
-                    "close_to_open",
-                    "high_to_low",
-                    "close_to_high",
-                    "close_to_low",
-                    "price_range",
-                ]
-            )
-            if "period" in params:
-                momentum_features["rsi_period"] = int(params["period"])
-        elif feature_type == "custom":
-            custom_name = str(definition.get("name") or "custom_feature")
-            custom_key = _resolve_custom_feature_key(custom_name, params)
-            if custom_key == "volatility_breakout":
-                breakout_params = {k: v for k, v in params.items() if k != "kind"}
-                if "lookback" not in breakout_params:
-                    breakout_params["lookback"] = _coerce_periods(params)
-                custom_features.append({"volatility_breakout": breakout_params})
-                continue
-
-            custom_features.append({custom_key: {"periods": _coerce_periods(params)}})
-
-    features_runtime_cfg = {
-        "pipeline": {
-            "steps": [
-                *feature_steps,
-                "generate_volume_features",
-                "generate_custom_features",
-                "handle_missing_values",
-                "remove_outliers",
-                "scale_features",
-                "select_features",
-            ]
-        },
-        "price_features": price_features,
-        "volume_features": [{"on_balance_volume": True}],
-        "volatility_features": [{"atr_periods": [14]}],
-        "custom_features": custom_features,
-        "feature_combinations": [],
-        "sentiment": {"enabled": False},
-        "feature_selection": {"method": "recursive", "n_features": 20},
-        "preprocessing": {
-            "scaling": {"method": "standard", "target_range": [-1, 1]},
-            "outliers": {"method": "winsorize", "limits": [0.01, 0.99]},
-        },
-    }
-    if momentum_features:
-        features_runtime_cfg["momentum_features"] = momentum_features
-
-    return model_cfg, features_runtime_cfg
+def _copy_artifact(source: str | Path, destination: Path) -> str:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    payload = Path(source).read_text(encoding="utf-8")
+    destination.write_text(payload, encoding="utf-8")
+    return str(destination)
 
 
 @research_app.command("run")
 def cmd_research_run(
     config: str = typer.Option(
         "config/project.yaml", "-c", "--config", help="Path to project config YAML"
+    ),
+    legacy_config_dir: Optional[str] = typer.Option(
+        None,
+        "--legacy-config-dir",
+        help="Import legacy YAML files from this directory instead of reading project.yaml",
     ),
     skip_validation: bool = typer.Option(
         False,
@@ -657,10 +515,27 @@ def cmd_research_run(
 
     project_path = Path(config)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    run_dir = Path("runs") / timestamp
+    try:
+        loaded_project = load_project_config(
+            config_path=project_path,
+            legacy_config_dir=legacy_config_dir,
+        )
+        run_name = (
+            (loaded_project.raw.get("project") or {}).get("name")
+        ) or project_path.stem
+        initial_warnings = list(loaded_project.warnings)
+    except Exception:
+        run_name = project_path.stem
+        initial_warnings = []
+
+    run_dir = (
+        Path("runs") / "research" / f"{timestamp}_{_slugify_project_name(run_name)}"
+    )
     run_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {
+        "run_type": "research",
+        "mode": "research",
         "project_name": None,
         "project_profile": None,
         "symbols": [],
@@ -669,17 +544,34 @@ def cmd_research_run(
         "timestamps": {"started_at": datetime.now(timezone.utc).isoformat()},
         "status": "failed",
         "run_dir": str(run_dir),
+        "warnings": list(initial_warnings),
         "artifacts": {},
     }
 
     try:
         validation = validate_project_config(
-            config_path=project_path, output_dir=run_dir
+            config_path=project_path,
+            output_dir=run_dir / "validation",
+            legacy_config_dir=legacy_config_dir,
+            timestamp_subdir=False,
+        )
+        summary["warnings"] = list(
+            dict.fromkeys(summary["warnings"] + validation.get("warnings", []))
         )
         resolved_path = Path(validation["artifacts"]["resolved_config"])
-        summary["artifacts"]["resolved_project_config"] = str(resolved_path)
+        root_resolved_path = run_dir / "resolved_project_config.yaml"
+        summary["artifacts"]["resolved_project_config"] = _copy_artifact(
+            resolved_path,
+            root_resolved_path,
+        )
+        summary["artifacts"]["validation_summary"] = validation["artifacts"]["summary"]
+        if validation["artifacts"].get("migrated_project_config"):
+            summary["artifacts"]["migrated_project_config"] = _copy_artifact(
+                validation["artifacts"]["migrated_project_config"],
+                run_dir / "migrated_project_config.yaml",
+            )
 
-        with resolved_path.open("r", encoding="utf-8") as handle:
+        with root_resolved_path.open("r", encoding="utf-8") as handle:
             resolved_project = yaml.safe_load(handle) or {}
 
         missing = [
@@ -693,21 +585,33 @@ def cmd_research_run(
                 + ", ".join(missing)
             )
 
-        model_cfg, features_cfg = _project_to_runtime_configs(resolved_project)
+        model_cfg, features_cfg, backtest_cfg = compile_research_runtime_configs(
+            resolved_project
+        )
         runtime_model_path = run_dir / "runtime_model_config.yaml"
         runtime_features_path = run_dir / "runtime_features_config.yaml"
+        runtime_backtest_path = run_dir / "runtime_backtest_config.yaml"
         runtime_model_path.write_text(
             yaml.safe_dump(model_cfg, sort_keys=False), encoding="utf-8"
         )
         runtime_features_path.write_text(
             yaml.safe_dump(features_cfg, sort_keys=False), encoding="utf-8"
         )
+        runtime_backtest_path.write_text(
+            yaml.safe_dump(backtest_cfg, sort_keys=False), encoding="utf-8"
+        )
+        summary["artifacts"]["runtime_model_config"] = str(runtime_model_path)
+        summary["artifacts"]["runtime_features_config"] = str(runtime_features_path)
+        summary["artifacts"]["runtime_backtest_config"] = str(runtime_backtest_path)
 
+        training_cfg = model_cfg.get("training", {})
         pipeline_output = run_pipeline(
             str(runtime_model_path),
             skip_validation=skip_validation,
             include_metadata=True,
             features_config_path=str(runtime_features_path),
+            tuning_enabled=bool(training_cfg.get("tune_hyperparameters", True)),
+            optuna_trials=int(training_cfg.get("optuna_trials", 50)),
         )
 
         results = (
@@ -745,20 +649,59 @@ def cmd_research_run(
                 Path(experiment_dir) / "preprocessing.json"
             )
 
+        backtest_payload: dict[str, Any] = {}
+        if experiment_dir:
+            backtest_root = run_dir / "backtests"
+            for symbol in sorted(results) or sorted(summary["symbols"]):
+                model_path = Path(experiment_dir) / symbol
+                if not model_path.is_dir():
+                    summary["warnings"].append(
+                        f"Skipping automatic backtest for {symbol}: model artifact directory not found at {model_path}."
+                    )
+                    continue
+
+                symbol_backtest = run_model_backtest(
+                    model_config=str(runtime_model_path),
+                    model_path=str(model_path),
+                    backtest_config=str(runtime_backtest_path),
+                    risk_config=None,
+                    skip_validation=skip_validation,
+                    symbols=[symbol],
+                    output_dir=backtest_root / symbol,
+                )
+                backtest_payload[symbol] = symbol_backtest
+
+        if backtest_payload:
+            backtest_summary_path = run_dir / "backtest_summary.json"
+            backtest_summary_path.write_text(
+                json.dumps(backtest_payload, indent=2),
+                encoding="utf-8",
+            )
+            summary["artifacts"]["backtest_summary"] = str(backtest_summary_path)
+
+        summary["warnings"] = list(dict.fromkeys(summary["warnings"]))
         summary["timestamps"]["completed_at"] = datetime.now(timezone.utc).isoformat()
 
         metrics_payload = {
-            "status": "available" if results else "placeholder",
-            "metrics_by_symbol": {
+            "status": "available" if results or backtest_payload else "placeholder",
+            "research_metrics_by_symbol": {
                 symbol: details.get("test_metrics", {})
                 for symbol, details in results.items()
                 if isinstance(details, dict)
             },
+            "backtest_metrics_by_symbol": {
+                symbol: payload.get(symbol, {}).get("metrics", {})
+                for symbol, payload in backtest_payload.items()
+                if isinstance(payload, dict)
+            },
         }
-        if not metrics_payload["metrics_by_symbol"]:
+        if (
+            not metrics_payload["research_metrics_by_symbol"]
+            and not metrics_payload["backtest_metrics_by_symbol"]
+        ):
             metrics_payload["status"] = "placeholder"
             metrics_payload["message"] = (
-                "No test metrics were produced by the research pipeline."
+                "No research or backtest metrics were produced by the research workflow."
             )
 
     except Exception as exc:
@@ -828,11 +771,19 @@ def cmd_validate(
     config: str = typer.Option(
         "config/project.yaml", "-c", "--config", help="Path to project config YAML"
     ),
+    legacy_config_dir: Optional[str] = typer.Option(
+        None,
+        "--legacy-config-dir",
+        help="Import legacy YAML files from this directory instead of reading project.yaml",
+    ),
 ):
     """Validate canonical project config and emit resolved artifacts."""
 
     try:
-        result = validate_project_config(config_path=config)
+        result = validate_project_config(
+            config_path=config,
+            legacy_config_dir=legacy_config_dir,
+        )
     except Exception as exc:
         typer.echo(f"Project config validation failed: {exc}", err=True)
         raise typer.Exit(code=1)

@@ -13,7 +13,7 @@ Typer app to preserve the existing console entry points.
 
 import logging
 from pathlib import Path
-from typing import Tuple
+from typing import Any, Tuple
 
 import pandas as pd
 import yaml
@@ -163,6 +163,31 @@ def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
         ) from exc
 
 
+def _align_timestamp_to_index(
+    value: Any,
+    index: pd.Index,
+) -> pd.Timestamp | None:
+    """Align a config timestamp to the timezone semantics of a datetime index."""
+
+    if value is None:
+        return None
+
+    timestamp = pd.to_datetime(value)
+    if not isinstance(index, pd.DatetimeIndex):
+        return timestamp
+
+    index_tz = index.tz
+    timestamp_tz = timestamp.tzinfo
+    if index_tz is None:
+        if timestamp_tz is not None:
+            return timestamp.tz_convert(None)
+        return timestamp
+
+    if timestamp_tz is None:
+        return timestamp.tz_localize(index_tz)
+    return timestamp.tz_convert(index_tz)
+
+
 def time_aware_split(
     df_labeled: pd.DataFrame,
     cfg: dict,
@@ -218,8 +243,8 @@ def time_aware_split(
     data_end = df.index.max()
     split_strategy = "window" if test_start else "fraction"
     if test_start:
-        start_dt = pd.to_datetime(test_start)
-        end_dt = pd.to_datetime(test_end) if test_end else None
+        start_dt = _align_timestamp_to_index(test_start, df.index)
+        end_dt = _align_timestamp_to_index(test_end, df.index) if test_end else None
         train_df = df[df.index < start_dt]
         test_df = (
             df[(df.index >= start_dt) & (df.index <= end_dt)]
@@ -254,8 +279,16 @@ def time_aware_split(
     coverage: dict = {
         "data_start": data_start.isoformat(),
         "data_end": data_end.isoformat(),
-        "test_start": pd.to_datetime(test_start).isoformat() if test_start else None,
-        "test_end": pd.to_datetime(test_end).isoformat() if test_end else None,
+        "test_start": (
+            _align_timestamp_to_index(test_start, df.index).isoformat()
+            if test_start
+            else None
+        ),
+        "test_end": (
+            _align_timestamp_to_index(test_end, df.index).isoformat()
+            if test_end
+            else None
+        ),
         "train_start": train_df.index.min().isoformat(),
         "train_end": train_df.index.max().isoformat(),
         "test_start_actual": test_df.index.min().isoformat(),
@@ -360,6 +393,8 @@ def run_pipeline(
     include_coverage: bool = False,
     include_metadata: bool = False,
     features_config_path: str = "config/features_config.yaml",
+    tuning_enabled: bool | None = None,
+    optuna_trials: int | None = None,
 ):
     """Run the end-to-end training pipeline.
 
@@ -383,6 +418,15 @@ def run_pipeline(
     # Load configuration
     with open(config_path, "r") as file:
         config = yaml.safe_load(file)
+
+    training_cfg = config.get("training", {}) if isinstance(config, dict) else {}
+    if tuning_enabled is None:
+        tuning_enabled = bool(training_cfg.get("tune_hyperparameters", True))
+    if optuna_trials is None:
+        try:
+            optuna_trials = int(training_cfg.get("optuna_trials", 50))
+        except (TypeError, ValueError):
+            optuna_trials = 50
 
     cache_dir = config.get("data", {}).get("cache_dir") or "data/raw"
     setup_directories(cache_dir)
@@ -450,8 +494,19 @@ def run_pipeline(
             )
 
             # 5. Optimize Hyperparameters
-            logger.info(f"Optimizing hyperparameters for {symbol}...")
-            best_params = model.optimize_hyperparameters(X_train, y_train, n_trials=50)
+            best_params = None
+            if tuning_enabled:
+                logger.info(f"Optimizing hyperparameters for {symbol}...")
+                best_params = model.optimize_hyperparameters(
+                    X_train,
+                    y_train,
+                    n_trials=optuna_trials,
+                )
+            else:
+                logger.info(
+                    "Skipping hyperparameter optimization for %s; using model defaults.",
+                    symbol,
+                )
 
             # 6. Train Model
             logger.info(f"Training model for {symbol}...")
@@ -669,6 +724,8 @@ def run_model_backtest(
     slippage_fixed: float | None = None,
     liquidity_max_participation: float | None = None,
     skip_validation: bool = False,
+    symbols: list[str] | None = None,
+    output_dir: str | Path | None = None,
 ) -> dict:
     """Backtest a saved model’s predictions on the configured test window.
 
@@ -721,21 +778,31 @@ def run_model_backtest(
             )
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    data_dict = loader.fetch_data()
-    validation_path = Path(f"reports/backtests/{timestamp}") / "validation.json"
+    base_dir = (
+        Path(output_dir)
+        if output_dir is not None
+        else Path(f"reports/backtests/{timestamp}")
+    )
+    base_dir.mkdir(parents=True, exist_ok=True)
+    if symbols is None:
+        data_dict = loader.fetch_data()
+    else:
+        data_dict = loader.fetch_data(symbols=symbols)
+    validation_path = base_dir / "validation.json"
     _validate_or_raise(
         loader=loader,
         data=data_dict,
         report_path=validation_path,
         skip_validation=skip_validation,
     )
-    base_dir = Path(f"reports/backtests/{timestamp}")
-    base_dir.mkdir(parents=True, exist_ok=True)
 
     summary: dict = {}
     prepared_data: dict[str, pd.DataFrame] = {}
     artifact_dirs: dict[str, Path] = {}
     coverage_report: dict[str, dict] = {}
+    single_symbol_output = (
+        output_dir is not None and symbols is not None and len(symbols) == 1
+    )
 
     trading_cfg = (cfg or {}).get("trading", {})
     stop_loss = trading_cfg.get("stop_loss")
@@ -815,7 +882,9 @@ def run_model_backtest(
             bt_df["label"] = preds
 
             prepared_data[symbol] = bt_df
-            artifact_dirs[symbol] = base_dir / symbol
+            artifact_dirs[symbol] = (
+                base_dir if single_symbol_output else base_dir / symbol
+            )
         except Exception as exc:
             logger.error("Backtest failed for %s: %s", symbol, exc)
             summary[symbol] = {"error": str(exc)}
