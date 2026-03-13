@@ -28,6 +28,7 @@ from quanttradeai.utils.config_schemas import (
     RiskManagementConfig,
 )
 from quanttradeai.utils.impact_loader import ImpactConfigError, load_impact_config
+from quanttradeai.utils.project_config import load_project_config
 
 
 DEFAULT_CONFIG_PATHS: Dict[str, Path] = {
@@ -140,9 +141,14 @@ def validate_project_config(
     config_path: Path | str = "config/project.yaml",
     *,
     output_dir: Path | str = "reports/config_validation",
+    legacy_config_dir: Path | str | None = None,
+    timestamp_subdir: bool = True,
 ) -> Dict:
-    path = Path(config_path)
-    raw = _load_yaml(path)
+    loaded = load_project_config(
+        config_path=config_path,
+        legacy_config_dir=legacy_config_dir,
+    )
+    raw = loaded.raw
 
     missing_sections = [name for name in REQUIRED_PROJECT_SECTIONS if name not in raw]
     if missing_sections:
@@ -153,17 +159,18 @@ def validate_project_config(
     resolved = _merge_preserving_unknown(raw, cfg.model_dump(mode="json"))
 
     unused_legacy_sections = sorted(LEGACY_PROJECT_SECTIONS.intersection(raw.keys()))
-    warnings = []
+    warnings = list(loaded.warnings)
     if unused_legacy_sections:
         warnings.append(
-            "Legacy sections present but unused for project validation: "
+            "Legacy compatibility sections present: "
             + ", ".join(unused_legacy_sections)
+            + ". They are accepted for migration compatibility but should be moved into canonical project config sections."
         )
 
     summary = _render_project_summary(resolved=resolved, warnings=warnings)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    run_dir = Path(output_dir) / timestamp
+    run_dir = Path(output_dir) / timestamp if timestamp_subdir else Path(output_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
 
     resolved_path = run_dir / "resolved_project_config.yaml"
@@ -174,17 +181,26 @@ def validate_project_config(
     with summary_path.open("w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
-    return {
+    result = {
         "timestamp": timestamp,
-        "config_path": str(path),
+        "config_path": loaded.source_path,
         "all_passed": True,
         "summary": summary,
         "warnings": warnings,
+        "source": loaded.source,
         "artifacts": {
             "resolved_config": str(resolved_path),
             "summary": str(summary_path),
         },
     }
+
+    if loaded.source == "legacy":
+        migrated_path = run_dir / "migrated_project_config.yaml"
+        with migrated_path.open("w", encoding="utf-8") as f:
+            yaml.safe_dump(resolved, f, sort_keys=False)
+        result["artifacts"]["migrated_project_config"] = str(migrated_path)
+
+    return result
 
 
 @dataclass

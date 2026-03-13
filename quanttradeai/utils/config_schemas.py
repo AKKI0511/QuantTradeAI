@@ -273,12 +273,8 @@ class KeltnerChannelsConfig(BaseModel):
 
 class VolatilityFeaturesConfig(BaseModel):
     atr_periods: List[int] = Field(default_factory=list)
-    bollinger_bands: Optional[BollingerBandsConfig] = Field(
-        default_factory=BollingerBandsConfig
-    )
-    keltner_channels: Optional[KeltnerChannelsConfig] = Field(
-        default_factory=KeltnerChannelsConfig
-    )
+    bollinger_bands: Optional[BollingerBandsConfig] = None
+    keltner_channels: Optional[KeltnerChannelsConfig] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -464,12 +460,56 @@ class ProjectFeaturesSection(BaseModel):
     definitions: List[FeatureDefinition] = Field(default_factory=list)
 
 
+class ProjectResearchLabelsConfig(BaseModel):
+    type: Literal["forward_return"] = "forward_return"
+    horizon: int = 5
+    buy_threshold: float = 0.01
+    sell_threshold: float = -0.01
+
+
+class ProjectResearchTuningConfig(BaseModel):
+    enabled: bool = True
+    trials: int = Field(50, ge=1)
+
+
+class ProjectResearchModelConfig(BaseModel):
+    kind: Literal["classifier"] = "classifier"
+    family: Literal["voting"] = "voting"
+    tuning: ProjectResearchTuningConfig = Field(
+        default_factory=ProjectResearchTuningConfig
+    )
+
+
+class ProjectResearchEvaluationConfig(BaseModel):
+    split: Literal["time_aware"] = "time_aware"
+    use_configured_test_window: bool = True
+
+
+class ProjectResearchBacktestCostsConfig(BaseModel):
+    enabled: bool = False
+    bps: float = Field(0.0, ge=0.0)
+
+
+class ProjectResearchBacktestConfig(BaseModel):
+    costs: ProjectResearchBacktestCostsConfig = Field(
+        default_factory=ProjectResearchBacktestCostsConfig
+    )
+
+
 class ProjectResearchSection(BaseModel):
     enabled: bool = True
-    labels: Dict[str, Any] = Field(default_factory=dict)
-    model: Dict[str, Any] = Field(default_factory=dict)
-    evaluation: Dict[str, Any] = Field(default_factory=dict)
-    backtest: Dict[str, Any] = Field(default_factory=dict)
+    labels: ProjectResearchLabelsConfig = Field(
+        default_factory=ProjectResearchLabelsConfig
+    )
+    model: ProjectResearchModelConfig = Field(
+        default_factory=ProjectResearchModelConfig
+    )
+    evaluation: ProjectResearchEvaluationConfig = Field(
+        default_factory=ProjectResearchEvaluationConfig
+    )
+    backtest: ProjectResearchBacktestConfig = Field(
+        default_factory=ProjectResearchBacktestConfig
+    )
 
 
 class ProjectAgentConfig(BaseModel):

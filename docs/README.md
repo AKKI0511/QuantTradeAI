@@ -30,6 +30,10 @@ poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 
+# Import an existing legacy config/ directory into the canonical workflow
+poetry run quanttradeai validate --legacy-config-dir config
+poetry run quanttradeai research run --legacy-config-dir config
+
 # Legacy multi-file workflow remains supported
 poetry run quanttradeai fetch-data -c config/model_config.yaml
 poetry run quanttradeai train -c config/model_config.yaml
@@ -38,6 +42,9 @@ poetry run quanttradeai evaluate -c config/model_config.yaml -m models/experimen
 
 `train` saves models under `models/experiments/<timestamp>/<SYMBOL>/`, which is
 the expected path shape for `evaluate --model-path`.
+
+Canonical research runs also persist resolved configs and compiled runtime YAMLs
+under `runs/research/<timestamp>_<project>/`.
 
 ## 📖 Documentation Structure
 
@@ -51,7 +58,7 @@ The [API Documentation](api/) provides comprehensive coverage of:
 - **Backtesting Framework** - Trade simulation and performance metrics
 - **Trading Utilities** - Risk management, position sizing, real-time position control
 - **Utility Functions** - Metrics, visualization, and configuration schemas
-- **Configuration** - Model and feature configuration examples
+- **Configuration** - Canonical `project.yaml` plus legacy compatibility examples
 
 ### 2. Quick Reference Guide
 The [Quick Reference Guide](quick-reference.md) includes:
