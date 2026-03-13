@@ -36,6 +36,29 @@ def test_time_aware_split_with_start_only():
     assert coverage["fallback_used"] is False
 
 
+
+
+def test_time_aware_split_preserves_local_boundary_for_tzaware_window_on_naive_index():
+    idx = pd.date_range("2024-01-01", periods=10, freq="D")
+    df = pd.DataFrame({"Close": range(10)}, index=idx)
+    cfg = {
+        "data": {
+            "test_start": "2024-01-06T00:00:00-05:00",
+            "test_end": "2024-01-08T00:00:00-05:00",
+        }
+    }
+
+    train, test, coverage = time_aware_split(df, cfg)
+
+    expected_start = pd.Timestamp("2024-01-06")
+    expected_end = pd.Timestamp("2024-01-08")
+    assert train.index.max() < expected_start
+    assert test.index.min() == expected_start
+    assert test.index.max() == expected_end
+    assert coverage["test_start"].startswith("2024-01-06T00:00:00")
+    assert coverage["test_end"].startswith("2024-01-08T00:00:00")
+    assert coverage["coverage_ok"] is True
+    assert coverage["fallback_used"] is False
 def test_time_aware_split_accepts_naive_window_on_tz_aware_index():
     idx = pd.date_range("2024-01-01", periods=10, freq="D", tz="America/New_York")
     df = pd.DataFrame({"Close": range(10)}, index=idx)

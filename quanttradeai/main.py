@@ -180,7 +180,7 @@ def _align_timestamp_to_index(
     timestamp_tz = timestamp.tzinfo
     if index_tz is None:
         if timestamp_tz is not None:
-            return timestamp.tz_convert(None)
+            return timestamp.tz_localize(None)
         return timestamp
 
     if timestamp_tz is None:
