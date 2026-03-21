@@ -1,0 +1,55 @@
+project:
+  name: research_lab
+  profile: research
+
+profiles:
+  research:
+    mode: research
+  paper:
+    mode: paper
+  live:
+    mode: live
+
+data:
+  symbols:
+    - AAPL
+    - MSFT
+  start_date: "2018-01-01"
+  end_date: "2024-12-31"
+  timeframe: "1d"
+  test_start: "2024-09-01"
+  test_end: "2024-12-31"
+
+features:
+  definitions:
+    - name: rsi_14
+      type: technical
+      params:
+        period: 14
+
+research:
+  enabled: true
+  labels:
+    type: forward_return
+    horizon: 5
+    buy_threshold: 0.01
+    sell_threshold: -0.01
+  model:
+    kind: classifier
+    family: voting
+    tuning:
+      enabled: true
+      trials: 50
+  evaluation:
+    split: time_aware
+    use_configured_test_window: true
+  backtest:
+    costs:
+      enabled: true
+      bps: 5
+
+agents: []
+
+deployment:
+  target: docker-compose
+  mode: paper

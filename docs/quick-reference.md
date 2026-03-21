@@ -19,7 +19,11 @@ poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 
-# Fetch data
+# Import an existing legacy config/ directory into the canonical workflow
+poetry run quanttradeai validate --legacy-config-dir config
+poetry run quanttradeai research run --legacy-config-dir config
+
+# Legacy compatibility commands
 poetry run quanttradeai fetch-data
 poetry run quanttradeai fetch-data --refresh
 
@@ -49,6 +53,15 @@ poetry run quanttradeai live-trade -m models/experiments/<timestamp>/<SYMBOL> \
   --initial-capital 1000000 --min-history 220 --history-window 512
 ```
 
+Canonical research artifacts:
+- `runs/research/<timestamp>_<project>/resolved_project_config.yaml`
+- `runs/research/<timestamp>_<project>/runtime_model_config.yaml`
+- `runs/research/<timestamp>_<project>/runtime_features_config.yaml`
+- `runs/research/<timestamp>_<project>/runtime_backtest_config.yaml`
+- `runs/research/<timestamp>_<project>/summary.json`
+- `runs/research/<timestamp>_<project>/metrics.json`
+- `runs/research/<timestamp>_<project>/backtest_summary.json`
+
 ## 📊 Python API Patterns
 
 ### Data Loading
@@ -65,6 +78,7 @@ if not is_valid:
     print(report)
     # CLI commands write this report to models/experiments/<timestamp>/validation.json
     # or reports/backtests/<timestamp>/validation.json
+    # canonical research runs also persist resolved configs under runs/research/<timestamp>_<project>/
 ```
 
 ### Feature Engineering
@@ -213,6 +227,63 @@ plot_performance(equity_curve, title="Strategy Performance")
 
 ## ⚙️ Configuration Examples
 
+### Canonical Project Configuration
+```yaml
+project:
+  name: research_lab
+  profile: research
+
+profiles:
+  research:
+    mode: research
+  paper:
+    mode: paper
+  live:
+    mode: live
+
+data:
+  symbols: ["AAPL", "MSFT"]
+  start_date: "2018-01-01"
+  end_date: "2024-12-31"
+  timeframe: "1d"
+  test_start: "2024-09-01"
+  test_end: "2024-12-31"
+
+features:
+  definitions:
+    - name: rsi_14
+      type: technical
+      params:
+        period: 14
+
+research:
+  enabled: true
+  labels:
+    type: forward_return
+    horizon: 5
+    buy_threshold: 0.01
+    sell_threshold: -0.01
+  model:
+    kind: classifier
+    family: voting
+    tuning:
+      enabled: true
+      trials: 50
+  evaluation:
+    split: time_aware
+    use_configured_test_window: true
+  backtest:
+    costs:
+      enabled: true
+      bps: 5
+
+agents: []
+
+deployment:
+  target: docker-compose
+  mode: paper
+```
+
 ### Model Configuration
 ```yaml
 data:
@@ -275,7 +346,8 @@ preprocessing:
 
 ## 🕒 Time-Aware Splitting
 
-- Train/test splits respect `data.test_start`/`data.test_end` in the model config.
+- In the canonical workflow, train/test splits respect `data.test_start` and `data.test_end` from `config/project.yaml`.
+- `research.evaluation.use_configured_test_window: false` disables that explicit window and falls back to a chronological split.
 - If only `test_start` is provided: train = dates < `test_start`; test = dates ≥ `test_start`.
 - If neither is provided: a chronological split uses the last `training.test_size` fraction as test (default 0.2).
 

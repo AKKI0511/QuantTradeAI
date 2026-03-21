@@ -36,6 +36,47 @@ def test_time_aware_split_with_start_only():
     assert coverage["fallback_used"] is False
 
 
+
+
+def test_time_aware_split_preserves_local_boundary_for_tzaware_window_on_naive_index():
+    idx = pd.date_range("2024-01-01", periods=10, freq="D")
+    df = pd.DataFrame({"Close": range(10)}, index=idx)
+    cfg = {
+        "data": {
+            "test_start": "2024-01-06T00:00:00-05:00",
+            "test_end": "2024-01-08T00:00:00-05:00",
+        }
+    }
+
+    train, test, coverage = time_aware_split(df, cfg)
+
+    expected_start = pd.Timestamp("2024-01-06")
+    expected_end = pd.Timestamp("2024-01-08")
+    assert train.index.max() < expected_start
+    assert test.index.min() == expected_start
+    assert test.index.max() == expected_end
+    assert coverage["test_start"].startswith("2024-01-06T00:00:00")
+    assert coverage["test_end"].startswith("2024-01-08T00:00:00")
+    assert coverage["coverage_ok"] is True
+    assert coverage["fallback_used"] is False
+def test_time_aware_split_accepts_naive_window_on_tz_aware_index():
+    idx = pd.date_range("2024-01-01", periods=10, freq="D", tz="America/New_York")
+    df = pd.DataFrame({"Close": range(10)}, index=idx)
+    cfg = {"data": {"test_start": "2024-01-06", "test_end": "2024-01-08"}}
+
+    train, test, coverage = time_aware_split(df, cfg)
+
+    expected_start = pd.Timestamp("2024-01-06", tz="America/New_York")
+    expected_end = pd.Timestamp("2024-01-08", tz="America/New_York")
+    assert train.index.max() < expected_start
+    assert test.index.min() == expected_start
+    assert test.index.max() == expected_end
+    assert coverage["test_start"].startswith("2024-01-06T00:00:00-05:00")
+    assert coverage["test_end"].startswith("2024-01-08T00:00:00-05:00")
+    assert coverage["coverage_ok"] is True
+    assert coverage["fallback_used"] is False
+
+
 def test_time_aware_split_fallback_fraction():
     idx = pd.date_range("2024-01-01", periods=10, freq="D")
     df = pd.DataFrame({"Close": range(10)}, index=idx)
@@ -149,9 +190,11 @@ def test_pipeline_handles_secondary_timeframes(tmp_path):
     with config_path.open("w") as fh:
         yaml.safe_dump(config, fh)
 
-    with patch("quanttradeai.main.DataLoader") as mock_loader, patch(
-        "quanttradeai.main.DataProcessor"
-    ) as mock_processor, patch("quanttradeai.main.MomentumClassifier") as mock_model:
+    with (
+        patch("quanttradeai.main.DataLoader") as mock_loader,
+        patch("quanttradeai.main.DataProcessor") as mock_processor,
+        patch("quanttradeai.main.MomentumClassifier") as mock_model,
+    ):
         loader_instance = mock_loader.return_value
         loader_instance.fetch_data.return_value = {"AAA": df}
         loader_instance.validate_data.return_value = (True, {"AAA": {"passed": True}})
@@ -190,9 +233,7 @@ def test_pipeline_handles_secondary_timeframes(tmp_path):
         model_instance.evaluate.return_value = {"accuracy": 1.0}
         model_instance.save_model.return_value = None
 
-        results, coverage_info = run_pipeline(
-            str(config_path), include_coverage=True
-        )
+        results, coverage_info = run_pipeline(str(config_path), include_coverage=True)
 
     mock_loader.assert_called_once_with(str(config_path))
     assert "AAA" in results
@@ -270,8 +311,9 @@ def test_run_pipeline_fits_preprocessing_on_train_only(tmp_path):
         def save_model(self, path):
             return None
 
-    with patch("quanttradeai.main.DataLoader") as mock_loader, patch(
-        "quanttradeai.main.MomentumClassifier", FakeClassifier
+    with (
+        patch("quanttradeai.main.DataLoader") as mock_loader,
+        patch("quanttradeai.main.MomentumClassifier", FakeClassifier),
     ):
         loader_instance = mock_loader.return_value
         loader_instance.fetch_data.return_value = {"AAA": df}
@@ -290,4 +332,3 @@ def test_run_pipeline_fits_preprocessing_on_train_only(tmp_path):
 
     assert train_frame["alpha_feature"].mean() == pytest.approx(0.0, abs=1e-9)
     assert test_frame["alpha_feature"].iloc[0] == pytest.approx(expected)
-
