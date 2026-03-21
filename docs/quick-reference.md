@@ -15,6 +15,10 @@ poetry run quanttradeai validate -c config/project.yaml
 # Run canonical research workflow
 poetry run quanttradeai research run -c config/project.yaml
 
+# Run a YAML-defined agent backtest
+poetry run quanttradeai init --template llm-agent -o config/project.yaml
+poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+
 # Fetch data
 poetry run quanttradeai fetch-data
 poetry run quanttradeai fetch-data --refresh

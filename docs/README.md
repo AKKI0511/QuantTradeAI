@@ -30,6 +30,10 @@ poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 
+# Runnable agent backtest workflow
+poetry run quanttradeai init --template llm-agent -o config/project.yaml
+poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+
 # Legacy multi-file workflow remains supported
 poetry run quanttradeai fetch-data -c config/model_config.yaml
 poetry run quanttradeai train -c config/model_config.yaml
@@ -75,7 +79,9 @@ The [Quick Reference Guide](quick-reference.md) includes:
 ```
 QuantTradeAI/
 ├── quanttradeai/
-│   ├── main.py              # CLI entry point
+│   ├── cli.py               # Typer CLI entry point
+│   ├── main.py              # Legacy CLI bridge + pipeline helpers
+│   ├── agents/              # Agent runtime, prompts, and backtest orchestration
 │   ├── data/                # Data processing
 │   │   ├── loader.py        # Data fetching and caching
 │   │   ├── processor.py     # Feature engineering

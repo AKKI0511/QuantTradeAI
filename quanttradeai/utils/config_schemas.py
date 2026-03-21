@@ -472,15 +472,69 @@ class ProjectResearchSection(BaseModel):
     backtest: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ProjectAgentLLMConfig(BaseModel):
+    provider: str
+    model: str
+    prompt_file: str
+    api_key_env_var: Optional[str] = None
+    extra: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectAgentMarketDataContext(BaseModel):
+    enabled: bool = True
+    timeframe: str = "1d"
+    lookback_bars: int = Field(20, gt=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_bool(cls, value: Any) -> Dict[str, Any]:
+        if value in (None, False):
+            return {"enabled": False}
+        if value is True:
+            return {"enabled": True}
+        return value
+
+
+class ProjectModelSignalSourceConfig(BaseModel):
+    name: str
+    path: str
+
+
+class ProjectAgentContextConfig(BaseModel):
+    market_data: Optional[ProjectAgentMarketDataContext] = None
+    features: List[str] = Field(default_factory=list)
+    model_signals: List[str] = Field(default_factory=list)
+    positions: bool = False
+    orders: bool = False
+    risk_state: bool = False
+    news: bool = False
+    memory: bool = False
+    notes: bool = False
+
+
 class ProjectAgentConfig(BaseModel):
     name: str
     kind: Literal["rule", "model", "llm", "hybrid"]
     mode: Literal["backtest", "paper", "live"]
-    llm: Dict[str, Any] = Field(default_factory=dict)
-    context: Dict[str, Any] = Field(default_factory=dict)
-    tools: List[str] = Field(default_factory=list)
+    llm: Optional[ProjectAgentLLMConfig] = None
+    context: ProjectAgentContextConfig = Field(
+        default_factory=ProjectAgentContextConfig
+    )
+    tools: List[Literal["get_quote", "get_position", "place_order"]] = Field(
+        default_factory=list
+    )
     risk: Dict[str, Any] = Field(default_factory=dict)
-    model_signal_sources: List[str] = Field(default_factory=list)
+    model_signal_sources: List[ProjectModelSignalSourceConfig | str] = Field(
+        default_factory=list
+    )
+
+    @model_validator(mode="after")
+    def validate_llm_requirements(self) -> "ProjectAgentConfig":
+        if self.kind in {"llm", "hybrid"} and self.llm is None:
+            raise ValueError(
+                f"agents.{self.name} requires an llm block when kind is {self.kind}."
+            )
+        return self
 
 
 class ProjectDeploymentSection(BaseModel):

@@ -137,6 +137,66 @@ def test_validate_writes_resolved_artifacts(tmp_path: Path, monkeypatch):
     assert resolved_path.parent.parent.name == "config_validation"
 
 
+def test_init_writes_prompt_assets_for_agent_templates(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    for template_name, prompt_file in (
+        ("llm-agent", "prompts/breakout.md"),
+        ("hybrid", "prompts/hybrid_swing.md"),
+    ):
+        cfg_path = Path("config") / template_name / "project.yaml"
+        result = runner.invoke(
+            app,
+            ["init", "--template", template_name, "--output", str(cfg_path)],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        assert (tmp_path / "config" / template_name / prompt_file).is_file()
+
+
+def test_validate_fails_when_agent_prompt_file_missing(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["llm-agent"], sort_keys=False)
+    )
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "prompt file does not exist" in result.stderr.lower()
+
+
+def test_validate_warns_for_deprecated_model_signal_source_strings(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path = Path("prompts/hybrid_swing.md")
+    prompt_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.write_text("Return JSON only.", encoding="utf-8")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["hybrid"], sort_keys=False)
+    )
+    config_payload["agents"][0]["model_signal_sources"] = ["aapl_daily_classifier"]
+    config_payload["agents"][0]["context"]["model_signals"] = ["aapl_daily_classifier"]
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 0, result.stdout
+    assert "deprecated string model_signal_sources entry" in result.stderr.lower()
+
+
 def test_validate_preserves_unknown_fields_in_resolved_artifact(
     tmp_path: Path, monkeypatch
 ):
@@ -352,14 +412,16 @@ def test_research_run_uses_train_fitted_preprocessing_end_to_end(
 
     train_frame, test_frame = captured_frames[0], captured_frames[1]
     retained = raw_df.iloc[200:].copy()
-    train_raw = retained.loc[retained.index < pd.Timestamp("2020-09-02"), "alpha_feature"]
+    train_raw = retained.loc[
+        retained.index < pd.Timestamp("2020-09-02"), "alpha_feature"
+    ]
     train_clipped = train_raw.clip(
         lower=train_raw.quantile(0.01),
         upper=train_raw.quantile(0.99),
     )
-    expected = (
-        train_raw.quantile(0.99) - train_clipped.mean()
-    ) / train_clipped.std(ddof=0)
+    expected = (train_raw.quantile(0.99) - train_clipped.mean()) / train_clipped.std(
+        ddof=0
+    )
 
     assert train_frame["alpha_feature"].mean() == pytest.approx(0.0, abs=1e-9)
     assert test_frame["alpha_feature"].iloc[0] == pytest.approx(expected)

@@ -1,5 +1,7 @@
 import os
 import tempfile
+import subprocess
+import sys
 
 import pandas as pd
 import yaml
@@ -7,12 +9,34 @@ from typer.testing import CliRunner
 from unittest.mock import patch
 
 
+def test_cli_import_does_not_eagerly_import_main():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "sys.modules.pop('quanttradeai.main', None); "
+                "import quanttradeai.cli; "
+                "print('quanttradeai.main' in sys.modules)"
+            ),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.strip() == "False"
+
+
 def test_cli_fetch_data_smoke():
     from quanttradeai.cli import app
 
     runner = CliRunner()
     with patch("quanttradeai.cli.fetch_data_only") as mock_fn:
-        result = runner.invoke(app, ["fetch-data", "-c", "config/model_config.yaml", "--refresh"])
+        result = runner.invoke(
+            app, ["fetch-data", "-c", "config/model_config.yaml", "--refresh"]
+        )
         assert result.exit_code == 0
         mock_fn.assert_called_once()
 
@@ -32,7 +56,16 @@ def test_cli_evaluate_smoke():
 
     runner = CliRunner()
     with patch("quanttradeai.cli.evaluate_model") as mock_fn:
-        result = runner.invoke(app, ["evaluate", "-c", "config/model_config.yaml", "-m", "models/experiments/foo/AAPL"])
+        result = runner.invoke(
+            app,
+            [
+                "evaluate",
+                "-c",
+                "config/model_config.yaml",
+                "-m",
+                "models/experiments/foo/AAPL",
+            ],
+        )
         assert result.exit_code == 0
         mock_fn.assert_called_once()
 
@@ -45,14 +78,22 @@ def test_cli_backtest_smoke_with_overrides():
         cfg_path = os.path.join(tmpdir, "backtest.yaml")
         data_path = os.path.join(tmpdir, "data.csv")
         # The backtest command reads the CSV and then calls simulate_trades/compute_metrics
-        pd.DataFrame({"Close": [1, 1.01, 1.02], "label": [0, 1, 0]}).to_csv(data_path, index=False)
+        pd.DataFrame({"Close": [1, 1.01, 1.02], "label": [0, 1, 0]}).to_csv(
+            data_path, index=False
+        )
         with open(cfg_path, "w") as f:
             yaml.safe_dump({"execution": {}, "data_path": data_path}, f)
 
         runner = CliRunner()
-        with patch("quanttradeai.cli.simulate_trades") as mock_sim, \
-             patch("quanttradeai.cli.compute_metrics", return_value={"sharpe_ratio": 1.0}):
-            mock_sim.return_value = pd.DataFrame({"strategy_return": [0, 0], "equity_curve": [1, 1.0]})
+        with (
+            patch("quanttradeai.cli.simulate_trades") as mock_sim,
+            patch(
+                "quanttradeai.cli.compute_metrics", return_value={"sharpe_ratio": 1.0}
+            ),
+        ):
+            mock_sim.return_value = pd.DataFrame(
+                {"strategy_return": [0, 0], "equity_curve": [1, 1.0]}
+            )
             result = runner.invoke(
                 app,
                 [
@@ -75,7 +116,10 @@ def test_cli_backtest_model_smoke():
     from quanttradeai.cli import app
 
     runner = CliRunner()
-    with patch("quanttradeai.cli.run_model_backtest", return_value={"AAA": {"metrics": {"sharpe_ratio": 2.0}}}):
+    with patch(
+        "quanttradeai.cli.run_model_backtest",
+        return_value={"AAA": {"metrics": {"sharpe_ratio": 2.0}}},
+    ):
         result = runner.invoke(
             app,
             [
@@ -88,4 +132,3 @@ def test_cli_backtest_model_smoke():
         )
         assert result.exit_code == 0
         assert "sharpe_ratio" in result.stdout
-
