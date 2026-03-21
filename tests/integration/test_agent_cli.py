@@ -127,6 +127,68 @@ def test_agent_run_backtest_writes_artifacts(tmp_path: Path, monkeypatch):
     assert "messages" in prompt_samples[0]["prompt_payload"]
 
 
+def test_agent_run_backtest_omits_ledger_artifact_when_no_trades(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "llm-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["start_date"] = "2024-01-01"
+    config_payload["data"]["end_date"] = "2024-02-09"
+    config_payload["data"]["test_start"] = "2024-01-26"
+    config_payload["data"]["test_end"] = "2024-01-31"
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    with (
+        patch(
+            "quanttradeai.agents.backtest.DataLoader.fetch_data",
+            return_value={"AAPL": _mock_history()},
+        ),
+        patch(
+            "quanttradeai.agents.backtest.DataProcessor.generate_features",
+            _fake_generate_features,
+        ),
+        patch(
+            "quanttradeai.agents.llm.completion",
+            side_effect=_completion_from_actions(
+                ["hold", "hold", "hold", "hold", "hold"]
+            ),
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "breakout_gpt",
+                "--config",
+                str(config_path),
+                "--mode",
+                "backtest",
+                "--skip-validation",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    run_dir = Path(payload["run_dir"])
+    assert payload["status"] == "success"
+    assert "ledger" not in payload["artifacts"]
+    assert not (run_dir / "ledger.csv").exists()
+
+
 class FakeSignalClassifier:
     def __init__(self, *args, **kwargs):
         self.feature_columns = ["rsi"]

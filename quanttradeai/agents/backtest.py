@@ -406,14 +406,26 @@ def run_agent_backtest(
             ]
         ].to_csv(run_dir / "equity_curve.csv", index=True)
         _write_json(run_dir / "metrics.json", aggregate_metrics)
+        combined_ledger_path: Path | None = None
         if combined_ledger_frames:
+            combined_ledger_path = run_dir / "ledger.csv"
             pd.concat(combined_ledger_frames, ignore_index=True).to_csv(
-                run_dir / "ledger.csv",
+                combined_ledger_path,
                 index=False,
             )
 
         _write_jsonl(run_dir / "decisions.jsonl", decision_records)
         _write_json(run_dir / "prompt_samples.json", prompt_samples)
+
+        artifacts = {
+            **summary["artifacts"],
+            "metrics": str(run_dir / "metrics.json"),
+            "equity_curve": str(run_dir / "equity_curve.csv"),
+            "decisions": str(run_dir / "decisions.jsonl"),
+            "prompt_samples": str(run_dir / "prompt_samples.json"),
+        }
+        if combined_ledger_path is not None:
+            artifacts["ledger"] = str(combined_ledger_path)
 
         summary.update(
             {
@@ -423,14 +435,7 @@ def run_agent_backtest(
                 "decision_count": len(decision_records),
                 "metrics_by_symbol": metrics_by_symbol,
                 "warnings": validation.get("warnings", []),
-                "artifacts": {
-                    **summary["artifacts"],
-                    "metrics": str(run_dir / "metrics.json"),
-                    "equity_curve": str(run_dir / "equity_curve.csv"),
-                    "ledger": str(run_dir / "ledger.csv"),
-                    "decisions": str(run_dir / "decisions.jsonl"),
-                    "prompt_samples": str(run_dir / "prompt_samples.json"),
-                },
+                "artifacts": artifacts,
             }
         )
         summary["timestamps"]["completed_at"] = datetime.now(timezone.utc).isoformat()
