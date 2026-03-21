@@ -74,10 +74,16 @@ def project_to_runtime_configs(
     }
 
     feature_definitions = features_cfg.get("definitions") or []
+    technical_definitions = [
+        definition
+        for definition in feature_definitions
+        if isinstance(definition, dict) and definition.get("type") == "technical"
+    ]
     feature_steps = ["generate_technical_indicators"]
     price_features: list[str] = []
     momentum_features: dict[str, Any] = {}
     custom_features: list[dict[str, Any]] = []
+    volatility_features: dict[str, Any] = {"atr_periods": [14]}
 
     def _coerce_periods(raw_params: dict[str, Any]) -> list[int]:
         raw_periods = (
@@ -125,6 +131,36 @@ def project_to_runtime_configs(
             "mean_reversion, volatility_breakout. Set params.kind to disambiguate."
         )
 
+    for definition in technical_definitions:
+        params = dict(definition.get("params") or {})
+        price_features.extend(params.get("price_features") or [])
+
+        if "period" in params:
+            momentum_features["rsi_period"] = int(params["period"])
+        if "rsi_period" in params:
+            momentum_features["rsi_period"] = int(params["rsi_period"])
+        if "macd_params" in params:
+            momentum_features["macd_params"] = params["macd_params"]
+        if "stoch_params" in params:
+            momentum_features["stoch_params"] = params["stoch_params"]
+        if "atr_periods" in params:
+            volatility_features["atr_periods"] = _coerce_periods(
+                {"periods": params["atr_periods"]}
+            )
+        if "bollinger_bands" in params:
+            volatility_features["bollinger_bands"] = params["bollinger_bands"]
+        if "keltner_channels" in params:
+            volatility_features["keltner_channels"] = params["keltner_channels"]
+
+    if technical_definitions and not price_features:
+        price_features = [
+            "close_to_open",
+            "high_to_low",
+            "close_to_high",
+            "close_to_low",
+            "price_range",
+        ]
+
     for definition in feature_definitions:
         if not isinstance(definition, dict):
             continue
@@ -132,18 +168,8 @@ def project_to_runtime_configs(
         params = dict(definition.get("params") or {})
 
         if feature_type == "technical":
-            price_features.extend(
-                [
-                    "close_to_open",
-                    "high_to_low",
-                    "close_to_high",
-                    "close_to_low",
-                    "price_range",
-                ]
-            )
-            if "period" in params:
-                momentum_features["rsi_period"] = int(params["period"])
-        elif feature_type == "custom":
+            continue
+        if feature_type == "custom":
             custom_name = str(definition.get("name") or "custom_feature")
             custom_key = _resolve_custom_feature_key(custom_name, params)
             if custom_key == "volatility_breakout":
@@ -169,7 +195,7 @@ def project_to_runtime_configs(
         },
         "price_features": price_features,
         "volume_features": [{"on_balance_volume": True}],
-        "volatility_features": [{"atr_periods": [14]}],
+        "volatility_features": [volatility_features],
         "custom_features": custom_features,
         "feature_combinations": [],
         "sentiment": {"enabled": False},
