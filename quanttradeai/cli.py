@@ -1,7 +1,8 @@
 """Typer-based production CLI for QuantTradeAI.
 
 Commands mirror the legacy argparse CLI and add `backtest-model`.
-The packaged console entry point resolves to this Typer app directly.
+The console script points directly to `quanttradeai.cli:app`, while
+`quanttradeai.main:main` remains as a legacy bridge for older entry paths.
 """
 
 from __future__ import annotations
@@ -14,31 +15,65 @@ from pathlib import Path
 from typing import Any, Optional
 
 import typer
-
-from .main import (
-    run_pipeline,
-    fetch_data_only,
-    evaluate_model,
-    run_live_pipeline,
-    run_model_backtest,
-)
-from .backtest.backtester import simulate_trades, compute_metrics
 from .utils.config_validator import (
     DEFAULT_CONFIG_PATHS,
     validate_all,
     validate_project_config,
 )
+from .utils.project_paths import infer_project_root
 from .utils.project_config import (
     compile_research_runtime_configs,
     load_project_config,
 )
-import yaml
-import pandas as pd
 
 
 app = typer.Typer(add_completion=False, help="QuantTradeAI command line interface")
 research_app = typer.Typer(help="Research workflows")
+agent_app = typer.Typer(help="Agent workflows")
 app.add_typer(research_app, name="research")
+app.add_typer(agent_app, name="agent")
+
+
+def fetch_data_only(*args, **kwargs):
+    from .main import fetch_data_only as _fetch_data_only
+
+    return _fetch_data_only(*args, **kwargs)
+
+
+def run_pipeline(*args, **kwargs):
+    from .main import run_pipeline as _run_pipeline
+
+    return _run_pipeline(*args, **kwargs)
+
+
+def evaluate_model(*args, **kwargs):
+    from .main import evaluate_model as _evaluate_model
+
+    return _evaluate_model(*args, **kwargs)
+
+
+async def run_live_pipeline(*args, **kwargs):
+    from .main import run_live_pipeline as _run_live_pipeline
+
+    return await _run_live_pipeline(*args, **kwargs)
+
+
+def run_model_backtest(*args, **kwargs):
+    from .main import run_model_backtest as _run_model_backtest
+
+    return _run_model_backtest(*args, **kwargs)
+
+
+def simulate_trades(*args, **kwargs):
+    from .backtest.backtester import simulate_trades as _simulate_trades
+
+    return _simulate_trades(*args, **kwargs)
+
+
+def compute_metrics(*args, **kwargs):
+    from .backtest.backtester import compute_metrics as _compute_metrics
+
+    return _compute_metrics(*args, **kwargs)
 
 
 PROJECT_TEMPLATES = {
@@ -112,7 +147,7 @@ PROJECT_TEMPLATES = {
             {
                 "name": "breakout_gpt",
                 "kind": "llm",
-                "mode": "paper",
+                "mode": "backtest",
                 "llm": {
                     "provider": "openai",
                     "model": "gpt-5.3",
@@ -170,8 +205,8 @@ PROJECT_TEMPLATES = {
             {
                 "name": "hybrid_swing_agent",
                 "kind": "hybrid",
-                "mode": "paper",
-                "model_signal_sources": ["aapl_daily_classifier"],
+                "mode": "backtest",
+                "model_signal_sources": [],
                 "llm": {
                     "provider": "openai",
                     "model": "gpt-5.3",
@@ -179,7 +214,7 @@ PROJECT_TEMPLATES = {
                 },
                 "context": {
                     "features": ["rsi_14"],
-                    "model_signals": ["aapl_daily_classifier"],
+                    "model_signals": [],
                     "positions": True,
                 },
                 "tools": ["get_quote", "place_order"],
@@ -189,6 +224,39 @@ PROJECT_TEMPLATES = {
         "deployment": {"target": "docker-compose", "mode": "paper"},
     },
 }
+
+PROJECT_TEMPLATE_PROMPTS = {
+    "llm-agent": {
+        "prompts/breakout.md": """# Breakout Agent
+
+Review the provided market data, selected features, current position state, and risk limits.
+Bias toward holding unless the evidence for a directional trade is clear.
+Use the available tools only as reference context; do not invent tool output.
+""",
+    },
+    "hybrid": {
+        "prompts/hybrid_swing.md": """# Hybrid Swing Agent
+
+Review the provided market data, engineered features, current position state, risk limits, and model signals.
+Treat model signals as one input, not an automatic order.
+Use the available tools only as reference context; do not invent tool output.
+""",
+    },
+}
+
+
+def _write_template_assets(template_name: str, output_path: Path, force: bool) -> None:
+    assets = PROJECT_TEMPLATE_PROMPTS.get(template_name, {})
+    if not assets:
+        return
+
+    project_root = infer_project_root(output_path)
+    for relative_path, content in assets.items():
+        asset_path = project_root / relative_path
+        if asset_path.exists() and not force:
+            continue
+        asset_path.parent.mkdir(parents=True, exist_ok=True)
+        asset_path.write_text(content.strip() + "\n", encoding="utf-8")
 
 
 @app.command("fetch-data")
@@ -262,6 +330,9 @@ def cmd_backtest(
     ),
 ):
     """Run backtest using a CSV and backtest execution config."""
+
+    import pandas as pd
+    import yaml
 
     with open(config, "r") as f:
         cfg = yaml.safe_load(f)
@@ -513,6 +584,8 @@ def cmd_research_run(
 ):
     """Run the Stage 1 canonical research workflow from project.yaml."""
 
+    import yaml
+
     project_path = Path(config)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     try:
@@ -743,6 +816,42 @@ def cmd_research_run(
     typer.echo(json.dumps(summary, indent=2))
 
 
+@agent_app.command("run")
+def cmd_agent_run(
+    agent: str = typer.Option(..., "--agent", help="Agent name from project config"),
+    config: str = typer.Option(
+        "config/project.yaml", "-c", "--config", help="Path to project config YAML"
+    ),
+    mode: str = typer.Option(
+        "backtest",
+        "--mode",
+        help="Execution mode. Only backtest is implemented for agent runs.",
+    ),
+    skip_validation: bool = typer.Option(
+        False,
+        "--skip-validation",
+        help="Skip data-quality validation before backtesting",
+    ),
+):
+    """Run a first-class project agent in backtest mode."""
+
+    from .agents.backtest import run_agent_backtest
+
+    try:
+        summary = run_agent_backtest(
+            project_config_path=config,
+            agent_name=agent,
+            mode=mode,
+            skip_validation=skip_validation,
+        )
+    except Exception as exc:
+        typer.echo(f"Agent run failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Agent run completed: {summary['run_dir']}")
+    typer.echo(json.dumps(summary, indent=2))
+
+
 @app.command("init")
 def cmd_init(
     template: str = typer.Option(
@@ -758,6 +867,8 @@ def cmd_init(
 ):
     """Initialize a canonical project config for the happy path."""
 
+    import yaml
+
     normalized = template.lower()
     if normalized not in PROJECT_TEMPLATES:
         valid = ", ".join(sorted(PROJECT_TEMPLATES))
@@ -771,6 +882,7 @@ def cmd_init(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(PROJECT_TEMPLATES[normalized], handle, sort_keys=False)
+    _write_template_assets(normalized, output_path, force)
 
     typer.echo(f"Wrote {normalized} template to {output_path}")
 

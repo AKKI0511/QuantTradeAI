@@ -36,6 +36,15 @@ poetry run quanttradeai research run -c config/project.yaml
 
 This will generate a single project config, validate the resolved run settings, and execute the end-to-end research workflow.
 
+### 1b. Backtest a YAML-defined agent
+```bash
+poetry run quanttradeai init --template llm-agent -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+```
+
+This path writes a runnable prompt file under `prompts/` and produces a run directory with resolved config, decisions, sampled prompt/response payloads, equity curve, and metrics.
+
 ### 2. Research Workflow Details
 ```bash
 # Legacy training workflow remains available

@@ -41,10 +41,15 @@ poetry install
 # Show commands
 poetry run quanttradeai --help
 
-# Canonical Stage 1 happy path
+# Canonical project-config research path
 poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
+
+# Canonical project-config agent backtest path
+poetry run quanttradeai init --template llm-agent -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 
 # Import an existing legacy config/ directory into the canonical workflow
 poetry run quanttradeai validate --legacy-config-dir config
@@ -89,6 +94,8 @@ See docs for details: [Configuration Guide](docs/configuration.md), [Quick Refer
 poetry run quanttradeai init --template research -o config/project.yaml           # Generate canonical happy-path project config
 poetry run quanttradeai validate -c config/project.yaml                            # Validate canonical project config and write resolved artifacts
 poetry run quanttradeai research run -c config/project.yaml                        # Run the canonical end-to-end Stage 1 research workflow
+poetry run quanttradeai init --template llm-agent -o config/project.yaml           # Generate a runnable LLM agent config and prompt file
+poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest  # Backtest a YAML-defined agent
 poetry run quanttradeai validate --legacy-config-dir config                        # Import legacy YAMLs into canonical validation
 poetry run quanttradeai research run --legacy-config-dir config                    # Import legacy YAMLs and run the canonical research workflow
 
@@ -268,7 +275,7 @@ The roadmap lives in [roadmap.md](roadmap.md) (source of truth) to avoid drift.
 
 Current direction is explicitly two-track:
 - **ML training loop**: reproducible data → features → time-aware training/eval → backtests → promotion.
-- **Trading agent deployment**: developer-built agents (strategies + tools + prompts) running in parallel, tracked as experiments, deployed via existing platforms (Docker/K8s/managed runners).
+- **Trading agents**: YAML-defined LLM and hybrid agents can now run in backtest mode through `quanttradeai agent run`; paper/live promotion and deployment remain on the roadmap.
 
 Stage 1 research status today:
 - Canonical `config/project.yaml`, `init`, `validate`, legacy import, resolved-config artifacts, and end-to-end `research run` are implemented.

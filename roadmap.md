@@ -1,6 +1,6 @@
 # QuantTradeAI Roadmap
 
-Last updated: 2026-03-12
+Last updated: 2026-03-20
 
 This document is the product source of truth for QuantTradeAI.
 It is written for both human contributors and coding agents.
@@ -168,7 +168,9 @@ agents:
   - name: "hybrid_swing_agent"
     kind: "hybrid"
     mode: "paper"
-    model_signal_sources: ["aapl_daily_classifier"]
+    model_signal_sources:
+      - name: "aapl_daily_classifier"
+        path: "models/experiments/aapl_daily_classifier"
     llm:
       provider: "openai"
       model: "gpt-5.3"
@@ -315,10 +317,13 @@ Deliverables:
 - Make feature selection explicit and shared across research and agent flows.
 - Fix time-aware preprocessing and evaluation defaults.
 
-Current status:
+Status on 2026-03-20:
 
 - Implemented for the research happy path: canonical `config/project.yaml`, `init`, `validate`, legacy config import via flags, resolved-config artifacts, standardized research run directories, automatic backtests from `research run`, and time-aware preprocessing/evaluation defaults.
-- Still open in Stage 1: first-class strategy/agent abstractions, shared feature selection across agent flows, and standardized run records beyond the research workflow.
+- `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest` is implemented for `llm` and `hybrid` agents.
+- Agent templates now write the referenced prompt markdown assets.
+- Agent backtest runs now persist resolved config, metrics, equity curve, ledger, decisions, and sampled prompt/response payloads.
+- Remaining Stage 1 work includes `rule` and `model` agents, paper/live agent execution, and broader run-management UX such as listing and promotion.
 
 ### Stage 2: Multi-Agent Lab
 
@@ -416,6 +421,9 @@ quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
 quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
 ```
 
+Current implementation note:
+`agent run` is available today for `--mode backtest`. `paper`, `live`, and `deploy` remain roadmap work.
+
 ### Hybrid track
 
 ```bash
@@ -423,6 +431,9 @@ quanttradeai init --template hybrid -o config/project.yaml
 quanttradeai research run -c config/project.yaml
 quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
 ```
+
+Current implementation note:
+Hybrid agents are currently runnable in `backtest` mode. Promotion to `paper` remains future roadmap work.
 
 ## Definition of Done for the Happy Path
 

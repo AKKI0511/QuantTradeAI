@@ -34,13 +34,19 @@ poetry run quanttradeai init --template research -o config/project.yaml
 
 Supported templates:
 - `research`: model-first research workflow
-- `llm-agent`: paper-trading LLM agent scaffold
-- `hybrid`: model + LLM hybrid agent scaffold
+- `llm-agent`: runnable LLM agent backtest config plus prompt file
+- `hybrid`: hybrid agent config plus prompt file; fill `model_signal_sources` after you have a trained model artifact
 
 Then validate and resolve the config:
 
 ```bash
 poetry run quanttradeai validate -c config/project.yaml
+```
+
+Backtest a YAML-defined agent:
+
+```bash
+poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 ```
 
 Validation writes timestamped artifacts under `reports/config_validation/<YYYYMMDD_HHMMSS>/`:
@@ -57,6 +63,7 @@ Your project config must include these top-level sections:
 - `deployment`
 
 Note: `quanttradeai research run -c config/project.yaml` requires `research.enabled: true`.
+For `llm` and `hybrid` agents, validation also checks that the configured prompt file exists, that referenced features exist in `features.definitions`, and that any object-based `model_signal_sources` paths resolve on disk.
 
 Legacy multi-file configs (`model_config.yaml`, `features_config.yaml`, etc.) remain supported.
 You can still run legacy preflight validation with:

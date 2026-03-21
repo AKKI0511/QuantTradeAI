@@ -28,6 +28,7 @@ from quanttradeai.utils.config_schemas import (
     RiskManagementConfig,
 )
 from quanttradeai.utils.impact_loader import ImpactConfigError, load_impact_config
+from quanttradeai.utils.project_paths import resolve_project_path
 from quanttradeai.utils.project_config import load_project_config
 
 
@@ -60,6 +61,81 @@ LEGACY_PROJECT_SECTIONS = {
     "pipeline",
     "news",
 }
+
+
+def _validate_agent_project_sections(
+    *,
+    resolved: dict[str, Any],
+    config_path: Path,
+) -> list[str]:
+    warnings: list[str] = []
+    errors: list[str] = []
+
+    feature_names = {
+        str(item.get("name"))
+        for item in (resolved.get("features") or {}).get("definitions", [])
+        if isinstance(item, dict) and item.get("name")
+    }
+
+    for agent in resolved.get("agents") or []:
+        agent_name = agent.get("name", "<unknown>")
+        agent_kind = agent.get("kind")
+        context_cfg = dict(agent.get("context") or {})
+        llm_cfg = agent.get("llm") or {}
+
+        if agent_kind in {"llm", "hybrid"}:
+            prompt_file = llm_cfg.get("prompt_file")
+            prompt_path = resolve_project_path(config_path, prompt_file or "")
+            if not prompt_path.is_file():
+                errors.append(
+                    f"Agent '{agent_name}' prompt file does not exist: {prompt_path}"
+                )
+
+        missing_features = sorted(
+            feature_name
+            for feature_name in (context_cfg.get("features") or [])
+            if feature_name not in feature_names
+        )
+        if missing_features:
+            errors.append(
+                f"Agent '{agent_name}' references unknown features: "
+                + ", ".join(missing_features)
+            )
+
+        source_names: list[str] = []
+        for source in agent.get("model_signal_sources") or []:
+            if isinstance(source, str):
+                warnings.append(
+                    f"Agent '{agent_name}' uses deprecated string model_signal_sources entry "
+                    f"'{source}'. Use objects with name and path."
+                )
+                source_names.append(source)
+                continue
+
+            source_name = source.get("name")
+            source_names.append(str(source_name))
+            source_path = resolve_project_path(config_path, source.get("path", ""))
+            if not source_path.exists():
+                errors.append(
+                    f"Agent '{agent_name}' model signal source '{source_name}' does not exist: "
+                    f"{source_path}"
+                )
+
+        missing_signal_refs = sorted(
+            signal_name
+            for signal_name in (context_cfg.get("model_signals") or [])
+            if signal_name not in source_names
+        )
+        if missing_signal_refs:
+            errors.append(
+                f"Agent '{agent_name}' references unknown model signals: "
+                + ", ".join(missing_signal_refs)
+            )
+
+    if errors:
+        raise ValueError("\n".join(errors))
+
+    return warnings
 
 
 def _render_project_summary(resolved: dict, warnings: list[str]) -> dict:
@@ -149,6 +225,11 @@ def validate_project_config(
         legacy_config_dir=legacy_config_dir,
     )
     raw = loaded.raw
+    path = (
+        Path(config_path)
+        if loaded.source == "canonical"
+        else Path(legacy_config_dir or Path(config_path).parent) / "project.yaml"
+    )
 
     missing_sections = [name for name in REQUIRED_PROJECT_SECTIONS if name not in raw]
     if missing_sections:
@@ -166,6 +247,12 @@ def validate_project_config(
             + ", ".join(unused_legacy_sections)
             + ". They are accepted for migration compatibility but should be moved into canonical project config sections."
         )
+    warnings.extend(
+        _validate_agent_project_sections(
+            resolved=resolved,
+            config_path=path,
+        )
+    )
 
     summary = _render_project_summary(resolved=resolved, warnings=warnings)
 

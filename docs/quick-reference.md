@@ -15,6 +15,10 @@ poetry run quanttradeai validate -c config/project.yaml
 # Run canonical research workflow
 poetry run quanttradeai research run -c config/project.yaml
 
+# Run a YAML-defined agent backtest
+poetry run quanttradeai init --template llm-agent -o config/project.yaml
+poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+
 # Import an existing legacy config/ directory into the canonical workflow
 poetry run quanttradeai validate --legacy-config-dir config
 poetry run quanttradeai research run --legacy-config-dir config
