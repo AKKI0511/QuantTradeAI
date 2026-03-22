@@ -45,6 +45,7 @@ poetry run quanttradeai --help
 poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai runs list
 
 # Canonical project-config agent backtest path
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
@@ -68,6 +69,7 @@ poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL
 
 Artifacts are written to:
 - `runs/research/<timestamp>_<project>/` (`resolved_project_config.yaml`, runtime YAMLs, `summary.json`, `metrics.json`, automatic backtest summary)
+- `runs/agent/backtest/<timestamp>_<agent>/` (`resolved_project_config.yaml`, runtime YAMLs, `summary.json`, `metrics.json`, `equity_curve.csv`, `decisions.jsonl`, sampled prompts)
 - `models/experiments/<timestamp>/` (trained symbol models + `results.json`)
 - `reports/backtests/<timestamp>/<SYMBOL>/` (`metrics.json`, `equity_curve.csv`, `ledger.csv`) for standalone backtest commands
 
@@ -90,16 +92,22 @@ See docs for details: [Configuration Guide](docs/configuration.md), [Quick Refer
 
 ## CLI Commands
 
+Canonical workflow:
+
 ```bash
 poetry run quanttradeai init --template research -o config/project.yaml           # Generate canonical happy-path project config
 poetry run quanttradeai validate -c config/project.yaml                            # Validate canonical project config and write resolved artifacts
 poetry run quanttradeai research run -c config/project.yaml                        # Run the canonical end-to-end Stage 1 research workflow
+poetry run quanttradeai runs list                                                  # List research and agent runs from local artifacts
 poetry run quanttradeai init --template llm-agent -o config/project.yaml           # Generate a runnable LLM agent config and prompt file
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest  # Backtest a YAML-defined agent
 poetry run quanttradeai validate --legacy-config-dir config                        # Import legacy YAMLs into canonical validation
 poetry run quanttradeai research run --legacy-config-dir config                    # Import legacy YAMLs and run the canonical research workflow
+```
 
-# Legacy compatibility path (still supported)
+Legacy compatibility path (still supported):
+
+```bash
 poetry run quanttradeai fetch-data -c config/model_config.yaml
 poetry run quanttradeai train -c config/model_config.yaml
 poetry run quanttradeai evaluate -m <model_dir> -c config/model_config.yaml
@@ -279,7 +287,8 @@ Current direction is explicitly two-track:
 
 Stage 1 research status today:
 - Canonical `config/project.yaml`, `init`, `validate`, legacy import, resolved-config artifacts, and end-to-end `research run` are implemented.
-- First-class agent execution, deployment, promotion, and run-list UX remain roadmap items.
+- Standardized local run records and `quanttradeai runs list` are implemented for research and agent backtests.
+- First-class paper/live agent execution, deployment, and promotion remain roadmap items.
 
 ## License
 

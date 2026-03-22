@@ -32,9 +32,10 @@ pip install .
 poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai runs list
 ```
 
-This will generate a single project config, validate the resolved run settings, and execute the end-to-end research workflow.
+This will generate a single project config, validate the resolved run settings, execute the end-to-end research workflow, and let you inspect local run artifacts from the CLI.
 
 ### 1b. Backtest a YAML-defined agent
 ```bash
@@ -44,6 +45,7 @@ poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --
 ```
 
 This path writes a runnable prompt file under `prompts/` and produces a run directory with resolved config, decisions, sampled prompt/response payloads, equity curve, and metrics.
+New agent backtest runs are stored under `runs/agent/backtest/<timestamp>_<agent>/`.
 
 ### 2. Research Workflow Details
 ```bash
@@ -95,6 +97,7 @@ Legacy workflows still use:
 
 - **`config/model_config.yaml`** - Model parameters and data settings
 - **`config/features_config.yaml`** - Feature engineering settings
+- **`config/backtest_config.yaml`** - Standalone saved-model backtest execution settings
 
 See the [Configuration Guide](configuration.md) for detailed settings.
 

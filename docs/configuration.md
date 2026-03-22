@@ -43,11 +43,19 @@ Then validate and resolve the config:
 poetry run quanttradeai validate -c config/project.yaml
 ```
 
+List the local research and agent runs that have already been written:
+
+```bash
+poetry run quanttradeai runs list
+```
+
 Backtest a YAML-defined agent:
 
 ```bash
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 ```
+
+New agent backtest runs are written under `runs/agent/backtest/<timestamp>_<agent>/`.
 
 Validation writes timestamped artifacts under `reports/config_validation/<YYYYMMDD_HHMMSS>/`:
 - `resolved_project_config.yaml`

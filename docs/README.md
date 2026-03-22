@@ -29,9 +29,11 @@ poetry install
 poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai runs list
 
 # Runnable agent backtest workflow
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 
 # Import an existing legacy config/ directory into the canonical workflow
@@ -49,6 +51,8 @@ the expected path shape for `evaluate --model-path`.
 
 Canonical research runs also persist resolved configs and compiled runtime YAMLs
 under `runs/research/<timestamp>_<project>/`.
+Canonical agent backtests persist their artifacts under
+`runs/agent/backtest/<timestamp>_<agent>/`.
 
 ## 📖 Documentation Structure
 
