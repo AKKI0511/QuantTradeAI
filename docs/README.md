@@ -5,6 +5,9 @@ Welcome to the QuantTradeAI documentation! This comprehensive machine learning f
 ## 📚 Documentation Index
 
 ### Core Documentation
+- **[Configuration Overview](configuration.md)** - Choose the right config file for research, agents, live trading, and migration
+- **[Project Config (`project.yaml`)](configuration/project-yaml.md)** - Canonical research and agent backtest configuration
+- **[Runtime and Live Trading Configs](configuration/live-runtime-files.md)** - Streaming, live-trading, backtest, and risk runtime YAMLs
 - **[API Documentation](api/)** - Comprehensive reference for all public APIs, functions, and components
 - **[Quick Reference Guide](quick-reference.md)** - Common usage patterns and examples
 - **[LLM Sentiment Analysis](llm-sentiment.md)** - Configure LLM-based sentiment scoring
@@ -66,7 +69,7 @@ The [API Documentation](api/) provides comprehensive coverage of:
 - **Backtesting Framework** - Trade simulation and performance metrics
 - **Trading Utilities** - Risk management, position sizing, real-time position control
 - **Utility Functions** - Metrics, visualization, and configuration schemas
-- **Configuration** - Canonical `project.yaml` plus legacy compatibility examples
+- **Configuration** - Canonical `project.yaml`, runtime YAMLs, and migration guidance
 
 ### 2. Quick Reference Guide
 The [Quick Reference Guide](quick-reference.md) includes:
@@ -78,7 +81,7 @@ The [Quick Reference Guide](quick-reference.md) includes:
 - **Risk Management** - Stop-loss, take-profit, drawdown guard, and position sizing
 - **Performance Metrics** - Classification and trading metrics
 - **Visualization** - Price charts and performance plots
-- **Configuration Examples** - Model and feature configuration templates
+- **Configuration Guides** - Purpose-built pages for project, live, and legacy config layouts
 - **Error Handling** - Common error patterns and solutions
 - **Best Practices** - Recommended approaches for each component
 - **Troubleshooting** - Solutions for common issues
@@ -212,7 +215,7 @@ The framework is currently configured for:
 
 ### By Task
 - **Getting Started**: See [Quick Reference Guide](quick-reference.md#-cli-commands)
-- **Configuration**: See [Configuration Examples](quick-reference.md#-configuration-examples)
+- **Configuration**: See [Configuration Overview](configuration.md)
 - **Error Handling**: See [Troubleshooting](quick-reference.md#-troubleshooting)
 
 ### By Function

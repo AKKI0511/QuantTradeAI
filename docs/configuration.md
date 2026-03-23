@@ -1,577 +1,64 @@
-# Configuration Guide
+# Configuration
 
-Learn how to configure QuantTradeAI for your specific needs.
+QuantTradeAI has one **canonical project config** for research and agent backtests, plus a set of **runtime YAML files** that still power live trading and some compatibility workflows.
 
-## 📁 Configuration Files
+> Start with `config/project.yaml` if you are building a new research or agent workflow.
+> Use the runtime YAMLs when you are running `live-trade`, saved-model backtests, or migrating older setups.
 
-The framework uses several configuration files:
+## Choose the Right File
 
-- **`config/model_config.yaml`** - Model parameters and data settings
-- **`config/features_config.yaml`** - Feature engineering settings
-- **`config/backtest_config.yaml`** - Execution settings for backtests
-- **`config/impact_config.yaml`** - Market impact parameters by asset class
-- **`config/risk_config.yaml`** - Drawdown protection and turnover limits
-- **`config/position_manager.yaml`** - Live position tracking and intraday risk controls
-- **`config/streaming.yaml`** - Streaming providers and health monitoring settings
+| What you want to do | Primary file(s) | Used by |
+| --- | --- | --- |
+| Run the canonical research workflow | `config/project.yaml` | `quanttradeai validate`, `quanttradeai research run` |
+| Run an LLM or hybrid agent backtest | `config/project.yaml` | `quanttradeai agent run` |
+| Run live streaming inference | `config/model_config.yaml`, `config/features_config.yaml`, `config/streaming.yaml`, `config/risk_config.yaml`, `config/position_manager.yaml` | `quanttradeai live-trade` |
+| Backtest a saved model with execution costs | `config/model_config.yaml`, `config/backtest_config.yaml`, optional `config/risk_config.yaml`, optional `config/impact_config.yaml` | `quanttradeai backtest-model` |
+| Validate the runtime YAML bundle | Runtime YAML files under `config/` | `quanttradeai validate-config` |
+| Import an existing legacy config bundle into the canonical validator | Legacy YAML files under `config/` | `quanttradeai validate --legacy-config-dir ...` |
 
-Use the CLI preflight to validate all of them at once before running training or backtests:
+## Recommended Reading
 
-```bash
-poetry run quanttradeai validate-config --output-dir reports/config_validation
-```
+- [Project Config (`project.yaml`)](configuration/project-yaml.md)
+- [Runtime and Live Trading Configs](configuration/live-runtime-files.md)
+- [Legacy Config Compatibility](configuration/legacy-configs.md)
 
-This command loads each YAML with the same schemas used in production, then writes JSON/CSV summaries indicating which files passed and any errors found. It exits non-zero if any validation fails so you can gate CI or notebooks on clean configs.
+## Typical Workflows
 
-## ✅ Canonical Happy-Path Config
-
-For the Stage 1 happy path, use `config/project.yaml` as the main entrypoint.
-
-Initialize a starter config:
+### Research
 
 ```bash
 poetry run quanttradeai init --template research -o config/project.yaml
-```
-
-Supported templates:
-- `research`: model-first research workflow
-- `llm-agent`: runnable LLM agent backtest config plus prompt file
-- `hybrid`: hybrid agent config plus prompt file; fill `model_signal_sources` after you have a trained model artifact
-
-Then validate and resolve the config:
-
-```bash
 poetry run quanttradeai validate -c config/project.yaml
-```
-
-List the local research and agent runs that have already been written:
-
-```bash
+poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai runs list
 ```
 
-Backtest a YAML-defined agent:
+### Agent Backtest
 
 ```bash
+poetry run quanttradeai init --template llm-agent -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 ```
 
-New agent backtest runs are written under `runs/agent/backtest/<timestamp>_<agent>/`.
-
-Validation writes timestamped artifacts under `reports/config_validation/<YYYYMMDD_HHMMSS>/`:
-- `resolved_project_config.yaml`
-- `summary.json`
-
-Your project config must include these top-level sections:
-- `project`
-- `profiles`
-- `data`
-- `features`
-- `research`
-- `agents`
-- `deployment`
-
-Note: `quanttradeai research run -c config/project.yaml` requires `research.enabled: true`.
-For `llm` and `hybrid` agents, validation also checks that the configured prompt file exists, that referenced features exist in `features.definitions`, and that any object-based `model_signal_sources` paths resolve on disk.
-
-Legacy multi-file configs (`model_config.yaml`, `features_config.yaml`, etc.) remain supported.
-You can still run legacy preflight validation with:
+### Live Trading
 
 ```bash
-poetry run quanttradeai validate-config --output-dir reports/config_validation
+poetry run quanttradeai live-trade \
+  -m models/experiments/<timestamp>/<SYMBOL> \
+  -c config/model_config.yaml \
+  -s config/streaming.yaml \
+  --risk-config config/risk_config.yaml \
+  --position-manager-config config/position_manager.yaml
 ```
 
-## 📡 Streaming Health Configuration
+## Important Boundaries
 
-Configure streaming providers and observability in `config/streaming.yaml`:
+- `config/project.yaml` is the center of gravity for **research** and **agent backtests**
+- `quanttradeai live-trade` does **not** read `config/project.yaml` today
+- `config/streaming.yaml`, `config/risk_config.yaml`, and `config/position_manager.yaml` are still first-class runtime files
+- `quanttradeai validate-config` is the fastest way to catch malformed runtime YAMLs before running live or backtest commands
 
-```yaml
-streaming:
-  providers:
-    - name: "alpaca"
-      websocket_url: "wss://stream.data.alpaca.markets/v2/iex"
-      auth_method: "api_key"
-      subscriptions: ["trades", "quotes"]
-  health_check_interval: 30
+## If You Are Migrating
 
-streaming_health:
-  monitoring:
-    enabled: true
-    check_interval: 5
-  metrics:
-    enabled: true
-    host: "0.0.0.0"
-    port: 9000
-  api:
-    enabled: false
-    host: "0.0.0.0"
-    port: 8000
-```
-
-- `streaming_health.metrics` controls a lightweight Prometheus exporter bound directly to the
-  default registry so you can scrape metrics without enabling the FastAPI health API.
-- If both the exporter and health API are enabled on the same host/port, the exporter stays
-  disabled to avoid double-binding while `/metrics` remains available via the health server.
-
-## 🔧 Model Configuration
-
-### Data Settings
-
-```yaml
-data:
-  symbols:
-    - ticker: 'AAPL'
-      asset_class: equities
-    - ticker: 'ES'
-      asset_class: futures
-  start_date: '2015-01-01'
-  end_date: '2024-12-31'
-  cache_dir: 'data/raw'
-  cache_path: 'data/raw'
-  secondary_timeframes:
-    - '1h'
-    - '30m'
-  cache_expiration_days: 7
-  use_cache: true
-  refresh: false
-  max_workers: 1
-  # Optional time-aware test window used by CLI training
-  test_start: '2024-09-01'
-  test_end: '2024-12-31'
-
-news:
-  enabled: false
-  provider: yfinance
-  lookback_days: 30
-  symbols: []
-```
-
-**Key Parameters:**
-- `symbols`: List of stock symbols to process. Each entry can be a string or a
-  mapping with `ticker` and optional `asset_class` (defaults to `equities`).
-- `start_date`/`end_date`: Data date range
-- `cache_dir`: Directory for cached data
-- `secondary_timeframes`: Optional list of higher-frequency bars to resample into the primary `timeframe` using OHLCV aggregations (`open→first`, `high→max`, `low→min`, `close→last`, `volume→sum`)
-- `use_cache`: Enable/disable caching
-- `refresh`: Force fresh data download
-- `max_workers`: Parallel processing workers
-- `test_start`/`test_end`: Optional test window for time-aware train/test split (if unset, last `training.test_size` fraction is used chronologically)
-- `news`: Optional block that fetches timestamped headlines to populate a `text` column for the `generate_sentiment` step. Configure `enabled`, `provider` (currently `yfinance`), optional `symbols` filter, and `lookback_days` to pull context before `start_date`.
-
-!!! info "Date validation and fallback"
-    QuantTradeAI now validates that any configured `test_start`/`test_end` values fall within the overall `start_date` → `end_date` range and that the window is well ordered. If the requested window passes validation but your downloaded data does not fully cover that range (e.g., ends before `test_end` or contains gaps), the pipeline emits a warning and automatically falls back to the chronological `training.test_size` split so phase‑1 training can proceed.
-
-### Model Parameters
-
-```yaml
-models:
-  voting_classifier:
-    voting: 'soft'
-    weights: [1, 2, 2]
-  
-  logistic_regression:
-    C: 1.0
-    max_iter: 1000
-    class_weight: 'balanced'
-  
-  random_forest:
-    n_estimators: 100
-    max_depth: 10
-    min_samples_split: 2
-    class_weight: 'balanced'
-  
-  xgboost:
-    n_estimators: 100
-    max_depth: 6
-    learning_rate: 0.1
-    subsample: 0.8
-    colsample_bytree: 0.8
-```
-
-### Training Settings
-
-```yaml
-training:
-  test_size: 0.2
-  random_state: 42
-  cv_folds: 5
-
-Note: Hyperparameter tuning uses `TimeSeriesSplit(n_splits=cv_folds)` to avoid look‑ahead bias.
-```
-
-### Trading Parameters
-
-```yaml
-trading:
-  initial_capital: 100000   # Starting capital for saved-model backtests
-  position_size: 0.2
-  stop_loss: 0.02
-  take_profit: 0.04
-  max_positions: 5
-  transaction_cost: 0.001
-  max_risk_per_trade: 0.02  # Optional overrides for portfolio manager sizing
-  max_portfolio_risk: 0.10
-```
-
-### Backtest Execution
-
-```yaml
-execution:
-  transaction_costs:
-    enabled: true
-    mode: bps         # bps or fixed
-    value: 5          # 5 bps = 0.05%
-    apply_on: notional
-  slippage:
-    enabled: true
-    mode: bps
-    value: 10
-    reference_price: close  # or mid if available
-  liquidity:
-    enabled: false
-    max_participation: 0.1
-    volume_source: bar_volume
-  impact:
-    enabled: false
-    model: linear        # linear, square_root, almgren_chriss
-    alpha: 0.0
-    beta: 0.0
-    alpha_buy: 0.0       # optional asymmetric coefficients
-    alpha_sell: 0.0
-    decay: 0.0           # temporary impact decay rate
-    decay_volume_coeff: 0.0
-    spread: 0.0          # bid-ask spread per share
-    spread_model: {type: dynamic}
-    average_daily_volume: 0
-  borrow_fee:
-    enabled: false
-    rate_bps: 0
-  intrabar:
-    enabled: false
-    drift: 0.0
-    volatility: 0.0
-    synthetic_ticks: 0
-```
-
-The `impact` block activates market impact modeling. Parameters `alpha`/`beta`
-and their buy/sell counterparts control the chosen model, while `decay`,
-`decay_volume_coeff`, and `spread_model` enable dynamic spread and volume-based
-decay. Default parameter sets per asset class can be defined in
-`config/impact_config.yaml`.
-
-```yaml
-asset_classes:
-  equities:
-    enabled: true
-    alpha: 0.1
-    beta: 0.05
-    model: linear
-  futures:
-    enabled: true
-    alpha: 0.2
-    beta: 0.1
-    model: square_root
-```
-
-During saved-model backtests, per-symbol execution settings inherit the
-asset-class defaults from this file. Values specified in
-`config/backtest_config.yaml` or passed via CLI flags override these defaults,
-keeping CLI options highest priority.
-
-The `borrow_fee` block applies financing costs to short positions, and the
-`intrabar` block enables tick-level fill simulation with optional synthetic
-Brownian motion ticks.
-
-### Position Manager
-
-```yaml
-position_manager:
-  risk_management:
-    drawdown_protection:
-      enabled: true
-      max_drawdown_pct: 0.2
-  impact:
-    enabled: true
-    model: linear
-    alpha: 0.1
-    beta: 0.05
-  reconciliation:
-    intraday: "1m"
-    daily: "1d"
-  mode: paper
-```
-
-Controls live position tracking and execution logic. The `impact` section
-reuses backtest models, while `reconciliation` intervals harmonize intraday and
-daily views. Set `mode` to `paper` or `live`.
-
-## 🔧 Feature Configuration
-
-### Price Features
-
-```yaml
-price_features:
-  sma_periods: [5, 10, 20, 50, 200]
-  ema_periods: [5, 10, 20, 50, 200]
-```
-
-### Momentum Features
-
-```yaml
-momentum_features:
-  rsi_period: 14
-  macd_params:
-    fast: 12
-    slow: 26
-    signal: 9
-  stoch_params:
-    k: 14
-    d: 3
-```
-
-### Volatility Features
-
-```yaml
-volatility_features:
-  bollinger_bands:
-    period: 20
-    std_dev: 2
-```
-
-### Volume Features
-
-```yaml
-volume_features:
-  volume_sma:
-    periods: [5, 10, 20]
-  volume_ema:
-    periods: [5, 10, 20]
-```
-
-### Feature Combinations
-
-```yaml
-feature_combinations:
-  cross_indicators:
-    - ['sma_5', 'sma_20']
-    - ['ema_5', 'ema_20']
-    - ['close', 'sma_50']
-  ratio_indicators:
-    - ['volume', 'volume_sma_5']
-    - ['close', 'sma_20']
-    - ['high', 'low']
-```
-
-### Sentiment Features
-
-```yaml
-sentiment:
-  enabled: true
-  provider: openai  # e.g. openai, anthropic, huggingface, ollama
-  model: gpt-3.5-turbo
-  api_key_env_var: OPENAI_API_KEY
-  extra: {}
-```
-
-Set the API key before running:
-
-```bash
-export OPENAI_API_KEY="sk-..."
-```
-
-### Preprocessing
-
-```yaml
-preprocessing:
-  scaling:
-    method: 'standard'  # Options: standard, minmax, robust
-    target_range: [-1, 1]
-  
-  outliers:
-    method: 'winsorize'  # Options: winsorize, clip
-    limits: [0.01, 0.99]
-```
-
-### Feature Selection
-
-```yaml
-feature_selection:
-  method: 'recursive'  # Options: recursive, lasso, random_forest
-  n_features: 20
-  scoring: 'f1'
-```
-
-### Pipeline Steps
-
-```yaml
-pipeline:
-  steps:
-    - generate_technical_indicators
-    - generate_volume_features
-    - generate_custom_features
-    - generate_sentiment
-    - handle_missing_values
-    - remove_outliers
-    - scale_features
-    - select_features
-```
-
-## 🛡️ Risk Management
-
-```yaml
-risk_management:
-  drawdown_protection:
-    enabled: true
-    max_drawdown_pct: 0.15
-    warning_threshold: 0.8
-    soft_stop_threshold: 0.9
-    hard_stop_threshold: 1.0
-  turnover_limits:
-    daily_max: 2.0
-    weekly_max: 5.0
-    monthly_max: 15.0
-```
-
-**Key Parameters:**
-- `drawdown_protection`: monitors portfolio equity and halts trading at specified levels
-- `turnover_limits`: caps how frequently positions may change over each period
-
-### CLI Usage
-
-The backtesting CLI can enforce these limits via the drawdown guard:
-
-```bash
-poetry run quanttradeai backtest-model -m <model_dir> -c config/model_config.yaml --risk-config config/risk_config.yaml
-```
-
-If the path passed to `--risk-config` is missing or omitted, the command still runs, but no drawdown halts are applied.
-
-## 🎯 Common Configurations
-
-### Minimal Configuration
-```yaml
-data:
-  symbols: ['AAPL']
-  start_date: '2023-01-01'
-  end_date: '2024-12-31'
-  use_cache: true
-
-models:
-  voting_classifier:
-    voting: 'soft'
-```
-
-### Production Configuration
-```yaml
-data:
-  symbols: ['AAPL', 'META', 'TSLA', 'JPM', 'AMZN']
-  start_date: '2015-01-01'
-  end_date: '2024-12-31'
-  cache_dir: 'data/raw'
-  use_cache: true
-  max_workers: 4
-
-models:
-  voting_classifier:
-    voting: 'soft'
-    weights: [1, 2, 2]
-  
-  xgboost:
-    n_estimators: 200
-    max_depth: 8
-    learning_rate: 0.05
-```
-
-### Feature Engineering (`features_config.yaml`)
-```yaml
-price_features:
-  - close_to_open
-  - price_range
-
-volume_features:
-  - volume_sma: {periods: [5, 10]}
-  - volume_sma_ratios: [5, 10]
-  - on_balance_volume
-  - volume_price_trend
-
-volatility_features:
-  - atr_periods: [14]
-  - bollinger_bands: {period: 20, std_dev: 2}
-  - keltner_channels: {periods: [20], atr_multiple: 1.5}
-
-custom_features:
-  - price_momentum: {periods: [5, 10]}
-  - volume_momentum: {periods: [5, 10]}
-  - mean_reversion: {lookback: [10, 20]}
-  - volatility_breakout: {lookback: [20], threshold: 2.0}
-
-pipeline:
-  steps:
-    - generate_technical_indicators
-    - generate_volume_features
-    - generate_custom_features
-    - handle_missing_values
-    - scale_features
-```
-
-## 🔍 Configuration Validation
-
-The framework validates configuration files using Pydantic schemas:
-
-```python
-from quanttradeai.utils.config_schemas import ModelConfigSchema, FeaturesConfigSchema
-import yaml
-
-# Validate model config
-with open("config/model_config.yaml", "r") as f:
-    config = yaml.safe_load(f)
-    ModelConfigSchema(**config)
-
-# Validate features config
-with open("config/features_config.yaml", "r") as f:
-    config = yaml.safe_load(f)
-    FeaturesConfigSchema(**config)
-```
-
-## 🚨 Common Issues
-
-### Invalid Configuration
-```yaml
-# ❌ Wrong
-data:
-  symbols: 'AAPL'  # Should be list
-
-# ✅ Correct
-data:
-  symbols: ['AAPL']
-```
-
-### Missing Required Fields
-```yaml
-# ❌ Missing required field
-data:
-  symbols: ['AAPL']
-  # Missing start_date and end_date
-
-# ✅ Complete
-data:
-  symbols: ['AAPL']
-  start_date: '2023-01-01'
-  end_date: '2024-12-31'
-```
-
-### Invalid Date Format
-```yaml
-# ❌ Wrong format
-data:
-  start_date: '2023/01/01'  # Use YYYY-MM-DD
-
-# ✅ Correct format
-data:
-  start_date: '2023-01-01'
-```
-
-## 📚 Related Documentation
-
-- **[Getting Started](getting-started.md)** - Installation and first steps
-- **[Quick Reference](quick-reference.md)** - Common patterns and commands
-- **[API Reference](api/)** - Complete API documentation
+Legacy YAMLs are still supported, but they are no longer the best place to start. If you already have a working `config/` folder, see [Legacy Config Compatibility](configuration/legacy-configs.md) for the shortest path into the current workflow.

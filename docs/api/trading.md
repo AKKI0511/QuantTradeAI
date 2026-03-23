@@ -4,13 +4,13 @@ API documentation for risk management, position sizing, and live position contro
 
 ## Position Manager
 
-### `PositionManager(config_path: str)`
+### `PositionManager.from_config(config: PositionManagerConfig | dict | str | None = None) -> PositionManager`
 
 Thread-safe real-time position tracking that ties into the streaming gateway
 and enforces intraday risk limits.
 
 **Parameters:**
-- `config_path` (str): Path to a YAML file matching `PositionManagerConfig`.
+- `config` (`PositionManagerConfig | dict | str | None`): A validated config object, a config dictionary, a YAML path, or `None` for defaults.
 
 **Example:**
 ```python
@@ -18,8 +18,8 @@ from quanttradeai.streaming import StreamingGateway
 from quanttradeai.trading import PositionManager
 
 gw = StreamingGateway("config/streaming.yaml")
-pm = PositionManager("config/position_manager.yaml", gateway=gw)
-pm.start()
+pm = PositionManager.from_config("config/position_manager.yaml")
+pm.bind_gateway(gw, ["AAPL", "MSFT"])
 ```
 
 The manager reconciles intraday and daily positions while applying
