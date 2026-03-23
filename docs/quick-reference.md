@@ -14,6 +14,7 @@ poetry run quanttradeai validate -c config/project.yaml
 
 # Run canonical research workflow
 poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai runs list
 
 # Run a YAML-defined agent backtest
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
@@ -61,6 +62,14 @@ Canonical research artifacts:
 - `runs/research/<timestamp>_<project>/summary.json`
 - `runs/research/<timestamp>_<project>/metrics.json`
 - `runs/research/<timestamp>_<project>/backtest_summary.json`
+
+Canonical agent backtest artifacts:
+- `runs/agent/backtest/<timestamp>_<agent>/resolved_project_config.yaml`
+- `runs/agent/backtest/<timestamp>_<agent>/runtime_model_config.yaml`
+- `runs/agent/backtest/<timestamp>_<agent>/runtime_features_config.yaml`
+- `runs/agent/backtest/<timestamp>_<agent>/summary.json`
+- `runs/agent/backtest/<timestamp>_<agent>/metrics.json`
+- `runs/agent/backtest/<timestamp>_<agent>/decisions.jsonl`
 
 ## 📊 Python API Patterns
 

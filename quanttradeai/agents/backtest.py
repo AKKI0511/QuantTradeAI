@@ -25,6 +25,7 @@ from quanttradeai.trading.portfolio import PortfolioManager
 from quanttradeai.utils.config_validator import validate_project_config
 from quanttradeai.utils.project_paths import resolve_project_path
 from quanttradeai.utils.project_runtime import project_to_runtime_configs
+from quanttradeai.utils.run_records import apply_required_run_fields, create_run_dir
 
 from .base import AgentSimulationState, action_to_target, signal_to_action
 from .context import build_context_payload
@@ -188,18 +189,29 @@ def run_agent_backtest(
         )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    safe_agent_name = agent_name.replace(" ", "_")
-    run_dir = Path("runs") / f"{timestamp}_{safe_agent_name}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    run_dir, run_id = create_run_dir(
+        run_type="agent",
+        mode=mode,
+        name=agent_name,
+        timestamp=timestamp,
+    )
 
     summary: dict[str, Any] = {
         "agent_name": agent_name,
-        "mode": mode,
         "status": "failed",
-        "run_dir": str(run_dir),
         "timestamps": {"started_at": datetime.now(timezone.utc).isoformat()},
         "artifacts": {},
+        "warnings": [],
+        "symbols": [],
     }
+    apply_required_run_fields(
+        summary,
+        run_dir=run_dir,
+        run_type="agent",
+        mode=mode,
+        name=agent_name,
+    )
+    summary["run_id"] = run_id
 
     try:
         validation = validate_project_config(
@@ -207,6 +219,7 @@ def run_agent_backtest(
             output_dir=run_dir,
         )
         resolved_path = Path(validation["artifacts"]["resolved_config"])
+        summary["warnings"] = list(validation.get("warnings", []))
         summary["artifacts"]["resolved_project_config"] = str(resolved_path)
         project_config = yaml.safe_load(resolved_path.read_text(encoding="utf-8")) or {}
 
@@ -434,11 +447,17 @@ def run_agent_backtest(
                 "symbols": sorted(prepared_data),
                 "decision_count": len(decision_records),
                 "metrics_by_symbol": metrics_by_symbol,
-                "warnings": validation.get("warnings", []),
                 "artifacts": artifacts,
             }
         )
         summary["timestamps"]["completed_at"] = datetime.now(timezone.utc).isoformat()
+        apply_required_run_fields(
+            summary,
+            run_dir=run_dir,
+            run_type="agent",
+            mode=mode,
+            name=agent_name,
+        )
         _write_json(run_dir / "summary.json", summary)
         return summary
 
@@ -447,5 +466,12 @@ def run_agent_backtest(
         summary["status"] = "failed"
         summary["error"] = str(exc)
         summary["timestamps"]["completed_at"] = datetime.now(timezone.utc).isoformat()
+        apply_required_run_fields(
+            summary,
+            run_dir=run_dir,
+            run_type="agent",
+            mode=mode,
+            name=agent_name,
+        )
         _write_json(run_dir / "summary.json", summary)
         raise

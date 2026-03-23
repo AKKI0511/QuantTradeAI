@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -25,13 +24,22 @@ from .utils.project_config import (
     compile_research_runtime_configs,
     load_project_config,
 )
+from .utils.run_records import (
+    RunFilters,
+    apply_required_run_fields,
+    create_run_dir,
+    discover_runs,
+    filter_runs,
+)
 
 
 app = typer.Typer(add_completion=False, help="QuantTradeAI command line interface")
 research_app = typer.Typer(help="Research workflows")
 agent_app = typer.Typer(help="Agent workflows")
+runs_app = typer.Typer(help="Run records")
 app.add_typer(research_app, name="research")
 app.add_typer(agent_app, name="agent")
+app.add_typer(runs_app, name="runs")
 
 
 def fetch_data_only(*args, **kwargs):
@@ -554,16 +562,65 @@ def _project_to_runtime_configs(
     return model_cfg, features_cfg
 
 
-def _slugify_project_name(name: str | None) -> str:
-    normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", (name or "project").strip())
-    return normalized.strip("_").lower() or "project"
-
-
 def _copy_artifact(source: str | Path, destination: Path) -> str:
     destination.parent.mkdir(parents=True, exist_ok=True)
     payload = Path(source).read_text(encoding="utf-8")
     destination.write_text(payload, encoding="utf-8")
     return str(destination)
+
+
+def _normalize_choice(value: str, *, allowed: set[str], field_name: str) -> str:
+    normalized = value.lower().strip()
+    if normalized not in allowed:
+        valid = ", ".join(sorted(allowed))
+        raise typer.BadParameter(f"{field_name} must be one of: {valid}")
+    return normalized
+
+
+def _format_symbols(symbols: list[str]) -> str:
+    if not symbols:
+        return "-"
+    if len(symbols) <= 3:
+        return ",".join(symbols)
+    return ",".join(symbols[:3]) + f"+{len(symbols) - 3}"
+
+
+def _truncate(value: str, width: int) -> str:
+    if len(value) <= width:
+        return value
+    return value[: max(0, width - 3)] + "..."
+
+
+def _render_runs_table(records: list[dict[str, Any]]) -> str:
+    columns = [
+        ("RUN_ID", 40),
+        ("TYPE", 8),
+        ("MODE", 10),
+        ("STATUS", 8),
+        ("NAME", 24),
+        ("STARTED_AT", 25),
+        ("SYMBOLS", 20),
+    ]
+    header = "  ".join(f"{label:<{width}}" for label, width in columns)
+    lines = [header]
+    for record in records:
+        timestamps = dict(record.get("timestamps") or {})
+        values = {
+            "RUN_ID": str(record.get("run_id") or "-"),
+            "TYPE": str(record.get("run_type") or "-"),
+            "MODE": str(record.get("mode") or "-"),
+            "STATUS": str(record.get("status") or "-"),
+            "NAME": str(record.get("name") or "-"),
+            "STARTED_AT": str(timestamps.get("started_at") or "-"),
+            "SYMBOLS": _format_symbols(list(record.get("symbols") or [])),
+        }
+        lines.append(
+            "  ".join(
+                f"{_truncate(values[label], width):<{width}}"
+                for label, width in columns
+            )
+        )
+    return "\n".join(lines)
 
 
 @research_app.command("run")
@@ -601,14 +658,14 @@ def cmd_research_run(
         run_name = project_path.stem
         initial_warnings = []
 
-    run_dir = (
-        Path("runs") / "research" / f"{timestamp}_{_slugify_project_name(run_name)}"
+    run_dir, run_id = create_run_dir(
+        run_type="research",
+        mode="research",
+        name=run_name,
+        timestamp=timestamp,
     )
-    run_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {
-        "run_type": "research",
-        "mode": "research",
         "project_name": None,
         "project_profile": None,
         "symbols": [],
@@ -620,6 +677,14 @@ def cmd_research_run(
         "warnings": list(initial_warnings),
         "artifacts": {},
     }
+    apply_required_run_fields(
+        summary,
+        run_dir=run_dir,
+        run_type="research",
+        mode="research",
+        name=run_name,
+    )
+    summary["run_id"] = run_id
 
     try:
         validation = validate_project_config(
@@ -754,6 +819,13 @@ def cmd_research_run(
 
         summary["warnings"] = list(dict.fromkeys(summary["warnings"]))
         summary["timestamps"]["completed_at"] = datetime.now(timezone.utc).isoformat()
+        apply_required_run_fields(
+            summary,
+            run_dir=run_dir,
+            run_type="research",
+            mode="research",
+            name=summary.get("project_name") or run_name,
+        )
 
         backtest_metrics_by_symbol = {}
         for symbol, payload in backtest_payload.items():
@@ -790,6 +862,13 @@ def cmd_research_run(
         summary["status"] = "failed"
         summary["error"] = str(exc)
         summary["timestamps"]["completed_at"] = datetime.now(timezone.utc).isoformat()
+        apply_required_run_fields(
+            summary,
+            run_dir=run_dir,
+            run_type="research",
+            mode="research",
+            name=summary.get("project_name") or run_name,
+        )
         metrics_payload = {
             "status": "placeholder",
             "message": "Research pipeline did not complete successfully.",
@@ -814,6 +893,55 @@ def cmd_research_run(
 
     typer.echo(f"Research run completed: {run_dir}")
     typer.echo(json.dumps(summary, indent=2))
+
+
+@runs_app.command("list")
+def cmd_runs_list(
+    run_type: str = typer.Option(
+        "all", "--type", help="Run type filter: all, research, or agent"
+    ),
+    mode: str = typer.Option(
+        "all",
+        "--mode",
+        help="Run mode filter: all, research, backtest, paper, or live",
+    ),
+    status: str = typer.Option(
+        "all", "--status", help="Run status filter: all, success, or failed"
+    ),
+    limit: int = typer.Option(20, "--limit", min=1, help="Maximum runs to show"),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit normalized run records as JSON"
+    ),
+):
+    """List normalized research and agent runs from the local runs directory."""
+
+    filters = RunFilters(
+        run_type=_normalize_choice(
+            run_type, allowed={"all", "research", "agent"}, field_name="type"
+        ),
+        mode=_normalize_choice(
+            mode,
+            allowed={"all", "research", "backtest", "paper", "live"},
+            field_name="mode",
+        ),
+        status=_normalize_choice(
+            status,
+            allowed={"all", "success", "failed"},
+            field_name="status",
+        ),
+        limit=limit,
+    )
+    records = filter_runs(discover_runs(), filters)
+
+    if json_output:
+        typer.echo(json.dumps(records, indent=2))
+        return
+
+    if not records:
+        typer.echo("No runs found.")
+        return
+
+    typer.echo(_render_runs_table(records))
 
 
 @agent_app.command("run")

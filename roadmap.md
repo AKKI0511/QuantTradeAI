@@ -1,6 +1,6 @@
 # QuantTradeAI Roadmap
 
-Last updated: 2026-03-20
+Last updated: 2026-03-22
 
 This document is the product source of truth for QuantTradeAI.
 It is written for both human contributors and coding agents.
@@ -317,13 +317,14 @@ Deliverables:
 - Make feature selection explicit and shared across research and agent flows.
 - Fix time-aware preprocessing and evaluation defaults.
 
-Status on 2026-03-20:
+Status on 2026-03-22:
 
 - Implemented for the research happy path: canonical `config/project.yaml`, `init`, `validate`, legacy config import via flags, resolved-config artifacts, standardized research run directories, automatic backtests from `research run`, and time-aware preprocessing/evaluation defaults.
 - `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest` is implemented for `llm` and `hybrid` agents.
 - Agent templates now write the referenced prompt markdown assets.
-- Agent backtest runs now persist resolved config, metrics, equity curve, ledger, decisions, and sampled prompt/response payloads.
-- Remaining Stage 1 work includes `rule` and `model` agents, paper/live agent execution, and broader run-management UX such as listing and promotion.
+- Agent backtest runs now persist resolved config, metrics, equity curve, ledger, decisions, sampled prompt/response payloads, and standardized run metadata under `runs/agent/backtest/...`.
+- `quanttradeai runs list` is implemented for local research and agent run discovery.
+- Remaining Stage 1 work includes `rule` and `model` agents, paper/live agent execution, and promotion UX.
 
 ### Stage 2: Multi-Agent Lab
 

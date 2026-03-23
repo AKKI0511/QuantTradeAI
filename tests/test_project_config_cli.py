@@ -373,6 +373,10 @@ def test_research_run_happy_path_writes_run_artifacts(tmp_path: Path, monkeypatc
     metrics_payload = json.loads(metrics_path.read_text(encoding="utf-8"))
 
     assert summary_payload["status"] == "success"
+    assert summary_payload["run_type"] == "research"
+    assert summary_payload["mode"] == "research"
+    assert summary_payload["name"] == PROJECT_TEMPLATES["research"]["project"]["name"]
+    assert summary_payload["run_id"].startswith("research/")
     assert (
         summary_payload["project_name"]
         == PROJECT_TEMPLATES["research"]["project"]["name"]

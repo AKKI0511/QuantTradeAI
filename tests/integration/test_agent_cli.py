@@ -110,6 +110,10 @@ def test_agent_run_backtest_writes_artifacts(tmp_path: Path, monkeypatch):
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     run_dir = Path(payload["run_dir"])
     assert payload["status"] == "success"
+    assert payload["run_type"] == "agent"
+    assert payload["name"] == "breakout_gpt"
+    assert payload["run_id"].startswith("agent/backtest/")
+    assert run_dir.parts[:3] == ("runs", "agent", "backtest")
     assert (run_dir / "metrics.json").is_file()
     assert (run_dir / "equity_curve.csv").is_file()
     assert (run_dir / "decisions.jsonl").is_file()
