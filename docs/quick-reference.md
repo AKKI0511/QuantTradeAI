@@ -66,7 +66,7 @@ Canonical research artifacts:
 - `runs/research/<timestamp>_<project>/backtest_summary.json`
 
 Canonical agent backtest artifacts:
-- `runs/agent/backtest/<timestamp>_<agent>/resolved_project_config.yaml`
+- `runs/agent/backtest/<timestamp>_<agent>/<validation_timestamp>/resolved_project_config.yaml`
 - `runs/agent/backtest/<timestamp>_<agent>/runtime_model_config.yaml`
 - `runs/agent/backtest/<timestamp>_<agent>/runtime_features_config.yaml`
 - `runs/agent/backtest/<timestamp>_<agent>/summary.json`
