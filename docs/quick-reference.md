@@ -18,6 +18,7 @@ poetry run quanttradeai runs list
 
 # Run a YAML-defined agent backtest
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 
 # Import an existing legacy config/ directory into the canonical workflow
@@ -46,6 +47,7 @@ poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL
   --skip-validation  # optional
 
 # Live trading (streaming)
+# This path still uses model_config.yaml + features_config.yaml + streaming/risk/position_manager YAMLs
 poetry run quanttradeai live-trade -m models/experiments/<timestamp>/<SYMBOL> \
   -c config/model_config.yaml \
   -s config/streaming.yaml \
@@ -234,124 +236,19 @@ plot_price(df, title="AAPL Price Chart")
 plot_performance(equity_curve, title="Strategy Performance")
 ```
 
-## ⚙️ Configuration Examples
+## ⚙️ Configuration
 
-### Canonical Project Configuration
-```yaml
-project:
-  name: research_lab
-  profile: research
+Use these pages instead of copying large config blocks out of the quick reference:
 
-profiles:
-  research:
-    mode: research
-  paper:
-    mode: paper
-  live:
-    mode: live
+- [Configuration Overview](configuration.md)
+- [Project Config (`project.yaml`)](configuration/project-yaml.md)
+- [Runtime and Live Trading Configs](configuration/live-runtime-files.md)
+- [Legacy Config Compatibility](configuration/legacy-configs.md)
 
-data:
-  symbols: ["AAPL", "MSFT"]
-  start_date: "2018-01-01"
-  end_date: "2024-12-31"
-  timeframe: "1d"
-  test_start: "2024-09-01"
-  test_end: "2024-12-31"
+Quick decision rule:
 
-features:
-  definitions:
-    - name: rsi_14
-      type: technical
-      params:
-        period: 14
-
-research:
-  enabled: true
-  labels:
-    type: forward_return
-    horizon: 5
-    buy_threshold: 0.01
-    sell_threshold: -0.01
-  model:
-    kind: classifier
-    family: voting
-    tuning:
-      enabled: true
-      trials: 50
-  evaluation:
-    split: time_aware
-    use_configured_test_window: true
-  backtest:
-    costs:
-      enabled: true
-      bps: 5
-
-agents: []
-
-deployment:
-  target: docker-compose
-  mode: paper
-```
-
-### Model Configuration
-```yaml
-data:
-  symbols: ['AAPL', 'META', 'TSLA']
-  start_date: '2020-01-01'
-  end_date: '2024-12-31'
-  cache_dir: 'data/raw'
-  use_cache: true
-  # Optional time-aware test window
-  test_start: '2024-10-01'
-  test_end: '2024-12-31'
-
-training:
-  cv_folds: 5  # TimeSeriesSplit folds for hyperparameter tuning
-
-models:
-  voting_classifier:
-    voting: 'soft'
-  
-  logistic_regression:
-    C: 1.0
-    class_weight: 'balanced'
-  
-  random_forest:
-    n_estimators: 100
-    max_depth: 10
-    class_weight: 'balanced'
-  
-  xgboost:
-    n_estimators: 100
-    max_depth: 6
-    learning_rate: 0.1
-```
-
-### Feature Configuration
-```yaml
-price_features:
-  sma_periods: [5, 10, 20, 50, 200]
-  ema_periods: [5, 10, 20, 50, 200]
-
-momentum_features:
-  rsi_period: 14
-  macd_params:
-    fast: 12
-    slow: 26
-    signal: 9
-
-volatility_features:
-  bollinger_bands:
-    period: 20
-    std_dev: 2
-
-preprocessing:
-  scaling:
-    method: 'standard'
-  outliers:
-    method: 'winsorize'
-    limits: [0.01, 0.99]
-```
+- Use `config/project.yaml` for `validate`, `research run`, and `agent run`
+- Use the runtime YAML files for `live-trade`, `backtest-model`, and operational streaming setup
 
 ## 🕒 Time-Aware Splitting
 
@@ -415,9 +312,11 @@ from quanttradeai.streaming import StreamingGateway
 from quanttradeai.trading import PositionManager
 
 gw = StreamingGateway("config/streaming.yaml")
-pm = PositionManager("config/position_manager.yaml", gateway=gw)
-pm.start()
+pm = PositionManager.from_config("config/position_manager.yaml")
+pm.bind_gateway(gw, ["AAPL", "MSFT"])
 ```
+
+The built-in `live-trade` command wires the position manager for you when `--position-manager-config` is provided.
 
 ## 🚨 Error Handling
 
