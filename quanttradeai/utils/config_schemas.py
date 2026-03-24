@@ -36,6 +36,78 @@ def _known_asset_classes(config_path: Path = IMPACT_CONFIG_PATH) -> set[str]:
     return set()
 
 
+class ProjectStreamingMonitorConfig(BaseModel):
+    enabled: bool = True
+    check_interval: int = Field(5, ge=1)
+    metrics_retention: Optional[int] = Field(default=None, ge=1)
+
+
+class ProjectStreamingThresholdsConfig(BaseModel):
+    max_latency_ms: Optional[float] = Field(default=None, ge=0.0)
+    min_throughput_msg_per_sec: Optional[float] = Field(default=None, ge=0.0)
+    max_reconnect_attempts: Optional[int] = Field(default=None, ge=1)
+    max_queue_depth: Optional[int] = Field(default=None, ge=1)
+    circuit_breaker_timeout: Optional[int] = Field(default=None, ge=1)
+
+
+class ProjectStreamingAlertsConfig(BaseModel):
+    enabled: bool = True
+    channels: List[str] = Field(default_factory=lambda: ["log"])
+    escalation_threshold: int = Field(3, ge=1)
+
+
+class ProjectStreamingMetricsConfig(BaseModel):
+    enabled: bool = False
+    host: str = "0.0.0.0"
+    port: int = Field(9000, ge=1, le=65535)
+
+
+class ProjectStreamingAPIConfig(BaseModel):
+    enabled: bool = False
+    host: str = "0.0.0.0"
+    port: int = Field(8000, ge=1, le=65535)
+
+
+class ProjectDataStreamingConfig(BaseModel):
+    enabled: bool = False
+    provider: Optional[str] = None
+    websocket_url: Optional[str] = None
+    auth_method: str = "api_key"
+    symbols: List[str] = Field(default_factory=list)
+    channels: List[Literal["trades", "quotes"]] = Field(default_factory=list)
+    buffer_size: int = Field(1000, ge=1)
+    reconnect_attempts: int = Field(5, ge=1)
+    health_check_interval: Optional[int] = Field(default=30, ge=1)
+    rate_limit: Dict[str, Any] = Field(default_factory=dict)
+    circuit_breaker: Dict[str, Any] = Field(default_factory=dict)
+    monitoring: Optional[ProjectStreamingMonitorConfig] = None
+    thresholds: Optional[ProjectStreamingThresholdsConfig] = None
+    alerts: Optional[ProjectStreamingAlertsConfig] = None
+    metrics: Optional[ProjectStreamingMetricsConfig] = None
+    api: Optional[ProjectStreamingAPIConfig] = None
+
+    @model_validator(mode="after")
+    def validate_enabled_requirements(self) -> "ProjectDataStreamingConfig":
+        if not self.enabled:
+            return self
+        missing = []
+        if not self.provider:
+            missing.append("provider")
+        if not self.websocket_url:
+            missing.append("websocket_url")
+        if not self.symbols:
+            missing.append("symbols")
+        if not self.channels:
+            missing.append("channels")
+        if missing:
+            raise ValueError(
+                "data.streaming requires "
+                + ", ".join(missing)
+                + " when streaming is enabled."
+            )
+        return self
+
+
 class DataSection(BaseModel):
     symbols: List[str]
     asset_classes: Dict[str, str] = Field(default_factory=dict)
@@ -51,6 +123,7 @@ class DataSection(BaseModel):
     test_start: Optional[str] = None
     test_end: Optional[str] = None
     max_workers: Optional[int] = 1
+    streaming: Optional[ProjectDataStreamingConfig] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -520,6 +593,10 @@ class ProjectAgentLLMConfig(BaseModel):
     extra: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ProjectAgentModelConfig(BaseModel):
+    path: str
+
+
 class ProjectAgentMarketDataContext(BaseModel):
     enabled: bool = True
     timeframe: str = "1d"
@@ -557,6 +634,7 @@ class ProjectAgentConfig(BaseModel):
     kind: Literal["rule", "model", "llm", "hybrid"]
     mode: Literal["backtest", "paper", "live"]
     llm: Optional[ProjectAgentLLMConfig] = None
+    model: Optional[ProjectAgentModelConfig] = None
     context: ProjectAgentContextConfig = Field(
         default_factory=ProjectAgentContextConfig
     )
@@ -569,10 +647,22 @@ class ProjectAgentConfig(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_llm_requirements(self) -> "ProjectAgentConfig":
+    def validate_requirements(self) -> "ProjectAgentConfig":
         if self.kind in {"llm", "hybrid"} and self.llm is None:
             raise ValueError(
                 f"agents.{self.name} requires an llm block when kind is {self.kind}."
+            )
+        if self.kind == "model" and self.model is None:
+            raise ValueError(
+                f"agents.{self.name} requires a model block when kind is model."
+            )
+        if self.kind != "model" and self.model is not None:
+            raise ValueError(
+                f"agents.{self.name} only supports a model block when kind is model."
+            )
+        if self.kind not in {"llm", "hybrid"} and self.llm is not None:
+            raise ValueError(
+                f"agents.{self.name} only supports an llm block when kind is llm or hybrid."
             )
         return self
 
@@ -590,3 +680,16 @@ class ProjectConfigSchema(BaseModel):
     research: ProjectResearchSection
     agents: List[ProjectAgentConfig]
     deployment: ProjectDeploymentSection
+
+    @model_validator(mode="after")
+    def validate_paper_streaming_requirements(self) -> "ProjectConfigSchema":
+        requires_streaming = any(
+            agent.kind == "model" and agent.mode == "paper" for agent in self.agents
+        )
+        if requires_streaming and (
+            self.data.streaming is None or not self.data.streaming.enabled
+        ):
+            raise ValueError(
+                "data.streaming.enabled must be true when a model agent is configured with mode=paper."
+            )
+        return self

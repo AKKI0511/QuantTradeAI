@@ -81,14 +81,18 @@ class LiveTradingEngine:
 
     model_config: str
     model_path: str
+    features_config: str = "config/features_config.yaml"
     streaming_config: str = "config/streaming.yaml"
     risk_config: str | None = "config/risk_config.yaml"
     position_manager_config: str | None = "config/position_manager.yaml"
     enable_health_api: bool | None = None
     initial_capital: float = 1_000_000.0
+    max_risk_per_trade: float = 0.02
+    max_portfolio_risk: float = 0.10
     history_window: int = 512
     min_history_for_features: int = 220
     stop_loss_pct: float = 0.01
+    shutdown_drain_timeout: float = 0.5
     execution_hook: ExecutionHook | None = None
     gateway: StreamingGateway | None = None
     data_processor: DataProcessor | None = None
@@ -102,7 +106,7 @@ class LiveTradingEngine:
         self.gateway = self.gateway or StreamingGateway(self.streaming_config)
         if self.enable_health_api is not None:
             self.gateway._api_enabled = self.enable_health_api  # type: ignore[attr-defined]
-        self.data_processor = self.data_processor or DataProcessor()
+        self.data_processor = self.data_processor or DataProcessor(self.features_config)
         self.model = self.model or MomentumClassifier(self.model_config)
         if not self.model_path:
             raise ValueError("model_path is required for live trading.")
@@ -111,7 +115,10 @@ class LiveTradingEngine:
         guard = _load_risk_guard(self.risk_config)
         self.risk_manager = RiskManager(drawdown_guard=guard)
         self.portfolio = PortfolioManager(
-            capital=self.initial_capital, risk_manager=self.risk_manager
+            capital=self.initial_capital,
+            max_risk_per_trade=self.max_risk_per_trade,
+            max_portfolio_risk=self.max_portfolio_risk,
+            risk_manager=self.risk_manager,
         )
         self.position_manager = _load_position_manager(
             self.position_manager_config, cash=self.initial_capital
@@ -327,7 +334,13 @@ class LiveTradingEngine:
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning("execution_hook_failed", error=str(exc))
 
-    def _handle_signal(self, symbol: str, price: float, signal: int) -> None:
+    def _handle_signal(
+        self,
+        symbol: str,
+        price: float,
+        signal: int,
+        timestamp: pd.Timestamp,
+    ) -> None:
         if signal > 0:
             if symbol in self.portfolio.positions:
                 return
@@ -336,19 +349,42 @@ class LiveTradingEngine:
             )
             if qty > 0:
                 if self.position_manager is not None:
-                    self.position_manager.open_position(symbol, qty, price)
+                    self.position_manager.open_position(
+                        symbol,
+                        qty,
+                        price,
+                        timestamp=timestamp.to_pydatetime(),
+                    )
                     self._sync_position_manager()
                 self._record_execution(
-                    {"action": "buy", "symbol": symbol, "qty": qty, "price": price}
+                    {
+                        "action": "buy",
+                        "symbol": symbol,
+                        "qty": qty,
+                        "price": price,
+                        "timestamp": timestamp,
+                        "signal": signal,
+                    }
                 )
         elif signal < 0 and symbol in self.portfolio.positions:
             qty = self.portfolio.close_position(symbol, price)
             if qty > 0:
                 if self.position_manager is not None:
-                    self.position_manager.close_position(symbol, price)
+                    self.position_manager.close_position(
+                        symbol,
+                        price,
+                        timestamp=timestamp.to_pydatetime(),
+                    )
                     self._sync_position_manager()
                 self._record_execution(
-                    {"action": "sell", "symbol": symbol, "qty": qty, "price": price}
+                    {
+                        "action": "sell",
+                        "symbol": symbol,
+                        "qty": qty,
+                        "price": price,
+                        "timestamp": timestamp,
+                        "signal": signal,
+                    }
                 )
 
     async def _consume_buffer(self) -> None:
@@ -384,7 +420,7 @@ class LiveTradingEngine:
                 signal = self._predict_signal(features)
                 if signal is None:
                     continue
-                self._handle_signal(symbol, price, signal)
+                self._handle_signal(symbol, price, signal, timestamp)
                 self._mark_to_market(symbol, price, timestamp)
             except Exception as exc:  # pragma: no cover - runtime guard
                 logger.error("live_pipeline_error", error=str(exc))
@@ -412,6 +448,15 @@ class LiveTradingEngine:
             await self.gateway._start()
         finally:
             if self._consumer:
+                if self.shutdown_drain_timeout > 0:
+                    deadline = (
+                        asyncio.get_running_loop().time() + self.shutdown_drain_timeout
+                    )
+                    while (
+                        not self.gateway.buffer.queue.empty()
+                        and asyncio.get_running_loop().time() < deadline
+                    ):
+                        await asyncio.sleep(0.01)
                 self._consumer.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await self._consumer

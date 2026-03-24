@@ -1,295 +1,241 @@
-<div align="center">
-
 # QuantTradeAI
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](LICENSE)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Poetry](https://img.shields.io/badge/poetry-managed-%231C1C1C)](https://python-poetry.org/)
+> Quant research workflows and trading agents from one YAML project.
 
-<i>Machine learning framework for momentum‑driven quantitative trading</i>
+QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and developers who want a practical path from market data to research runs, backtests, and trading agents. The happy path is intentionally simple: define one project, run it from the CLI, and inspect standardized artifacts for every run.
 
-</div>
+[Getting Started](docs/getting-started.md) | [Project YAML](docs/configuration/project-yaml.md) | [Quick Reference](docs/quick-reference.md) | [Configuration](docs/configuration.md) | [Roadmap](roadmap.md) | [Contributing](CONTRIBUTING.md)
+
+> [!TIP]
+> New users should start with `config/project.yaml`. It is the canonical entrypoint for `init`, `validate`, `research run`, and `agent run`.
+
+## Start Here
+
+- Want the fastest working path? Jump to [Research In 4 Commands](#research-in-4-commands)
+- Already have a trained model? Jump to [Run A Model Agent](#run-a-model-agent)
+- Evaluating prompt-driven agents? Jump to [Backtest An LLM Agent](#backtest-an-llm-agent)
+- Need the full config shape? Jump to [What A Project Looks Like](#what-a-project-looks-like)
+- Comparing current capabilities? Jump to [Current Support](#current-support)
 
 ## Why QuantTradeAI
 
-- Research and production toolkit for ML-based trading strategies
-- Designed for quants, data scientists, and ML engineers
-- Time‑aware evaluation, configurable features, reproducible experiments
+- **One project file**: keep research and agents in the same `config/project.yaml`
+- **One clear CLI**: initialize, validate, run research, and run agents with a small command surface
+- **Shared primitives**: reuse symbols, features, and time windows across workflows
+- **Run visibility by default**: each run writes resolved configs, metrics, and artifacts to disk
+- **YAML first, Python extendable**: common workflows require little or no framework code
 
-## Key Features
+## At A Glance
 
-- 📊 Data: YFinance/AlphaVantage loaders, caching, validation
-- 🧪 Features: technical indicators, custom signals, optional LLM sentiment
-- 🤖 Models: ensemble VotingClassifier (LR, RF, XGBoost) with Optuna tuning
-- 📈 Backtesting: execution costs, slippage, liquidity limits, adaptive impact, intrabar fills, borrow fees
-- 🛡️ Risk management: drawdown and turnover guards
-- 📟 Live trading: real-time position manager with intraday risk controls
-- 🔌 Streaming: plugin-ready provider framework with automatic discovery and health monitoring
-- 🛠️ CLI: end‑to‑end pipeline, evaluation, and model backtest in one place
+| I want to... | Best path today | What I get |
+| --- | --- | --- |
+| Research a strategy end to end | `init` -> `validate` -> `research run` | Time-aware evaluation, backtests, metrics, run records |
+| Run a trained model as an agent | `init --template model-agent` -> `agent run --mode backtest|paper` | One YAML-defined agent that can be backtested and paper-run |
+| Backtest an LLM agent | `init --template llm-agent` -> `agent run --mode backtest` | Prompt-driven agent logic using project config |
+| Backtest a hybrid agent | `init --template hybrid` -> `research run` -> `agent run --mode backtest` | Model signals plus LLM reasoning in one project |
+| Keep using the older live loop | `live-trade` with runtime YAML files | Legacy compatibility for existing setups |
 
-## Quickstart
+## How It Fits Together
 
-1) Install
+```mermaid
+flowchart LR
+    A["config/project.yaml"] --> B["validate"]
+    A --> C["research run"]
+    A --> D["agent run"]
+    C --> E["trained model artifact"]
+    E --> D
+    C --> F["runs/research/..."]
+    D --> G["runs/agent/backtest/..."]
+    D --> H["runs/agent/paper/..."]
+```
+
+QuantTradeAI is one framework with two connected tracks:
+
+- **Research**: data -> features -> labels -> training -> evaluation -> backtest -> run records
+- **Agents**: YAML-defined `model`, `llm`, and `hybrid` agents that reuse the same project definitions
+
+## Current Support
+
+| Workflow | Status |
+| --- | --- |
+| `research run` from `project.yaml` | Supported |
+| `agent run` for `model` agents in `backtest` | Supported |
+| `agent run` for `model` agents in `paper` | Supported |
+| `agent run` for `llm` and `hybrid` agents in `backtest` | Supported |
+| `agent run` for `llm` and `hybrid` agents in `paper` | Roadmap |
+| `rule` agents | Roadmap |
+| Deployment and promotion UX | Roadmap |
+
+> [!NOTE]
+> `live-trade` still exists for legacy runtime YAML workflows. It does not read `config/project.yaml`.
+
+## Install In 2 Minutes
+
+QuantTradeAI requires Python `3.11+`.
+
 ```bash
 git clone https://github.com/AKKI0511/QuantTradeAI.git
 cd QuantTradeAI
-poetry install
+poetry install --with dev
+poetry run quanttradeai --help
 ```
 
-2) Run the pipeline
-```bash
-# Show commands
-poetry run quanttradeai --help
+If you prefer a package install, `pip install .` also works.
 
-# Canonical project-config research path
+## Fastest Working Paths
+
+### Research In 4 Commands
+
+Use this if you want the simplest end-to-end quant workflow.
+
+```bash
 poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai runs list
+```
 
-# Canonical project-config agent backtest path
+This path gives you:
+
+- a canonical project config
+- resolved-config validation output
+- a research run with metrics and artifacts
+- standardized outputs under `runs/research/...`
+
+### Run A Model Agent
+
+Use this if you already have a trained model artifact and want one YAML-defined agent that can run in both backtest and paper mode.
+
+```bash
+poetry run quanttradeai init --template model-agent -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+
+# Replace models/trained/aapl_daily_classifier/ with a real trained model artifact
+
+poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
+```
+
+> [!IMPORTANT]
+> The `model-agent` template creates a placeholder model directory so the project structure is obvious. Replace it with a real trained model artifact before running the agent.
+
+### Backtest An LLM Agent
+
+Use this if you want prompt-driven agent logic from YAML.
+
+```bash
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
-
-# Import an existing legacy config/ directory into the canonical workflow
-poetry run quanttradeai validate --legacy-config-dir config
-poetry run quanttradeai research run --legacy-config-dir config
 ```
 
-3) Evaluate and backtest a saved model
-```bash
-# Evaluate a trained model on current data
-# (use a path under models/experiments/<timestamp>/<SYMBOL> or your own models/trained/<SYMBOL>)
-poetry run quanttradeai evaluate -m models/experiments/<timestamp>/<SYMBOL> -c config/model_config.yaml
+### Backtest A Hybrid Agent
 
-# Backtest a saved model on the configured test window (with execution costs and optional risk halts)
-poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> -c config/model_config.yaml -b config/backtest_config.yaml --risk-config config/risk_config.yaml
-```
-
-Artifacts are written to:
-- `runs/research/<timestamp>_<project>/` (`resolved_project_config.yaml`, runtime YAMLs, `summary.json`, `metrics.json`, automatic backtest summary)
-- `runs/agent/backtest/<timestamp>_<agent>/` (`resolved_project_config.yaml`, runtime YAMLs, `summary.json`, `metrics.json`, `equity_curve.csv`, `decisions.jsonl`, sampled prompts)
-- `models/experiments/<timestamp>/` (trained symbol models + `results.json`)
-- `reports/backtests/<timestamp>/<SYMBOL>/` (`metrics.json`, `equity_curve.csv`, `ledger.csv`) for standalone backtest commands
-
-## Configuration
-
-- `config/project.yaml`: canonical Stage 1 config for research, agents, and deployment targets
-- `config/model_config.yaml`, `config/features_config.yaml`, `config/backtest_config.yaml`: legacy compatibility files that can be imported with `--legacy-config-dir`
-- `config/risk_config.yaml`: optional drawdown and turnover guards for standalone backtests and live trading
-- `config/streaming.yaml`: optional provider, auth, and subscription settings for live trading
-- `config/position_manager.yaml`: optional live position tracking and impact parameters
-
-Pass `--risk-config path/to/risk.yaml` to `poetry run quanttradeai backtest-model` to enforce the configured drawdown guard during CLI backtests. If the file is omitted or missing, the backtest proceeds without halts.
-
-Time‑aware evaluation rules:
-- If `data.test_start` and `data.test_end` set: train = dates < `test_start`; test = `test_start` ≤ dates ≤ `test_end`
-- If only `data.test_start` set: train = dates < `test_start`; test = dates ≥ `test_start`
-- Otherwise: last `training.test_size` fraction is used chronologically (no shuffle)
-
-See docs for details: [Configuration Guide](docs/configuration.md), [Quick Reference](docs/quick-reference.md).
-
-## CLI Commands
-
-Canonical workflow:
+Use this if you want to combine trained model signals and LLM reasoning in one project.
 
 ```bash
-poetry run quanttradeai init --template research -o config/project.yaml           # Generate canonical happy-path project config
-poetry run quanttradeai validate -c config/project.yaml                            # Validate canonical project config and write resolved artifacts
-poetry run quanttradeai research run -c config/project.yaml                        # Run the canonical end-to-end Stage 1 research workflow
-poetry run quanttradeai runs list                                                  # List research and agent runs from local artifacts
-poetry run quanttradeai init --template llm-agent -o config/project.yaml           # Generate a runnable LLM agent config and prompt file
-poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest  # Backtest a YAML-defined agent
-poetry run quanttradeai validate --legacy-config-dir config                        # Import legacy YAMLs into canonical validation
-poetry run quanttradeai research run --legacy-config-dir config                    # Import legacy YAMLs and run the canonical research workflow
+poetry run quanttradeai init --template hybrid -o config/project.yaml
+poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode backtest
 ```
 
-Legacy compatibility path (still supported):
+## What A Project Looks Like
+
+The happy path is centered on `config/project.yaml`.
+
+```yaml
+project:
+  name: "intraday_lab"
+  profile: "paper"
+
+data:
+  symbols: ["AAPL"]
+  start_date: "2022-01-01"
+  end_date: "2024-12-31"
+  timeframe: "1d"
+  test_start: "2024-09-01"
+  test_end: "2024-12-31"
+
+features:
+  definitions:
+    - name: "rsi_14"
+      type: "technical"
+      params: { period: 14 }
+
+agents:
+  - name: "paper_momentum"
+    kind: "model"
+    mode: "paper"
+    model:
+      path: "models/trained/aapl_daily_classifier"
+```
+
+For the full shape, field reference, and supported agent modes, see [Project YAML](docs/configuration/project-yaml.md).
+
+## What You Get After Each Run
+
+| Workflow | Output directory | Typical artifacts |
+| --- | --- | --- |
+| Research | `runs/research/<timestamp>_<project>/` | `resolved_project_config.yaml`, runtime YAML snapshots, `summary.json`, `metrics.json`, backtest artifacts |
+| Agent backtest | `runs/agent/backtest/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, backtest files |
+| Agent paper | `runs/agent/paper/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `executions.jsonl`, runtime YAML snapshots |
+
+This makes it easier to compare runs, audit what actually executed, and reuse winning configurations.
+
+## Documentation Map
+
+### Start Here
+
+- [Getting Started](docs/getting-started.md)
+- [Quick Reference](docs/quick-reference.md)
+
+### Configuration
+
+- [Configuration Overview](docs/configuration.md)
+- [Project YAML](docs/configuration/project-yaml.md)
+- [Runtime and Live Trading Configs](docs/configuration/live-runtime-files.md)
+- [Legacy Config Compatibility](docs/configuration/legacy-configs.md)
+
+### Reference
+
+- [API Docs](docs/api/)
+- [Docs Index](docs/README.md)
+
+### Product Direction
+
+- [Roadmap](roadmap.md)
+
+## Legacy Compatibility
+
+`config/project.yaml` is the recommended path for new work. Legacy workflows remain available for compatibility, especially for saved-model backtests and the older live trading loop.
 
 ```bash
 poetry run quanttradeai fetch-data -c config/model_config.yaml
 poetry run quanttradeai train -c config/model_config.yaml
 poetry run quanttradeai evaluate -m <model_dir> -c config/model_config.yaml
-poetry run quanttradeai backtest -c config/backtest_config.yaml
-poetry run quanttradeai backtest-model -m <model_dir> -c config/model_config.yaml -b config/backtest_config.yaml --risk-config config/risk_config.yaml
-poetry run quanttradeai validate-config
+poetry run quanttradeai backtest-model -m <model_dir> -c config/model_config.yaml -b config/backtest_config.yaml
 poetry run quanttradeai live-trade -m <model_dir> -c config/model_config.yaml -s config/streaming.yaml
+poetry run quanttradeai validate-config
 ```
 
-## Python API
+Important boundary:
 
-```python
-from quanttradeai import DataLoader, DataProcessor, MomentumClassifier
-
-loader = DataLoader("config/model_config.yaml")
-processor = DataProcessor("config/features_config.yaml")
-clf = MomentumClassifier("config/model_config.yaml")
-
-data = loader.fetch_data()
-df = processor.process_data(data["AAPL"])          # feature pipeline
-df = processor.generate_labels(df)                   # forward returns → labels
-X, y = clf.prepare_data(df)
-clf.train(X, y)
-```
-
-## Environment & Secrets
-
-- Copy `.env.example` to `.env` and fill values:
-
-```bash
-cp .env.example .env
-```
-
-Required vs optional keys:
-- Required only if the related feature/provider is used.
-- Examples:
-  - LLM Sentiment (provider-dependent):
-    - `OPENAI_API_KEY` (required if `provider: openai`)
-    - `ANTHROPIC_API_KEY` (required if `provider: anthropic`)
-    - `HUGGINGFACE_API_KEY` (required if `provider: huggingface`)
-  - Streaming providers with `auth_method: api_key`:
-    - Alpaca: `ALPACA_API_KEY`, `ALPACA_API_SECRET` (required if used)
-
-## LLM Sentiment (Optional)
-
-Configure in `config/features_config.yaml`:
-```yaml
-sentiment:
-  enabled: true
-  provider: openai
-  model: gpt-3.5-turbo
-  api_key_env_var: OPENAI_API_KEY
-```
-Export the key and run the pipeline. A `sentiment_score` column is added when a `text` column exists. See [docs/llm-sentiment.md](docs/llm-sentiment.md).
-
-## Streaming (Optional)
-
-- CLI: `poetry run quanttradeai live-trade -m models/experiments/<run>/AAPL --config config/model_config.yaml --streaming-config config/streaming.yaml`
-- YAML‑driven gateway via `config/streaming.yaml`:
-
-```yaml
-streaming:
-  symbols: ["AAPL"]
-  providers:
-    - name: "alpaca"
-      websocket_url: "wss://stream.data.alpaca.markets/v2/iex"
-      auth_method: "api_key"
-      subscriptions: ["trades", "quotes"]
-  buffer_size: 1000
-  reconnect_attempts: 3
-  health_check_interval: 30
-```
-
-```python
-from quanttradeai.streaming import StreamingGateway
-
-gw = StreamingGateway("config/streaming.yaml")
-gw.subscribe_to_trades(["AAPL"], lambda m: print("TRADE", m))
-# gw.start_streaming()  # blocking
-```
-
-- Provider adapters are discovered dynamically via `quanttradeai.streaming.providers.ProviderDiscovery`,
-  validated with `ProviderConfigValidator`, and monitored through `ProviderHealthMonitor`. See
-  [docs/api/streaming.md](docs/api/streaming.md) for detailed provider configuration and health tooling.
-- The live trading pipeline (`quanttradeai.streaming.live_trading.LiveTradingEngine`) combines the
-  streaming gateway, feature generation, model inference, risk controls, and optional health API. Use
-  `--health-api true` to expose `/health` and `/metrics` while streaming.
-
-### Streaming Health Monitoring
-
-Enable advanced monitoring by adding a `streaming_health` section to your config and,
-optionally, starting the embedded REST server:
-
-```yaml
-streaming_health:
-  monitoring:
-    enabled: true
-    check_interval: 5
-  metrics:
-    enabled: true
-    host: "0.0.0.0"
-    port: 9000
-  thresholds:
-    max_latency_ms: 100
-    min_throughput_msg_per_sec: 50
-    max_queue_depth: 5000
-  alerts:
-    enabled: true
-    channels: ["log", "metrics"]
-    escalation_threshold: 3
-  api:
-    enabled: true
-    host: "0.0.0.0"
-    port: 8000
-```
-
-Query live status while streaming:
-
-```bash
-curl http://localhost:8000/health    # readiness probe
-curl http://localhost:8000/status    # detailed metrics + incidents
-curl http://localhost:8000/metrics   # Prometheus scrape
-```
-
-Common patterns:
-
-- Tune `escalation_threshold` to control alert promotion.
-- Increase `max_queue_depth` in high-volume environments.
-- Set `circuit_breaker_timeout` to avoid thrashing unstable providers.
-- Run the standalone metrics exporter (default `0.0.0.0:9000`) when you want Prometheus
-  scraping without enabling the FastAPI health server; if both are enabled on the same
-  host/port, the health API continues to serve `/metrics` and the exporter stays
-  disabled to avoid port collisions.
-
-## Project Layout
-
-```
-quanttradeai/          # Core package
-├─ data/               # Data sources, loader, processor
-├─ features/           # Technical & custom features
-├─ models/             # MomentumClassifier & utilities
-├─ backtest/           # Vectorized backtester + metrics
-├─ trading/            # Risk & portfolio management
-├─ streaming/          # WebSocket gateway
-├─ utils/              # Config schemas, metrics, viz
-config/                # YAML configs (model, features, backtest, streaming)
-docs/                  # Guides, API, examples
-tests/                 # Pytest suite mirroring package
-```
+- `agent run --mode paper` for project-defined `model` agents compiles runtime config from `config/project.yaml`
+- `live-trade` still uses the runtime YAML files directly
 
 ## Development
 
 ```bash
 poetry install --with dev
-make format     # Black
-make lint       # flake8
-make test       # pytest
+make format
+make lint
+make test
 ```
 
-Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+## Contributing
 
-## Links
-
-- [Getting Started](docs/getting-started.md)
-- [API Reference](docs/api/)
-- [Examples](docs/examples/)
-- [Configuration](docs/configuration.md)
-- [Quick Reference](docs/quick-reference.md)
-
-## Roadmap
-
-The roadmap lives in [roadmap.md](roadmap.md) (source of truth) to avoid drift.
-
-Current direction is explicitly two-track:
-- **ML training loop**: reproducible data → features → time-aware training/eval → backtests → promotion.
-- **Trading agents**: YAML-defined LLM and hybrid agents can now run in backtest mode through `quanttradeai agent run`; paper/live promotion and deployment remain on the roadmap.
-
-Stage 1 research status today:
-- Canonical `config/project.yaml`, `init`, `validate`, legacy import, resolved-config artifacts, and end-to-end `research run` are implemented.
-- Standardized local run records and `quanttradeai runs list` are implemented for research and agent backtests.
-- First-class paper/live agent execution, deployment, and promotion remain roadmap items.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT © Contributors — see [LICENSE](LICENSE)
+MIT. See [LICENSE](LICENSE).

@@ -76,12 +76,14 @@ def _validate_agent_project_sections(
         for item in (resolved.get("features") or {}).get("definitions", [])
         if isinstance(item, dict) and item.get("name")
     }
+    data_streaming_cfg = dict((resolved.get("data") or {}).get("streaming") or {})
 
     for agent in resolved.get("agents") or []:
         agent_name = agent.get("name", "<unknown>")
         agent_kind = agent.get("kind")
         context_cfg = dict(agent.get("context") or {})
         llm_cfg = agent.get("llm") or {}
+        model_cfg = agent.get("model") or {}
 
         if agent_kind in {"llm", "hybrid"}:
             prompt_file = llm_cfg.get("prompt_file")
@@ -89,6 +91,21 @@ def _validate_agent_project_sections(
             if not prompt_path.is_file():
                 errors.append(
                     f"Agent '{agent_name}' prompt file does not exist: {prompt_path}"
+                )
+        if agent_kind == "model":
+            model_path_raw = str(model_cfg.get("path", "")).strip()
+            if not model_path_raw:
+                errors.append(f"Agent '{agent_name}' model path must not be empty.")
+            model_path = resolve_project_path(config_path, model_path_raw)
+            if model_path_raw and not model_path.exists():
+                errors.append(
+                    f"Agent '{agent_name}' model path does not exist: {model_path}"
+                )
+            if agent.get("mode") == "paper" and not data_streaming_cfg.get(
+                "enabled", False
+            ):
+                errors.append(
+                    f"Agent '{agent_name}' is configured for paper mode but data.streaming.enabled is not true."
                 )
 
         missing_features = sorted(
