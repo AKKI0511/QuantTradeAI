@@ -231,6 +231,72 @@ PROJECT_TEMPLATES = {
         ],
         "deployment": {"target": "docker-compose", "mode": "paper"},
     },
+    "model-agent": {
+        "project": {"name": "model_agent_lab", "profile": "paper"},
+        "profiles": {
+            "research": {"mode": "research"},
+            "paper": {"mode": "paper"},
+            "live": {"mode": "live"},
+        },
+        "data": {
+            "symbols": ["AAPL"],
+            "start_date": "2022-01-01",
+            "end_date": "2024-12-31",
+            "timeframe": "1d",
+            "test_start": "2024-09-01",
+            "test_end": "2024-12-31",
+            "streaming": {
+                "enabled": True,
+                "provider": "alpaca",
+                "websocket_url": "wss://stream.data.alpaca.markets/v2/iex",
+                "auth_method": "api_key",
+                "symbols": ["AAPL"],
+                "channels": ["trades", "quotes"],
+                "buffer_size": 1000,
+                "reconnect_attempts": 5,
+                "monitoring": {"enabled": True, "check_interval": 5},
+                "metrics": {"enabled": False, "host": "0.0.0.0", "port": 9000},
+                "api": {"enabled": False, "host": "0.0.0.0", "port": 8000},
+            },
+        },
+        "features": {
+            "definitions": [
+                {"name": "rsi_14", "type": "technical", "params": {"period": 14}}
+            ]
+        },
+        "research": {
+            "enabled": False,
+            "labels": {
+                "type": "forward_return",
+                "horizon": 5,
+                "buy_threshold": 0.01,
+                "sell_threshold": -0.01,
+            },
+            "model": {
+                "kind": "classifier",
+                "family": "voting",
+                "tuning": {"enabled": False, "trials": 1},
+            },
+            "evaluation": {"split": "time_aware", "use_configured_test_window": True},
+            "backtest": {"costs": {"enabled": True, "bps": 5}},
+        },
+        "agents": [
+            {
+                "name": "paper_momentum",
+                "kind": "model",
+                "mode": "paper",
+                "model": {"path": "models/trained/aapl_daily_classifier"},
+                "context": {
+                    "features": ["rsi_14"],
+                    "positions": True,
+                    "risk_state": True,
+                },
+                "tools": ["get_quote", "place_order"],
+                "risk": {"max_position_pct": 0.05},
+            }
+        ],
+        "deployment": {"target": "docker-compose", "mode": "paper"},
+    },
 }
 
 PROJECT_TEMPLATE_PROMPTS = {
@@ -249,6 +315,12 @@ Review the provided market data, engineered features, current position state, ri
 Treat model signals as one input, not an automatic order.
 Use the available tools only as reference context; do not invent tool output.
 """,
+    },
+    "model-agent": {
+        "models/trained/aapl_daily_classifier/README.md": """# Placeholder Model Artifact
+
+Replace this directory with a trained model artifact before running the model agent.
+"""
     },
 }
 
@@ -558,7 +630,10 @@ def cmd_validate_config(
 def _project_to_runtime_configs(
     project_config: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    model_cfg, features_cfg, _ = compile_research_runtime_configs(project_config)
+    model_cfg, features_cfg, _ = compile_research_runtime_configs(
+        project_config,
+        require_research=False,
+    )
     return model_cfg, features_cfg
 
 
@@ -961,17 +1036,64 @@ def cmd_agent_run(
         help="Skip data-quality validation before backtesting",
     ),
 ):
-    """Run a first-class project agent in backtest mode."""
+    """Run a first-class project agent in backtest or paper mode."""
 
     from .agents.backtest import run_agent_backtest
+    from .agents.model_agent import run_model_agent_backtest, run_model_agent_paper
 
     try:
-        summary = run_agent_backtest(
-            project_config_path=config,
-            agent_name=agent,
-            mode=mode,
-            skip_validation=skip_validation,
+        loaded_project = load_project_config(config_path=config)
+        agent_config = next(
+            (
+                dict(item)
+                for item in loaded_project.raw.get("agents") or []
+                if item.get("name") == agent
+            ),
+            None,
         )
+    except Exception:
+        agent_config = None
+
+    if agent_config is None:
+        typer.echo(
+            f"Agent run failed: Agent '{agent}' not found in project config.", err=True
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        agent_kind = agent_config.get("kind")
+        if agent_kind == "model":
+            if mode == "backtest":
+                summary = run_model_agent_backtest(
+                    project_config_path=config,
+                    agent_name=agent,
+                    skip_validation=skip_validation,
+                )
+            elif mode == "paper":
+                if skip_validation:
+                    typer.echo(
+                        "Warning: --skip-validation is ignored for model agent paper runs.",
+                        err=True,
+                    )
+                summary = run_model_agent_paper(
+                    project_config_path=config,
+                    agent_name=agent,
+                )
+            else:
+                raise ValueError(
+                    "Model agents currently support only --mode backtest or --mode paper."
+                )
+        elif agent_kind in {"llm", "hybrid"}:
+            summary = run_agent_backtest(
+                project_config_path=config,
+                agent_name=agent,
+                mode=mode,
+                skip_validation=skip_validation,
+            )
+        elif agent_kind == "rule":
+            raise ValueError("Rule agents are not implemented yet.")
+        else:
+            raise ValueError(f"Unsupported agent kind: {agent_kind}")
     except Exception as exc:
         typer.echo(f"Agent run failed: {exc}", err=True)
         raise typer.Exit(code=1)

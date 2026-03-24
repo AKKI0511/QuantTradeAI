@@ -23,8 +23,8 @@ from quanttradeai.main import (
 from quanttradeai.models.classifier import MomentumClassifier
 from quanttradeai.trading.portfolio import PortfolioManager
 from quanttradeai.utils.config_validator import validate_project_config
+from quanttradeai.utils.project_config import compile_research_runtime_configs
 from quanttradeai.utils.project_paths import resolve_project_path
-from quanttradeai.utils.project_runtime import project_to_runtime_configs
 from quanttradeai.utils.run_records import apply_required_run_fields, create_run_dir
 
 from .base import AgentSimulationState, action_to_target, signal_to_action
@@ -64,23 +64,6 @@ def _write_jsonl(path: Path, payloads: list[dict[str, Any]]) -> None:
         for payload in payloads:
             handle.write(json.dumps(payload, default=_json_default))
             handle.write("\n")
-
-
-def _agent_execution_config(project_config: dict[str, Any]) -> dict[str, Any]:
-    research_backtest = (project_config.get("research") or {}).get("backtest") or {}
-    costs_cfg = dict(research_backtest.get("costs") or {})
-    if not costs_cfg:
-        return {}
-    bps = float(costs_cfg.get("bps", 0))
-    enabled = bool(costs_cfg.get("enabled", False) or bps > 0)
-    return {
-        "transaction_costs": {
-            "enabled": enabled,
-            "mode": "bps",
-            "value": bps,
-            "apply_on": "notional",
-        }
-    }
 
 
 def _safe_float(value: Any, default: float) -> float:
@@ -239,12 +222,13 @@ def run_agent_backtest(
             project_config_path=project_config_path,
         )
 
-        model_cfg, features_cfg = project_to_runtime_configs(
+        model_cfg, features_cfg, backtest_cfg = compile_research_runtime_configs(
             project_config,
             require_research=False,
         )
         runtime_model_path = run_dir / "runtime_model_config.yaml"
         runtime_features_path = run_dir / "runtime_features_config.yaml"
+        runtime_backtest_path = run_dir / "runtime_backtest_config.yaml"
         runtime_model_path.write_text(
             yaml.safe_dump(model_cfg, sort_keys=False),
             encoding="utf-8",
@@ -253,8 +237,13 @@ def run_agent_backtest(
             yaml.safe_dump(features_cfg, sort_keys=False),
             encoding="utf-8",
         )
+        runtime_backtest_path.write_text(
+            yaml.safe_dump(backtest_cfg, sort_keys=False),
+            encoding="utf-8",
+        )
         summary["artifacts"]["runtime_model_config"] = str(runtime_model_path)
         summary["artifacts"]["runtime_features_config"] = str(runtime_features_path)
+        summary["artifacts"]["runtime_backtest_config"] = str(runtime_backtest_path)
 
         loader = DataLoader(str(runtime_model_path))
         processor = DataProcessor(str(runtime_features_path))
@@ -274,7 +263,7 @@ def run_agent_backtest(
         feature_definitions = list(
             (project_config.get("features") or {}).get("definitions") or []
         )
-        execution_cfg = _agent_execution_config(project_config)
+        execution_cfg = dict(backtest_cfg.get("execution") or {})
         stop_loss_pct = _safe_float(model_cfg.get("trading", {}).get("stop_loss"), 0.02)
         max_risk_per_trade = _safe_float(
             (agent_config.get("risk") or {}).get("max_position_pct"),

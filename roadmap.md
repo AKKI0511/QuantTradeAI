@@ -1,6 +1,6 @@
 # QuantTradeAI Roadmap
 
-Last updated: 2026-03-22
+Last updated: 2026-03-23
 
 This document is the product source of truth for QuantTradeAI.
 It is written for both human contributors and coding agents.
@@ -317,14 +317,16 @@ Deliverables:
 - Make feature selection explicit and shared across research and agent flows.
 - Fix time-aware preprocessing and evaluation defaults.
 
-Status on 2026-03-22:
+Status on 2026-03-23:
 
 - Implemented for the research happy path: canonical `config/project.yaml`, `init`, `validate`, legacy config import via flags, resolved-config artifacts, standardized research run directories, automatic backtests from `research run`, and time-aware preprocessing/evaluation defaults.
 - `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest` is implemented for `llm` and `hybrid` agents.
+- `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest|paper` is implemented for `model` agents.
 - Agent templates now write the referenced prompt markdown assets.
-- Agent backtest runs now persist resolved config, metrics, equity curve, ledger, decisions, sampled prompt/response payloads, and standardized run metadata under `runs/agent/backtest/...`.
+- Agent backtest runs now persist resolved config, runtime YAML snapshots, metrics, equity curve, ledger, decisions, sampled prompt/response payloads where applicable, and standardized run metadata under `runs/agent/backtest/...`.
+- Model-agent paper runs now persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, and `executions.jsonl` under `runs/agent/paper/...`.
 - `quanttradeai runs list` is implemented for local research and agent run discovery.
-- Remaining Stage 1 work includes `rule` and `model` agents, paper/live agent execution, and promotion UX.
+- Remaining Stage 1 work includes `rule` agents, paper/live execution for `llm` and `hybrid` agents, and promotion UX.
 
 ### Stage 2: Multi-Agent Lab
 
@@ -415,15 +417,15 @@ quanttradeai promote --run <run_id>
 ### Agent track
 
 ```bash
-quanttradeai init --template llm-agent -o config/project.yaml
+quanttradeai init --template model-agent -o config/project.yaml
 quanttradeai validate -c config/project.yaml
-quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
-quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
+quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
+quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
 quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
 ```
 
 Current implementation note:
-`agent run` is available today for `--mode backtest`. `paper`, `live`, and `deploy` remain roadmap work.
+`model` agents support `--mode backtest` and `--mode paper` today. `llm` and `hybrid` agents currently support `--mode backtest` only. `live` and `deploy` remain roadmap work.
 
 ### Hybrid track
 

@@ -299,6 +299,8 @@ def load_project_config(
 
 def compile_research_runtime_configs(
     project_config: dict[str, Any],
+    *,
+    require_research: bool = True,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Compile canonical project config into runtime research configs."""
 
@@ -310,7 +312,7 @@ def compile_research_runtime_configs(
     compat_trading_cfg = dict(project_config.get("trading") or {})
     compat_execution_cfg = dict(project_config.get("execution") or {})
 
-    if not research_cfg.get("enabled", True):
+    if require_research and not research_cfg.get("enabled", True):
         raise ValueError(
             "research.enabled must be true for `quanttradeai research run`."
         )
@@ -548,3 +550,54 @@ def compile_research_runtime_configs(
     }
 
     return model_cfg, runtime_features_cfg, runtime_backtest_cfg
+
+
+def compile_paper_streaming_runtime_config(
+    project_config: dict[str, Any],
+) -> dict[str, Any]:
+    """Compile canonical project streaming settings into gateway runtime YAML."""
+
+    data_cfg = dict(project_config.get("data") or {})
+    streaming_cfg = dict(data_cfg.get("streaming") or {})
+    if not streaming_cfg.get("enabled", False):
+        raise ValueError(
+            "data.streaming.enabled must be true for `quanttradeai agent run --mode paper`."
+        )
+
+    symbols = list(streaming_cfg.get("symbols") or data_cfg.get("symbols") or [])
+    channels = list(streaming_cfg.get("channels") or [])
+    provider_cfg: dict[str, Any] = {
+        "name": streaming_cfg.get("provider"),
+        "websocket_url": streaming_cfg.get("websocket_url"),
+        "auth_method": streaming_cfg.get("auth_method", "api_key"),
+        "subscriptions": channels,
+        "symbols": symbols,
+    }
+    if streaming_cfg.get("rate_limit"):
+        provider_cfg["rate_limit"] = dict(streaming_cfg.get("rate_limit") or {})
+    if streaming_cfg.get("circuit_breaker"):
+        provider_cfg["circuit_breaker"] = dict(
+            streaming_cfg.get("circuit_breaker") or {}
+        )
+
+    runtime_cfg: dict[str, Any] = {
+        "streaming": {
+            "symbols": symbols,
+            "providers": [provider_cfg],
+            "buffer_size": int(streaming_cfg.get("buffer_size", 1000)),
+            "reconnect_attempts": int(streaming_cfg.get("reconnect_attempts", 5)),
+        }
+    }
+    health_check_interval = streaming_cfg.get("health_check_interval")
+    if health_check_interval is not None:
+        runtime_cfg["streaming"]["health_check_interval"] = int(health_check_interval)
+
+    health_sections = {}
+    for key in ("monitoring", "thresholds", "alerts", "metrics", "api"):
+        value = streaming_cfg.get(key)
+        if value:
+            health_sections[key] = dict(value)
+    if health_sections:
+        runtime_cfg["streaming_health"] = health_sections
+
+    return runtime_cfg

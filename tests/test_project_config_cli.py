@@ -206,6 +206,7 @@ def test_init_writes_prompt_assets_for_agent_templates(tmp_path: Path, monkeypat
     for template_name, prompt_file in (
         ("llm-agent", "prompts/breakout.md"),
         ("hybrid", "prompts/hybrid_swing.md"),
+        ("model-agent", "models/trained/aapl_daily_classifier/README.md"),
     ):
         cfg_path = Path("config") / template_name / "project.yaml"
         result = runner.invoke(
@@ -215,6 +216,71 @@ def test_init_writes_prompt_assets_for_agent_templates(tmp_path: Path, monkeypat
 
         assert result.exit_code == 0, result.stdout
         assert (tmp_path / "config" / template_name / prompt_file).is_file()
+
+
+def test_model_agent_template_includes_canonical_streaming_block(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    result = runner.invoke(
+        app,
+        ["init", "--template", "model-agent", "--output", str(cfg_path)],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    assert payload["agents"][0]["kind"] == "model"
+    assert payload["agents"][0]["mode"] == "paper"
+    assert payload["data"]["streaming"]["enabled"] is True
+    assert payload["data"]["streaming"]["provider"] == "alpaca"
+    assert payload["data"]["streaming"]["channels"] == ["trades", "quotes"]
+
+
+def test_validate_fails_when_model_agent_path_missing(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "model-agent", "--output", str(cfg_path)],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    model_dir = Path("models/trained/aapl_daily_classifier")
+    for child in list(model_dir.iterdir()):
+        child.unlink()
+    model_dir.rmdir()
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "model path does not exist" in result.stderr.lower()
+
+
+def test_validate_fails_when_model_agent_paper_streaming_is_incomplete(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["model-agent"], sort_keys=False)
+    )
+    config_payload["data"]["streaming"].pop("websocket_url")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+    model_dir = Path("models/trained/aapl_daily_classifier")
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "data.streaming requires websocket_url" in result.stderr.lower()
 
 
 def test_validate_fails_when_agent_prompt_file_missing(tmp_path: Path, monkeypatch):
@@ -274,6 +340,10 @@ def test_validate_preserves_unknown_fields_in_resolved_artifact(
     config_payload["data"]["streaming"] = {
         "enabled": True,
         "provider": "paper-feed",
+        "websocket_url": "wss://example.test/stream",
+        "auth_method": "api_key",
+        "symbols": ["AAPL"],
+        "channels": ["trades"],
     }
 
     cfg_path.write_text(
@@ -288,10 +358,15 @@ def test_validate_preserves_unknown_fields_in_resolved_artifact(
     resolved = yaml.safe_load(resolved_path.read_text(encoding="utf-8"))
 
     assert resolved["risk"] == {"enabled": True, "max_drawdown": 0.15}
-    assert resolved["data"]["streaming"] == {
-        "enabled": True,
-        "provider": "paper-feed",
-    }
+    assert resolved["data"]["streaming"]["enabled"] is True
+    assert resolved["data"]["streaming"]["provider"] == "paper-feed"
+    assert (
+        resolved["data"]["streaming"]["websocket_url"]
+        == "wss://example.test/stream"
+    )
+    assert resolved["data"]["streaming"]["auth_method"] == "api_key"
+    assert resolved["data"]["streaming"]["symbols"] == ["AAPL"]
+    assert resolved["data"]["streaming"]["channels"] == ["trades"]
 
 
 def test_validate_can_import_legacy_config_bundle(tmp_path: Path, monkeypatch):

@@ -65,6 +65,7 @@ class PortfolioManager:
         self.max_risk_per_trade = max_risk_per_trade
         self.max_portfolio_risk = max_portfolio_risk
         self.positions: Dict[str, dict] = {}
+        self.realized_pnl = 0.0
         self.risk_manager = risk_manager
 
     @property
@@ -130,6 +131,7 @@ class PortfolioManager:
         self.positions[symbol] = {
             "qty": qty,
             "price": price,
+            "entry_price": price,
             "stop_loss_pct": stop_loss,
         }
         if self.risk_manager is not None:
@@ -141,6 +143,8 @@ class PortfolioManager:
         pos = self.positions.pop(symbol, None)
         if pos is None:
             return 0
+        entry_price = float(pos.get("entry_price", pos["price"]))
+        self.realized_pnl += pos["qty"] * (price - entry_price)
         notional = pos["qty"] * price
         self.cash += notional
         if self.risk_manager is not None:

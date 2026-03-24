@@ -1,33 +1,17 @@
 # Getting Started
 
-Welcome to QuantTradeAI! This guide will help you get up and running quickly.
+This guide covers the shortest working paths through QuantTradeAI.
 
-## 🚀 Quick Installation
+## Install
 
-### Prerequisites
-- Python 3.11 or higher
-- Poetry (recommended) or pip
-
-### Install with Poetry (Recommended)
-```bash
-# Clone the repository
-git clone https://github.com/AKKI0511/QuantTradeAI.git
-cd QuantTradeAI
-
-# Install dependencies
-poetry install
-```
-
-### Install the package with pip
 ```bash
 git clone https://github.com/AKKI0511/QuantTradeAI.git
 cd QuantTradeAI
-pip install .
+poetry install --with dev
 ```
 
-## 🎯 First Steps
+## Workflow 1: Research From `project.yaml`
 
-### 1. Run the Canonical Stage 1 Workflow
 ```bash
 poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
@@ -35,111 +19,84 @@ poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai runs list
 ```
 
-This will generate a single project config, validate the resolved run settings, execute the end-to-end research workflow, and let you inspect local run artifacts from the CLI.
+This path gives you:
 
-### 1b. Backtest a YAML-defined agent
+- one canonical project config
+- resolved-config validation output
+- a full research run with metrics and artifacts
+- standardized run records under `runs/research/...`
+
+## Workflow 2: Model Agent From `project.yaml`
+
+```bash
+poetry run quanttradeai init --template model-agent -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+```
+
+The model-agent template creates:
+
+- a canonical `config/project.yaml`
+- a placeholder model artifact directory at `models/trained/aapl_daily_classifier/`
+- a minimal `data.streaming` block for paper execution
+
+Replace the placeholder model directory with a real trained model artifact before running the agent.
+
+### Backtest The Agent
+
+```bash
+poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
+```
+
+### Run The Same Agent In Paper Mode
+
+```bash
+poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
+```
+
+Paper runs write standardized artifacts under `runs/agent/paper/...`, including:
+
+- `summary.json`
+- `metrics.json`
+- `executions.jsonl`
+- compiled runtime YAML snapshots
+
+## Workflow 3: LLM Or Hybrid Agent Backtest
+
+LLM and hybrid agents are currently supported in backtest mode from `project.yaml`.
+
 ```bash
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 ```
 
-This path writes a runnable prompt file under `prompts/` and produces a run directory with resolved config, decisions, sampled prompt/response payloads, equity curve, and metrics.
-New agent backtest runs are stored under `runs/agent/backtest/<timestamp>_<agent>/`.
+Hybrid projects use the same pattern:
 
-### 2. Research Workflow Details
 ```bash
-# Legacy training workflow remains available
+poetry run quanttradeai init --template hybrid -o config/project.yaml
+poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode backtest
+```
+
+## Legacy Runtime Workflows
+
+These remain supported:
+
+```bash
 poetry run quanttradeai train -c config/model_config.yaml
+poetry run quanttradeai evaluate -m <model_dir> -c config/model_config.yaml
+poetry run quanttradeai backtest-model -m <model_dir> -c config/model_config.yaml -b config/backtest_config.yaml
+poetry run quanttradeai live-trade -m <model_dir> -c config/model_config.yaml -s config/streaming.yaml
 ```
 
-This will:
-- Process the data and generate features
-- Train ensemble models for each symbol
-- Optimize hyperparameters automatically
-- Save trained models
+Important boundary:
 
-Tip: To control the test window, set `data.test_start` (and optional `data.test_end`) in `config/model_config.yaml`. Hyperparameter tuning uses time‑series cross‑validation (`cv_folds`).
+- project-defined `model` paper agents compile runtime config from `config/project.yaml`
+- `live-trade` still uses the legacy runtime YAML files directly
 
-### 3. Evaluate Results
-```bash
-# Evaluate a trained model
-poetry run quanttradeai evaluate -m models/experiments/<timestamp>/<SYMBOL> -c config/model_config.yaml
-```
+## Where To Go Next
 
-### 4. Backtest a Saved Model
-```bash
-# Backtest a saved model on the configured test window (with execution costs)
-poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> \
-  -c config/model_config.yaml -b config/backtest_config.yaml
-```
-
-This runs an end-to-end evaluation using the model’s saved `feature_columns` and the execution configuration. Artifacts are saved under `reports/backtests/<run_timestamp>/<SYMBOL>/`:
-- metrics.json: summary including Sharpe, drawdown, and CAGR (gross and net)
-- equity_curve.csv: equity curve time series
-- ledger.csv: per-trade fills and costs (when trades occur)
-
-You'll also find a consolidated `reports/backtests/<run_timestamp>/portfolio/` folder containing portfolio-level metrics and equity curve that aggregate every successful symbol in the run.
-
-## 📊 Understanding the Output
-
-After running the training pipeline, you'll find:
-
-- **Trained Models**: `models/trained/` - Saved models for each symbol
-- **Experiment Results**: `models/experiments/` - Training logs and metrics
-- **Cached Data**: `data/raw/` - Downloaded OHLCV data
-- **Processed Data**: `data/processed/` - Feature-engineered data
-
-## 🔧 Configuration
-
-The canonical happy path uses **`config/project.yaml`**.
-Legacy workflows still use:
-
-- **`config/model_config.yaml`** - Model parameters and data settings
-- **`config/features_config.yaml`** - Feature engineering settings
-- **`config/backtest_config.yaml`** - Standalone saved-model backtest execution settings
-
-See the [Configuration Guide](configuration.md) for detailed settings.
-
-## 📚 Next Steps
-
-- **[Quick Reference](quick-reference.md)** - Common commands and patterns
-- **[API Reference](api/)** - Detailed API documentation
-
-- **[Configuration](configuration.md)** - Configuration options
-
-## 🆘 Troubleshooting
-
-### Common Issues
-
-**Data fetching fails:**
-```bash
-# Force refresh data
-poetry run quanttradeai fetch-data --refresh
-```
-
-**Training takes too long:**
-- Reduce `n_trials` in hyperparameter optimization
-- Use fewer symbols in configuration
-
-**Memory issues:**
-- Reduce the date range in configuration
-- Process symbols one at a time
-
-### Getting Help
-
-- Check the [Quick Reference](quick-reference.md) for common patterns
-- Review the [API Reference](api/) for detailed function documentation
-- See the [Quick Reference](quick-reference.md) for complete workflow examples
-- Open an [issue](https://github.com/AKKI0511/QuantTradeAI/issues) for bugs
-
-## 🎉 Congratulations!
-
-You've successfully set up QuantTradeAI! You can now:
-
-- Train models for different assets
-- Experiment with different features
-- Backtest trading strategies
-- Deploy models for production use
-
-Happy trading! 🚀
+- [Project YAML](configuration/project-yaml.md)
+- [Runtime and Live Trading Configs](configuration/live-runtime-files.md)
+- [Quick Reference](quick-reference.md)
+- [Roadmap](../roadmap.md)
