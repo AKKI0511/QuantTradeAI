@@ -75,12 +75,12 @@ def _safe_float(value: Any, default: float) -> float:
 
 def _initialize_model_agent_run(
     *,
+    run_dir: Path,
+    summary: dict[str, Any],
     project_config_path: str,
     agent_name: str,
     mode: str,
 ) -> tuple[
-    Path,
-    dict[str, Any],
     dict[str, Any],
     dict[str, Any],
     dict[str, Any],
@@ -89,6 +89,76 @@ def _initialize_model_agent_run(
     Path,
     Path | None,
 ]:
+    validation = validate_project_config(
+        config_path=project_config_path,
+        output_dir=run_dir,
+    )
+    resolved_path = Path(validation["artifacts"]["resolved_config"])
+    summary["warnings"] = list(validation.get("warnings", []))
+    summary["artifacts"]["resolved_project_config"] = str(resolved_path)
+    project_config = yaml.safe_load(resolved_path.read_text(encoding="utf-8")) or {}
+    agent_config = next(
+        (
+            dict(agent)
+            for agent in project_config.get("agents") or []
+            if agent.get("name") == agent_name
+        ),
+        None,
+    )
+    if agent_config is None:
+        raise ValueError(f"Agent '{agent_name}' not found in project config.")
+    if agent_config.get("kind") != "model":
+        raise ValueError(
+            f"Agent '{agent_name}' is kind={agent_config.get('kind')}; expected kind=model."
+        )
+
+    model_cfg, features_cfg, backtest_cfg = compile_research_runtime_configs(
+        project_config,
+        require_research=False,
+    )
+    runtime_model_path = run_dir / "runtime_model_config.yaml"
+    runtime_features_path = run_dir / "runtime_features_config.yaml"
+    runtime_backtest_path = run_dir / "runtime_backtest_config.yaml"
+    runtime_model_path.write_text(
+        yaml.safe_dump(model_cfg, sort_keys=False),
+        encoding="utf-8",
+    )
+    runtime_features_path.write_text(
+        yaml.safe_dump(features_cfg, sort_keys=False),
+        encoding="utf-8",
+    )
+    runtime_backtest_path.write_text(
+        yaml.safe_dump(backtest_cfg, sort_keys=False),
+        encoding="utf-8",
+    )
+    summary["artifacts"]["runtime_model_config"] = str(runtime_model_path)
+    summary["artifacts"]["runtime_features_config"] = str(runtime_features_path)
+    summary["artifacts"]["runtime_backtest_config"] = str(runtime_backtest_path)
+
+    runtime_streaming_path: Path | None = None
+    if mode == "paper":
+        streaming_cfg = compile_paper_streaming_runtime_config(project_config)
+        runtime_streaming_path = run_dir / "runtime_streaming_config.yaml"
+        runtime_streaming_path.write_text(
+            yaml.safe_dump(streaming_cfg, sort_keys=False),
+            encoding="utf-8",
+        )
+        summary["artifacts"]["runtime_streaming_config"] = str(runtime_streaming_path)
+
+    return (
+        project_config,
+        agent_config,
+        model_cfg,
+        runtime_model_path,
+        runtime_features_path,
+        runtime_backtest_path,
+        runtime_streaming_path,
+    )
+
+
+def _start_model_agent_run(
+    *, agent_name: str, mode: str
+) -> tuple[Path, dict[str, Any]]:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     run_dir, run_id = create_run_dir(
         run_type="agent",
@@ -112,82 +182,7 @@ def _initialize_model_agent_run(
         name=agent_name,
     )
     summary["run_id"] = run_id
-
-    try:
-        validation = validate_project_config(
-            config_path=project_config_path,
-            output_dir=run_dir,
-        )
-        resolved_path = Path(validation["artifacts"]["resolved_config"])
-        summary["warnings"] = list(validation.get("warnings", []))
-        summary["artifacts"]["resolved_project_config"] = str(resolved_path)
-        project_config = yaml.safe_load(resolved_path.read_text(encoding="utf-8")) or {}
-        agent_config = next(
-            (
-                dict(agent)
-                for agent in project_config.get("agents") or []
-                if agent.get("name") == agent_name
-            ),
-            None,
-        )
-        if agent_config is None:
-            raise ValueError(f"Agent '{agent_name}' not found in project config.")
-        if agent_config.get("kind") != "model":
-            raise ValueError(
-                f"Agent '{agent_name}' is kind={agent_config.get('kind')}; expected kind=model."
-            )
-
-        model_cfg, features_cfg, backtest_cfg = compile_research_runtime_configs(
-            project_config,
-            require_research=False,
-        )
-        runtime_model_path = run_dir / "runtime_model_config.yaml"
-        runtime_features_path = run_dir / "runtime_features_config.yaml"
-        runtime_backtest_path = run_dir / "runtime_backtest_config.yaml"
-        runtime_model_path.write_text(
-            yaml.safe_dump(model_cfg, sort_keys=False),
-            encoding="utf-8",
-        )
-        runtime_features_path.write_text(
-            yaml.safe_dump(features_cfg, sort_keys=False),
-            encoding="utf-8",
-        )
-        runtime_backtest_path.write_text(
-            yaml.safe_dump(backtest_cfg, sort_keys=False),
-            encoding="utf-8",
-        )
-        summary["artifacts"]["runtime_model_config"] = str(runtime_model_path)
-        summary["artifacts"]["runtime_features_config"] = str(runtime_features_path)
-        summary["artifacts"]["runtime_backtest_config"] = str(runtime_backtest_path)
-
-        runtime_streaming_path: Path | None = None
-        if mode == "paper":
-            streaming_cfg = compile_paper_streaming_runtime_config(project_config)
-            runtime_streaming_path = run_dir / "runtime_streaming_config.yaml"
-            runtime_streaming_path.write_text(
-                yaml.safe_dump(streaming_cfg, sort_keys=False),
-                encoding="utf-8",
-            )
-            summary["artifacts"]["runtime_streaming_config"] = str(runtime_streaming_path)
-
-        return (
-            run_dir,
-            summary,
-            project_config,
-            agent_config,
-            model_cfg,
-            runtime_model_path,
-            runtime_features_path,
-            runtime_backtest_path,
-            runtime_streaming_path,
-        )
-    except Exception as exc:
-        logger.error("model_agent_run_initialization_failed", exc_info=exc)
-        summary["status"] = "failed"
-        summary["error"] = str(exc)
-        summary["timestamps"]["completed_at"] = datetime.now(timezone.utc).isoformat()
-        _write_json(run_dir / "summary.json", summary)
-        raise
+    return run_dir, summary
 
 
 def _resolve_risk_settings(
@@ -222,23 +217,24 @@ def run_model_agent_backtest(
 ) -> dict[str, Any]:
     """Run a model agent over the configured backtest window."""
 
-    (
-        run_dir,
-        summary,
-        _project_config,
-        agent_config,
-        model_cfg,
-        runtime_model_path,
-        runtime_features_path,
-        runtime_backtest_path,
-        _runtime_streaming_path,
-    ) = _initialize_model_agent_run(
-        project_config_path=project_config_path,
-        agent_name=agent_name,
-        mode="backtest",
-    )
+    run_dir, summary = _start_model_agent_run(agent_name=agent_name, mode="backtest")
 
     try:
+        (
+            _project_config,
+            agent_config,
+            model_cfg,
+            runtime_model_path,
+            runtime_features_path,
+            runtime_backtest_path,
+            _runtime_streaming_path,
+        ) = _initialize_model_agent_run(
+            run_dir=run_dir,
+            summary=summary,
+            project_config_path=project_config_path,
+            agent_name=agent_name,
+            mode="backtest",
+        )
         model_path = resolve_project_path(
             project_config_path,
             (agent_config.get("model") or {}).get("path", ""),
@@ -454,23 +450,24 @@ def run_model_agent_paper(
 ) -> dict[str, Any]:
     """Run a model agent in paper mode using the live trading engine."""
 
-    (
-        run_dir,
-        summary,
-        _project_config,
-        agent_config,
-        model_cfg,
-        runtime_model_path,
-        runtime_features_path,
-        _runtime_backtest_path,
-        runtime_streaming_path,
-    ) = _initialize_model_agent_run(
-        project_config_path=project_config_path,
-        agent_name=agent_name,
-        mode="paper",
-    )
+    run_dir, summary = _start_model_agent_run(agent_name=agent_name, mode="paper")
 
     try:
+        (
+            _project_config,
+            agent_config,
+            model_cfg,
+            runtime_model_path,
+            runtime_features_path,
+            _runtime_backtest_path,
+            runtime_streaming_path,
+        ) = _initialize_model_agent_run(
+            run_dir=run_dir,
+            summary=summary,
+            project_config_path=project_config_path,
+            agent_name=agent_name,
+            mode="paper",
+        )
         if runtime_streaming_path is None:
             raise ValueError("Paper mode requires a compiled runtime streaming config.")
 

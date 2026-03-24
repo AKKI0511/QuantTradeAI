@@ -1,19 +1,17 @@
 import json
-from pathlib import Path
 
 import pytest
 
-from quanttradeai.agents.model_agent import _initialize_model_agent_run
+from quanttradeai.agents.model_agent import run_model_agent_backtest
 
 
-def test_initialize_model_agent_run_writes_failure_summary_for_config_errors(tmp_path, monkeypatch):
+def test_model_agent_backtest_writes_failure_summary_for_init_errors(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(Exception, match="not found|No such file"):
-        _initialize_model_agent_run(
+        run_model_agent_backtest(
             project_config_path="config/missing-project.yaml",
             agent_name="momentum",
-            mode="backtest",
         )
 
     run_dirs = sorted((tmp_path / "runs" / "agent" / "backtest").glob("*"))
