@@ -1051,16 +1051,9 @@ def cmd_agent_run(
             ),
             None,
         )
-    except Exception:
-        agent_config = None
+        if agent_config is None:
+            raise ValueError(f"Agent '{agent}' not found in project config.")
 
-    if agent_config is None:
-        typer.echo(
-            f"Agent run failed: Agent '{agent}' not found in project config.", err=True
-        )
-        raise typer.Exit(code=1)
-
-    try:
         agent_kind = agent_config.get("kind")
         if agent_kind == "model":
             if mode == "backtest":

@@ -193,6 +193,31 @@ def test_agent_run_backtest_omits_ledger_artifact_when_no_trades(
     assert not (run_dir / "ledger.csv").exists()
 
 
+def test_agent_run_reports_project_config_load_errors(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    missing_config = Path("config/missing.yaml")
+    result = runner.invoke(
+        app,
+        [
+            "agent",
+            "run",
+            "--agent",
+            "breakout_gpt",
+            "--config",
+            str(missing_config),
+            "--mode",
+            "backtest",
+        ],
+    )
+
+    assert result.exit_code == 1
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert "not found in project config" not in combined_output
+    assert "Agent run failed:" in combined_output
+    assert str(missing_config) in combined_output
+
+
 class FakeSignalClassifier:
     def __init__(self, *args, **kwargs):
         self.feature_columns = ["rsi"]
