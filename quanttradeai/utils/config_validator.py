@@ -95,9 +95,7 @@ def _validate_agent_project_sections(
         if agent_kind == "model":
             model_path_raw = str(model_cfg.get("path", "")).strip()
             if not model_path_raw:
-                errors.append(
-                    f"Agent '{agent_name}' model path must not be empty."
-                )
+                errors.append(f"Agent '{agent_name}' model path must not be empty.")
             model_path = resolve_project_path(config_path, model_path_raw)
             if model_path_raw and not model_path.exists():
                 errors.append(
