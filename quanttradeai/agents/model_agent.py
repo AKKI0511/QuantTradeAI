@@ -113,73 +113,81 @@ def _initialize_model_agent_run(
     )
     summary["run_id"] = run_id
 
-    validation = validate_project_config(
-        config_path=project_config_path,
-        output_dir=run_dir,
-    )
-    resolved_path = Path(validation["artifacts"]["resolved_config"])
-    summary["warnings"] = list(validation.get("warnings", []))
-    summary["artifacts"]["resolved_project_config"] = str(resolved_path)
-    project_config = yaml.safe_load(resolved_path.read_text(encoding="utf-8")) or {}
-    agent_config = next(
-        (
-            dict(agent)
-            for agent in project_config.get("agents") or []
-            if agent.get("name") == agent_name
-        ),
-        None,
-    )
-    if agent_config is None:
-        raise ValueError(f"Agent '{agent_name}' not found in project config.")
-    if agent_config.get("kind") != "model":
-        raise ValueError(
-            f"Agent '{agent_name}' is kind={agent_config.get('kind')}; expected kind=model."
+    try:
+        validation = validate_project_config(
+            config_path=project_config_path,
+            output_dir=run_dir,
         )
+        resolved_path = Path(validation["artifacts"]["resolved_config"])
+        summary["warnings"] = list(validation.get("warnings", []))
+        summary["artifacts"]["resolved_project_config"] = str(resolved_path)
+        project_config = yaml.safe_load(resolved_path.read_text(encoding="utf-8")) or {}
+        agent_config = next(
+            (
+                dict(agent)
+                for agent in project_config.get("agents") or []
+                if agent.get("name") == agent_name
+            ),
+            None,
+        )
+        if agent_config is None:
+            raise ValueError(f"Agent '{agent_name}' not found in project config.")
+        if agent_config.get("kind") != "model":
+            raise ValueError(
+                f"Agent '{agent_name}' is kind={agent_config.get('kind')}; expected kind=model."
+            )
 
-    model_cfg, features_cfg, backtest_cfg = compile_research_runtime_configs(
-        project_config,
-        require_research=False,
-    )
-    runtime_model_path = run_dir / "runtime_model_config.yaml"
-    runtime_features_path = run_dir / "runtime_features_config.yaml"
-    runtime_backtest_path = run_dir / "runtime_backtest_config.yaml"
-    runtime_model_path.write_text(
-        yaml.safe_dump(model_cfg, sort_keys=False),
-        encoding="utf-8",
-    )
-    runtime_features_path.write_text(
-        yaml.safe_dump(features_cfg, sort_keys=False),
-        encoding="utf-8",
-    )
-    runtime_backtest_path.write_text(
-        yaml.safe_dump(backtest_cfg, sort_keys=False),
-        encoding="utf-8",
-    )
-    summary["artifacts"]["runtime_model_config"] = str(runtime_model_path)
-    summary["artifacts"]["runtime_features_config"] = str(runtime_features_path)
-    summary["artifacts"]["runtime_backtest_config"] = str(runtime_backtest_path)
-
-    runtime_streaming_path: Path | None = None
-    if mode == "paper":
-        streaming_cfg = compile_paper_streaming_runtime_config(project_config)
-        runtime_streaming_path = run_dir / "runtime_streaming_config.yaml"
-        runtime_streaming_path.write_text(
-            yaml.safe_dump(streaming_cfg, sort_keys=False),
+        model_cfg, features_cfg, backtest_cfg = compile_research_runtime_configs(
+            project_config,
+            require_research=False,
+        )
+        runtime_model_path = run_dir / "runtime_model_config.yaml"
+        runtime_features_path = run_dir / "runtime_features_config.yaml"
+        runtime_backtest_path = run_dir / "runtime_backtest_config.yaml"
+        runtime_model_path.write_text(
+            yaml.safe_dump(model_cfg, sort_keys=False),
             encoding="utf-8",
         )
-        summary["artifacts"]["runtime_streaming_config"] = str(runtime_streaming_path)
+        runtime_features_path.write_text(
+            yaml.safe_dump(features_cfg, sort_keys=False),
+            encoding="utf-8",
+        )
+        runtime_backtest_path.write_text(
+            yaml.safe_dump(backtest_cfg, sort_keys=False),
+            encoding="utf-8",
+        )
+        summary["artifacts"]["runtime_model_config"] = str(runtime_model_path)
+        summary["artifacts"]["runtime_features_config"] = str(runtime_features_path)
+        summary["artifacts"]["runtime_backtest_config"] = str(runtime_backtest_path)
 
-    return (
-        run_dir,
-        summary,
-        project_config,
-        agent_config,
-        model_cfg,
-        runtime_model_path,
-        runtime_features_path,
-        runtime_backtest_path,
-        runtime_streaming_path,
-    )
+        runtime_streaming_path: Path | None = None
+        if mode == "paper":
+            streaming_cfg = compile_paper_streaming_runtime_config(project_config)
+            runtime_streaming_path = run_dir / "runtime_streaming_config.yaml"
+            runtime_streaming_path.write_text(
+                yaml.safe_dump(streaming_cfg, sort_keys=False),
+                encoding="utf-8",
+            )
+            summary["artifacts"]["runtime_streaming_config"] = str(runtime_streaming_path)
+
+        return (
+            run_dir,
+            summary,
+            project_config,
+            agent_config,
+            model_cfg,
+            runtime_model_path,
+            runtime_features_path,
+            runtime_backtest_path,
+            runtime_streaming_path,
+        )
+    except Exception as exc:
+        logger.error("model_agent_run_initialization_failed", exc_info=exc)
+        summary["status"] = "failed"
+        summary["error"] = str(exc)
+        summary["timestamps"]["completed_at"] = datetime.now(timezone.utc).isoformat()
+        _write_json(run_dir / "summary.json", summary)
+        raise
 
 
 def _resolve_risk_settings(
