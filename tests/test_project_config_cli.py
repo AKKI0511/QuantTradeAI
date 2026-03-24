@@ -259,6 +259,25 @@ def test_validate_fails_when_model_agent_path_missing(tmp_path: Path, monkeypatc
     assert "model path does not exist" in result.stderr.lower()
 
 
+def test_validate_fails_when_model_agent_path_blank(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["model-agent"], sort_keys=False)
+    )
+    config_payload["agents"][0]["model"]["path"] = "   "
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "model path must not be empty" in result.stderr.lower()
+
+
 def test_validate_fails_when_model_agent_paper_streaming_is_incomplete(
     tmp_path: Path, monkeypatch
 ):
