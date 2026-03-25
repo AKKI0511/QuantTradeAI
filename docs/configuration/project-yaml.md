@@ -280,7 +280,7 @@ Validation checks that `prompt_file` exists relative to the project config locat
 
 Hybrid agents may also define `model_signal_sources`.
 
-`model_signal_sources` is best written as objects with `name` and `path`. String entries still validate, but they produce a deprecation warning.
+`model_signal_sources` must be written as objects with `name` and `path` for runnable agent configs. Legacy string entries can still pass `quanttradeai validate` with a deprecation warning, but `quanttradeai agent run --mode backtest` raises a runtime `ValueError` when loading them.
 
 ### `deployment`
 
