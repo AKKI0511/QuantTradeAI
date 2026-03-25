@@ -30,6 +30,8 @@ poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml 
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
 ```
 
+The `model-agent` template also creates a placeholder model artifact at `models/trained/aapl_daily_classifier/README.md`. Replace that directory with a real saved model before you run the agent.
+
 ### LLM And Hybrid Agents
 
 ```bash
@@ -37,6 +39,8 @@ poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 ```
+
+The `llm-agent` and `hybrid` templates also create starter prompt files under `prompts/` so validation can pass immediately.
 
 Current support:
 
@@ -63,7 +67,9 @@ profiles:
     mode: "live"
 
 data:
-  symbols: ["AAPL"]
+  symbols:
+    - ticker: "AAPL"
+      asset_class: "equities"
   start_date: "2022-01-01"
   end_date: "2024-12-31"
   timeframe: "1d"
@@ -78,6 +84,7 @@ data:
     channels: ["trades", "quotes"]
     buffer_size: 1000
     reconnect_attempts: 5
+    health_check_interval: 30
 
 features:
   definitions:
@@ -148,7 +155,25 @@ Core fields used by research and agent runtimes:
 - `refresh`
 - `max_workers`
 
-`symbols` may be plain tickers or mappings with `ticker` and `asset_class`.
+`symbols` may be either:
+
+- plain ticker strings such as `["AAPL", "MSFT"]`
+- mappings with `ticker` and optional `asset_class`
+
+Example:
+
+```yaml
+data:
+  symbols:
+    - ticker: "AAPL"
+      asset_class: "equities"
+    - ticker: "MSFT"
+      asset_class: "equities"
+```
+
+When you use mapping syntax, validation checks `asset_class` against the asset classes defined in `config/impact_config.yaml`.
+
+`test_start` and `test_end` must fall inside the configured `start_date` and `end_date` range.
 
 ### `data.streaming`
 
@@ -164,6 +189,7 @@ Required when a `model` agent is configured with `mode: paper`:
 - `channels`
 - `buffer_size`
 - `reconnect_attempts`
+- `health_check_interval`
 
 Optional passthrough sections:
 
@@ -177,6 +203,8 @@ Optional passthrough sections:
 
 These values are compiled into the runtime streaming YAML consumed by the current gateway.
 
+Validation also enforces one important rule here: if any agent is configured as `kind: model` with `mode: paper`, then `data.streaming.enabled` must be `true`.
+
 ### `features`
 
 Canonical projects define reusable features in `features.definitions`.
@@ -185,6 +213,8 @@ Supported feature families in the canonical compiler:
 
 - `technical`
 - `custom`
+
+If you define at least one `technical` feature, QuantTradeAI compiles the standard technical pipeline and defaults RSI to `14` when you do not provide a period explicitly.
 
 Supported custom feature kinds:
 
@@ -202,6 +232,13 @@ The canonical research compiler reads:
 - `evaluation.use_configured_test_window`
 - `backtest.costs`
 
+Practical notes:
+
+- `evaluation.use_configured_test_window: true` keeps `data.test_start` and `data.test_end` in the compiled runtime model config
+- setting it to `false` clears those fields and lets the downstream research runtime fall back to its chronological split behavior
+- `model.tuning.enabled` and `model.tuning.trials` flow directly into the training run
+- `backtest.costs.bps` becomes the transaction cost setting in the compiled runtime backtest config
+
 Even when `research.enabled` is `false`, the agent runtime still reuses these defaults to compile consistent runtime configs.
 
 ### `agents`
@@ -214,17 +251,20 @@ Required fields:
 - `kind: model`
 - `model.path`
 
+Validation checks that `model.path` exists and is not blank.
+
 Backtest mode:
 
 - loads the saved model artifact
 - generates deterministic decision records
-- writes `summary.json`, `metrics.json`, `equity_curve.csv`, `ledger.csv` when present, and `decisions.jsonl`
+- writes `summary.json`, `metrics.json`, `equity_curve.csv`, `decisions.jsonl`, and `ledger.csv` when trades are present
+- also writes compiled runtime config files and per-symbol coverage and metrics files under the run directory
 
 Paper mode:
 
 - compiles `data.streaming` into a runtime streaming config
 - runs the existing paper/live engine with the compiled feature config
-- writes `summary.json`, `metrics.json`, and `executions.jsonl`
+- writes `summary.json`, `metrics.json`, `executions.jsonl`, and `runtime_streaming_config.yaml`
 
 #### `llm` and `hybrid` agents
 
@@ -236,7 +276,11 @@ Supported today in `backtest` mode only.
 - `model`
 - `prompt_file`
 
+Validation checks that `prompt_file` exists relative to the project config location.
+
 Hybrid agents may also define `model_signal_sources`.
+
+`model_signal_sources` must be written as objects with `name` and `path` for runnable agent configs. Legacy string entries can still pass `quanttradeai validate` with a deprecation warning, but `quanttradeai agent run --mode backtest` raises a runtime `ValueError` when loading them.
 
 ### `deployment`
 
@@ -248,9 +292,24 @@ Required metadata. It is not yet a complete workflow driver.
 
 Writes resolved config artifacts under `reports/config_validation/<timestamp>/`.
 
+You will get:
+
+- `resolved_project_config.yaml`
+- `summary.json`
+
+When you validate with `--legacy-config-dir`, QuantTradeAI also writes `migrated_project_config.yaml`.
+
 ### `quanttradeai research run`
 
 Writes under `runs/research/<timestamp>_<project>/`.
+
+Alongside `summary.json` and `metrics.json`, QuantTradeAI writes:
+
+- `resolved_project_config.yaml`
+- `runtime_model_config.yaml`
+- `runtime_features_config.yaml`
+- `runtime_backtest_config.yaml`
+- `backtest_summary.json` when automatic post-train backtests produce output
 
 ### `quanttradeai agent run --mode backtest`
 
