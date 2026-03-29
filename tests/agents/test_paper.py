@@ -1,0 +1,283 @@
+import asyncio
+import json
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import yaml
+
+from quanttradeai.agents.paper import PaperAgentEngine
+from quanttradeai.streaming.stream_buffer import StreamBuffer
+
+
+def _mock_history(periods: int = 260) -> pd.DataFrame:
+    index = pd.date_range("2024-01-01", periods=periods, freq="D", tz="UTC")
+    return pd.DataFrame(
+        {
+            "Open": np.linspace(100.0, 120.0, len(index)),
+            "High": np.linspace(101.0, 121.0, len(index)),
+            "Low": np.linspace(99.0, 119.0, len(index)),
+            "Close": np.linspace(100.5, 120.5, len(index)),
+            "Volume": np.linspace(1000.0, 1400.0, len(index)),
+        },
+        index=index,
+    )
+
+
+class FakeLoader:
+    def __init__(self, frames: dict[str, pd.DataFrame]) -> None:
+        self.frames = frames
+
+    def fetch_data(self):
+        return self.frames
+
+
+class DummyProcessor:
+    def generate_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        featured = df.copy()
+        featured["rsi"] = np.linspace(45.0, 65.0, len(featured))
+        featured["volume_momentum_20"] = np.linspace(0.1, 0.3, len(featured))
+        return featured
+
+
+class ScriptedGateway:
+    def __init__(self, messages: list[dict]) -> None:
+        self.buffer = StreamBuffer(32)
+        self.messages = messages
+
+    async def _start(self) -> None:
+        for message in self.messages:
+            await self.buffer.put(message)
+
+
+class FakeSignalRuntime:
+    def __init__(self, name: str, signal: int) -> None:
+        self.name = name
+        self.signal = signal
+
+    def predict(self, features_frame: pd.DataFrame) -> int:
+        return self.signal
+
+
+def _completion_from_actions(actions: list[str]):
+    action_iter = iter(actions)
+
+    def _fake_completion(**kwargs):
+        action = next(action_iter, "hold")
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {"action": action, "reason": f"{action} signal"}
+                        )
+                    }
+                }
+            ]
+        }
+
+    return _fake_completion
+
+
+def _build_engine(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    kind: str = "llm",
+    gateway_messages: list[dict],
+    completion,
+    model_signal_runtimes=None,
+) -> PaperAgentEngine:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr("quanttradeai.agents.llm.completion", completion)
+
+    project_path = tmp_path / "config" / "project.yaml"
+    prompt_path = tmp_path / "prompts" / "agent.md"
+    runtime_model_path = tmp_path / "runtime_model.yaml"
+    project_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.write_text("Return JSON only.", encoding="utf-8")
+    project_path.write_text("project:\n  name: test\n", encoding="utf-8")
+    runtime_model_path.write_text(
+        yaml.safe_dump(
+            {
+                "data": {
+                    "symbols": ["AAPL"],
+                    "timeframe": "1d",
+                    "start_date": "2024-01-01",
+                    "end_date": "2024-12-31",
+                },
+                "trading": {
+                    "initial_capital": 100000,
+                    "stop_loss": 0.02,
+                    "max_risk_per_trade": 0.02,
+                    "max_portfolio_risk": 0.10,
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    agent_config = {
+        "name": "paper_agent",
+        "kind": kind,
+        "mode": "paper",
+        "llm": {
+            "provider": "openai",
+            "model": "gpt-5.3",
+            "prompt_file": "prompts/agent.md",
+        },
+        "context": {
+            "market_data": {"enabled": True, "timeframe": "1d", "lookback_bars": 2},
+            "features": ["rsi_14"],
+            "model_signals": ["trend_model"] if kind == "hybrid" else [],
+            "positions": True,
+            "risk_state": True,
+        },
+        "tools": ["get_quote", "place_order"],
+        "risk": {"max_position_pct": 0.05},
+    }
+
+    return PaperAgentEngine(
+        project_config_path=str(project_path),
+        agent_config=agent_config,
+        runtime_model_config=str(runtime_model_path),
+        runtime_features_config=str(tmp_path / "runtime_features.yaml"),
+        runtime_streaming_config=str(tmp_path / "runtime_streaming.yaml"),
+        feature_definitions=[
+            {"name": "rsi_14", "type": "technical", "params": {"period": 14}}
+        ],
+        model_signal_runtimes=model_signal_runtimes or [],
+        gateway=ScriptedGateway(gateway_messages),
+        data_loader=FakeLoader({"AAPL": _mock_history()}),
+        data_processor=DummyProcessor(),
+        history_window=512,
+    )
+
+
+def test_paper_engine_warm_starts_history_from_loader(tmp_path: Path, monkeypatch):
+    engine = _build_engine(
+        tmp_path,
+        monkeypatch,
+        gateway_messages=[],
+        completion=_completion_from_actions([]),
+    )
+
+    engine.bootstrap_history()
+
+    assert "AAPL" in engine._history
+    assert len(engine._history["AAPL"]) == 260
+
+
+def test_paper_engine_aggregates_messages_once_per_completed_bar(
+    tmp_path: Path, monkeypatch
+):
+    engine = _build_engine(
+        tmp_path,
+        monkeypatch,
+        gateway_messages=[
+            {
+                "symbol": "AAPL",
+                "price": 121.0,
+                "volume": 10,
+                "timestamp": "2024-09-17T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 122.0,
+                "volume": 15,
+                "timestamp": "2024-09-17T12:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 123.0,
+                "volume": 20,
+                "timestamp": "2024-09-18T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 124.0,
+                "volume": 25,
+                "timestamp": "2024-09-19T00:00:00Z",
+            },
+        ],
+        completion=_completion_from_actions(["buy", "hold"]),
+    )
+
+    asyncio.run(engine.start())
+
+    assert len(engine.decision_log) == 2
+    assert len(engine.execution_log) == 1
+    assert engine.execution_log[0]["action"] == "buy"
+    assert engine.decision_log[0]["timestamp"] == pd.Timestamp("2024-09-17T00:00:00Z")
+    assert engine.decision_log[1]["timestamp"] == pd.Timestamp("2024-09-18T00:00:00Z")
+
+
+def test_paper_engine_sell_without_position_is_audited_as_no_op(
+    tmp_path: Path, monkeypatch
+):
+    engine = _build_engine(
+        tmp_path,
+        monkeypatch,
+        gateway_messages=[
+            {
+                "symbol": "AAPL",
+                "price": 121.0,
+                "volume": 10,
+                "timestamp": "2024-09-17T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 120.0,
+                "volume": 10,
+                "timestamp": "2024-09-18T00:00:00Z",
+            },
+        ],
+        completion=_completion_from_actions(["sell"]),
+    )
+
+    asyncio.run(engine.start())
+
+    assert len(engine.decision_log) == 1
+    assert engine.execution_log == []
+    assert engine.decision_log[0]["execution_status"] == "no_position"
+    assert engine.decision_log[0]["target_position"] == 0
+
+
+def test_paper_engine_records_prompt_context_and_hybrid_model_signals(
+    tmp_path: Path, monkeypatch
+):
+    engine = _build_engine(
+        tmp_path,
+        monkeypatch,
+        kind="hybrid",
+        gateway_messages=[
+            {
+                "symbol": "AAPL",
+                "price": 121.0,
+                "volume": 10,
+                "timestamp": "2024-09-17T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 123.0,
+                "volume": 12,
+                "timestamp": "2024-09-18T00:00:00Z",
+            },
+        ],
+        completion=_completion_from_actions(["buy"]),
+        model_signal_runtimes=[FakeSignalRuntime("trend_model", 1)],
+    )
+
+    asyncio.run(engine.start())
+
+    assert len(engine.decision_log) == 1
+    context = engine.decision_log[0]["context"]
+    assert context["features"]["rsi_14"]["rsi"] > 0
+    assert context["positions"]["target_position"] == 0
+    assert context["risk_state"]["risk_limits"]["max_position_pct"] == 0.05
+    assert context["model_signals"]["trend_model"]["signal"] == 1
+    assert len(context["market_data"]["bars"]) == 2
+    assert engine.prompt_samples
+    assert "messages" in engine.prompt_samples[0]["prompt_payload"]

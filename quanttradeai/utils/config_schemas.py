@@ -683,13 +683,11 @@ class ProjectConfigSchema(BaseModel):
 
     @model_validator(mode="after")
     def validate_paper_streaming_requirements(self) -> "ProjectConfigSchema":
-        requires_streaming = any(
-            agent.kind == "model" and agent.mode == "paper" for agent in self.agents
-        )
+        requires_streaming = any(agent.mode == "paper" for agent in self.agents)
         if requires_streaming and (
             self.data.streaming is None or not self.data.streaming.enabled
         ):
             raise ValueError(
-                "data.streaming.enabled must be true when a model agent is configured with mode=paper."
+                "data.streaming.enabled must be true when an agent is configured with mode=paper."
             )
         return self

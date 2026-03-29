@@ -92,6 +92,13 @@ def _validate_agent_project_sections(
                 errors.append(
                     f"Agent '{agent_name}' prompt file does not exist: {prompt_path}"
                 )
+        if agent.get("mode") == "paper" and not data_streaming_cfg.get(
+            "enabled", False
+        ):
+            errors.append(
+                f"Agent '{agent_name}' is configured for paper mode but data.streaming.enabled is not true."
+            )
+
         if agent_kind == "model":
             model_path_raw = str(model_cfg.get("path", "")).strip()
             if not model_path_raw:
@@ -100,12 +107,6 @@ def _validate_agent_project_sections(
             if model_path_raw and not model_path.exists():
                 errors.append(
                     f"Agent '{agent_name}' model path does not exist: {model_path}"
-                )
-            if agent.get("mode") == "paper" and not data_streaming_cfg.get(
-                "enabled", False
-            ):
-                errors.append(
-                    f"Agent '{agent_name}' is configured for paper mode but data.streaming.enabled is not true."
                 )
 
         missing_features = sorted(

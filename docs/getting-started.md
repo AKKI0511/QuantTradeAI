@@ -60,14 +60,15 @@ Paper runs write standardized artifacts under `runs/agent/paper/...`, including:
 - `executions.jsonl`
 - compiled runtime YAML snapshots
 
-## Workflow 3: LLM Or Hybrid Agent Backtest
+## Workflow 3: LLM Or Hybrid Agent
 
-LLM and hybrid agents are currently supported in backtest mode from `project.yaml`.
+LLM and hybrid agents are supported in both backtest and paper mode from `project.yaml`.
 
 ```bash
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
 ```
 
 Hybrid projects use the same pattern:
@@ -75,7 +76,7 @@ Hybrid projects use the same pattern:
 ```bash
 poetry run quanttradeai init --template hybrid -o config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
-poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
 ```
 
 ## Legacy Runtime Workflows
