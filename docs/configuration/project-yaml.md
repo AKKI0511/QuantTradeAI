@@ -38,6 +38,7 @@ The `model-agent` template also creates a placeholder model artifact at `models/
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
 ```
 
 The `llm-agent` and `hybrid` templates also create starter prompt files under `prompts/` so validation can pass immediately.
@@ -47,8 +48,8 @@ Current support:
 | Agent kind | Backtest | Paper | Live |
 | --- | --- | --- | --- |
 | `model` | Yes | Yes | No |
-| `llm` | Yes | No | No |
-| `hybrid` | Yes | No | No |
+| `llm` | Yes | Yes | No |
+| `hybrid` | Yes | Yes | No |
 | `rule` | No | No | No |
 
 ## Canonical Shape
@@ -177,9 +178,9 @@ When you use mapping syntax, validation checks `asset_class` against the asset c
 
 ### `data.streaming`
 
-Used by project-defined `model` agents in paper mode.
+Used by project-defined paper agents.
 
-Required when a `model` agent is configured with `mode: paper`:
+Required when any agent is configured with `mode: paper`:
 
 - `enabled: true`
 - `provider`
@@ -203,7 +204,7 @@ Optional passthrough sections:
 
 These values are compiled into the runtime streaming YAML consumed by the current gateway.
 
-Validation also enforces one important rule here: if any agent is configured as `kind: model` with `mode: paper`, then `data.streaming.enabled` must be `true`.
+Validation also enforces one important rule here: if any agent is configured with `mode: paper`, then `data.streaming.enabled` must be `true`.
 
 ### `features`
 
@@ -268,8 +269,6 @@ Paper mode:
 
 #### `llm` and `hybrid` agents
 
-Supported today in `backtest` mode only.
-
 `llm` and `hybrid` require an `llm` block with:
 
 - `provider`
@@ -281,6 +280,13 @@ Validation checks that `prompt_file` exists relative to the project config locat
 Hybrid agents may also define `model_signal_sources`.
 
 `model_signal_sources` must be written as objects with `name` and `path` for runnable agent configs. Legacy string entries can still pass `quanttradeai validate` with a deprecation warning, but `quanttradeai agent run --mode backtest` raises a runtime `ValueError` when loading them.
+
+Paper mode:
+
+- compiles `data.streaming` into a runtime streaming config
+- warm-starts with recent historical OHLCV before streaming begins
+- aggregates streaming messages into completed bars before invoking the agent
+- writes `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, `prompt_samples.json`, and `runtime_streaming_config.yaml`
 
 ### `deployment`
 
@@ -318,6 +324,8 @@ Writes under `runs/agent/backtest/<timestamp>_<agent>/`.
 ### `quanttradeai agent run --mode paper`
 
 Writes under `runs/agent/paper/<timestamp>_<agent>/`.
+
+For `llm` and `hybrid` paper runs, the run directory includes both `decisions.jsonl` and `executions.jsonl` so prompt-driven decisions and actual paper executions can be audited separately.
 
 ## Compatibility Notes
 

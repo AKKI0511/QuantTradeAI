@@ -138,6 +138,19 @@ PROJECT_TEMPLATES = {
             "timeframe": "1d",
             "test_start": "2024-09-01",
             "test_end": "2024-12-31",
+            "streaming": {
+                "enabled": True,
+                "provider": "alpaca",
+                "websocket_url": "wss://stream.data.alpaca.markets/v2/iex",
+                "auth_method": "api_key",
+                "symbols": ["AAPL"],
+                "channels": ["trades", "quotes"],
+                "buffer_size": 1000,
+                "reconnect_attempts": 5,
+                "monitoring": {"enabled": True, "check_interval": 5},
+                "metrics": {"enabled": False, "host": "0.0.0.0", "port": 9000},
+                "api": {"enabled": False, "host": "0.0.0.0", "port": 8000},
+            },
         },
         "features": {
             "definitions": [
@@ -155,7 +168,7 @@ PROJECT_TEMPLATES = {
             {
                 "name": "breakout_gpt",
                 "kind": "llm",
-                "mode": "backtest",
+                "mode": "paper",
                 "llm": {
                     "provider": "openai",
                     "model": "gpt-5.3",
@@ -186,6 +199,19 @@ PROJECT_TEMPLATES = {
             "timeframe": "1d",
             "test_start": "2024-09-01",
             "test_end": "2024-12-31",
+            "streaming": {
+                "enabled": True,
+                "provider": "alpaca",
+                "websocket_url": "wss://stream.data.alpaca.markets/v2/iex",
+                "auth_method": "api_key",
+                "symbols": ["AAPL", "TSLA"],
+                "channels": ["trades", "quotes"],
+                "buffer_size": 1000,
+                "reconnect_attempts": 5,
+                "monitoring": {"enabled": True, "check_interval": 5},
+                "metrics": {"enabled": False, "host": "0.0.0.0", "port": 9000},
+                "api": {"enabled": False, "host": "0.0.0.0", "port": 8000},
+            },
         },
         "features": {
             "definitions": [
@@ -213,7 +239,7 @@ PROJECT_TEMPLATES = {
             {
                 "name": "hybrid_swing_agent",
                 "kind": "hybrid",
-                "mode": "backtest",
+                "mode": "paper",
                 "model_signal_sources": [],
                 "llm": {
                     "provider": "openai",
@@ -1028,7 +1054,7 @@ def cmd_agent_run(
     mode: str = typer.Option(
         "backtest",
         "--mode",
-        help="Execution mode. Only backtest is implemented for agent runs.",
+        help="Execution mode. backtest and paper are implemented; live remains future work.",
     ),
     skip_validation: bool = typer.Option(
         False,
@@ -1040,6 +1066,7 @@ def cmd_agent_run(
 
     from .agents.backtest import run_agent_backtest
     from .agents.model_agent import run_model_agent_backtest, run_model_agent_paper
+    from .agents.paper import run_agent_paper
 
     try:
         loaded_project = load_project_config(config_path=config)
@@ -1053,6 +1080,13 @@ def cmd_agent_run(
         )
         if agent_config is None:
             raise ValueError(f"Agent '{agent}' not found in project config.")
+
+        configured_mode = str(agent_config.get("mode") or "").strip().lower()
+        if configured_mode and configured_mode != mode:
+            typer.echo(
+                f"Warning: agent '{agent}' is configured with mode={configured_mode} but CLI requested mode={mode}; continuing with CLI mode.",
+                err=True,
+            )
 
         agent_kind = agent_config.get("kind")
         if agent_kind == "model":
@@ -1077,12 +1111,27 @@ def cmd_agent_run(
                     "Model agents currently support only --mode backtest or --mode paper."
                 )
         elif agent_kind in {"llm", "hybrid"}:
-            summary = run_agent_backtest(
-                project_config_path=config,
-                agent_name=agent,
-                mode=mode,
-                skip_validation=skip_validation,
-            )
+            if mode == "backtest":
+                summary = run_agent_backtest(
+                    project_config_path=config,
+                    agent_name=agent,
+                    mode=mode,
+                    skip_validation=skip_validation,
+                )
+            elif mode == "paper":
+                if skip_validation:
+                    typer.echo(
+                        "Warning: --skip-validation is ignored for llm/hybrid agent paper runs.",
+                        err=True,
+                    )
+                summary = run_agent_paper(
+                    project_config_path=config,
+                    agent_name=agent,
+                )
+            else:
+                raise ValueError(
+                    "LLM and hybrid agents currently support only --mode backtest or --mode paper."
+                )
         elif agent_kind == "rule":
             raise ValueError("Rule agents are not implemented yet.")
         else:

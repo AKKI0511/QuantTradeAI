@@ -2,7 +2,7 @@
 
 Common commands, patterns, and examples for QuantTradeAI.
 
-## 🚀 CLI Commands
+## CLI Commands
 
 ```bash
 # Show help
@@ -16,10 +16,11 @@ poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai runs list
 
-# Run a YAML-defined agent backtest
+# Run a YAML-defined llm or hybrid agent
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
 
 # Import an existing legacy config/ directory into the canonical workflow
 poetry run quanttradeai validate --legacy-config-dir config
@@ -66,14 +67,25 @@ Canonical research artifacts:
 - `runs/research/<timestamp>_<project>/backtest_summary.json`
 
 Canonical agent backtest artifacts:
-- `runs/agent/backtest/<timestamp>_<agent>/<validation_timestamp>/resolved_project_config.yaml`
+- `runs/agent/backtest/<timestamp>_<agent>/resolved_project_config.yaml`
 - `runs/agent/backtest/<timestamp>_<agent>/runtime_model_config.yaml`
 - `runs/agent/backtest/<timestamp>_<agent>/runtime_features_config.yaml`
 - `runs/agent/backtest/<timestamp>_<agent>/summary.json`
 - `runs/agent/backtest/<timestamp>_<agent>/metrics.json`
 - `runs/agent/backtest/<timestamp>_<agent>/decisions.jsonl`
 
-## 📊 Python API Patterns
+Canonical agent paper artifacts:
+- `runs/agent/paper/<timestamp>_<agent>/resolved_project_config.yaml`
+- `runs/agent/paper/<timestamp>_<agent>/runtime_model_config.yaml`
+- `runs/agent/paper/<timestamp>_<agent>/runtime_features_config.yaml`
+- `runs/agent/paper/<timestamp>_<agent>/runtime_streaming_config.yaml`
+- `runs/agent/paper/<timestamp>_<agent>/summary.json`
+- `runs/agent/paper/<timestamp>_<agent>/metrics.json`
+- `runs/agent/paper/<timestamp>_<agent>/decisions.jsonl`
+- `runs/agent/paper/<timestamp>_<agent>/executions.jsonl`
+- `runs/agent/paper/<timestamp>_<agent>/prompt_samples.json`
+
+## Python API Patterns
 
 ### Data Loading
 ```python
@@ -81,7 +93,7 @@ from quanttradeai import DataLoader
 
 # Initialize and fetch data
 loader = DataLoader("config/model_config.yaml")
-data = loader.fetch_data(symbols=['AAPL', 'TSLA'], refresh=True)
+data = loader.fetch_data(symbols=["AAPL", "TSLA"], refresh=True)
 
 # Validate data and inspect per-symbol report
 is_valid, report = loader.validate_data(data)
@@ -174,22 +186,22 @@ poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL
 # reports/backtests/<run_timestamp>/portfolio/{metrics.json,equity_curve.csv}
 ```
 
-## 🔧 Technical Indicators
+## Technical Indicators
 
 ```python
 from quanttradeai.features import technical as ta
 
 # Moving averages
-sma_20 = ta.sma(df['Close'], 20)
-ema_20 = ta.ema(df['Close'], 20)
+sma_20 = ta.sma(df["Close"], 20)
+ema_20 = ta.ema(df["Close"], 20)
 
 # Momentum indicators
-rsi_14 = ta.rsi(df['Close'], 14)
-macd_df = ta.macd(df['Close'])
-stoch_df = ta.stochastic(df['High'], df['Low'], df['Close'])
+rsi_14 = ta.rsi(df["Close"], 14)
+macd_df = ta.macd(df["Close"])
+stoch_df = ta.stochastic(df["High"], df["Low"], df["Close"])
 ```
 
-## 🛡️ Risk Management
+## Risk Management
 
 ```python
 from quanttradeai import apply_stop_loss_take_profit, position_size
@@ -208,12 +220,12 @@ from quanttradeai.trading import DrawdownGuard, PortfolioManager
 # Passing drawdown_guard wires it through an internal RiskManager.
 guard = DrawdownGuard(config_path="config/risk_config.yaml")
 pm = PortfolioManager(10000, drawdown_guard=guard)
-pm.open_position('AAPL', price=150, stop_loss_pct=0.05)
-pm.open_position('TSLA', price=250, stop_loss_pct=0.05)
+pm.open_position("AAPL", price=150, stop_loss_pct=0.05)
+pm.open_position("TSLA", price=250, stop_loss_pct=0.05)
 print(f"Portfolio exposure: {pm.risk_exposure:.2%}")
 ```
 
-## 📈 Performance Metrics
+## Performance Metrics
 
 ```python
 from quanttradeai.utils.metrics import classification_metrics, sharpe_ratio, max_drawdown
@@ -226,7 +238,7 @@ sharpe = sharpe_ratio(returns, risk_free_rate=0.02)
 mdd = max_drawdown(equity_curve)
 ```
 
-## 📊 Visualization
+## Visualization
 
 ```python
 from quanttradeai.utils.visualization import plot_price, plot_performance
@@ -236,7 +248,7 @@ plot_price(df, title="AAPL Price Chart")
 plot_performance(equity_curve, title="Strategy Performance")
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 Use these pages instead of copying large config blocks out of the quick reference:
 
@@ -250,16 +262,16 @@ Quick decision rule:
 - Use `config/project.yaml` for `validate`, `research run`, and `agent run`
 - Use the runtime YAML files for `live-trade`, `backtest-model`, and operational streaming setup
 
-## 🕒 Time-Aware Splitting
+## Time-Aware Splitting
 
 - In the canonical workflow, train/test splits respect `data.test_start` and `data.test_end` from `config/project.yaml`.
 - `research.evaluation.use_configured_test_window: false` disables that explicit window and falls back to a chronological split.
-- If only `test_start` is provided: train = dates < `test_start`; test = dates ≥ `test_start`.
+- If only `test_start` is provided: train = dates < `test_start`; test = dates >= `test_start`.
 - If neither is provided: a chronological split uses the last `training.test_size` fraction as test (default 0.2).
 
 Hyperparameter tuning uses `TimeSeriesSplit(n_splits=training.cv_folds)` to avoid future leakage during CV.
 
-## 🔌 Streaming
+## Streaming
 
 ```python
 from quanttradeai.streaming.providers import (
@@ -318,26 +330,26 @@ pm.bind_gateway(gw, ["AAPL", "MSFT"])
 
 The built-in `live-trade` command wires the position manager for you when `--position-manager-config` is provided.
 
-## 🚨 Error Handling
+## Error Handling
 
 ```python
 try:
     # Fetch data
     data = loader.fetch_data()
-    
+
     # Process data
-    df_processed = processor.process_data(data['AAPL'])
-    
+    df_processed = processor.process_data(data["AAPL"])
+
     # Train model
     classifier.train(X, y)
-    
+
 except ValueError as e:
     print(f"Configuration error: {e}")
 except Exception as e:
     print(f"Unexpected error: {e}")
 ```
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
 ### Data Issues
 ```python
@@ -350,7 +362,7 @@ data = loader.fetch_data(refresh=True)
 
 # Check for NaN values
 print(df.isnull().sum())
-df = df.fillna(method='ffill')
+df = df.fillna(method="ffill")
 ```
 
 ### Model Issues
@@ -366,15 +378,14 @@ print(pd.Series(y).value_counts())
 ### Backtesting Issues
 ```python
 # Check label distribution
-print(df['label'].value_counts())
+print(df["label"].value_counts())
 
 # Ensure proper date index
 print(df.index.dtype)
 ```
 
-## 📚 Related Documentation
+## Related Documentation
 
 - **[Getting Started](getting-started.md)** - Installation and first steps
 - **[API Reference](api/)** - Complete API documentation
-
 - **[Configuration](configuration.md)** - Configuration guide

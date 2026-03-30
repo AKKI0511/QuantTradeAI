@@ -13,7 +13,7 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 
 - Want the fastest working path? Jump to [Research In 4 Commands](#research-in-4-commands)
 - Already have a trained model? Jump to [Run A Model Agent](#run-a-model-agent)
-- Evaluating prompt-driven agents? Jump to [Backtest An LLM Agent](#backtest-an-llm-agent)
+- Evaluating prompt-driven agents? Jump to [Run An LLM Agent](#run-an-llm-agent)
 - Need the full config shape? Jump to [What A Project Looks Like](#what-a-project-looks-like)
 - Comparing current capabilities? Jump to [Current Support](#current-support)
 
@@ -31,8 +31,8 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 | --- | --- | --- |
 | Research a strategy end to end | `init` -> `validate` -> `research run` | Time-aware evaluation, backtests, metrics, run records |
 | Run a trained model as an agent | `init --template model-agent` -> `agent run --mode backtest|paper` | One YAML-defined agent that can be backtested and paper-run |
-| Backtest an LLM agent | `init --template llm-agent` -> `agent run --mode backtest` | Prompt-driven agent logic using project config |
-| Backtest a hybrid agent | `init --template hybrid` -> `research run` -> `agent run --mode backtest` | Model signals plus LLM reasoning in one project |
+| Run an LLM agent | `init --template llm-agent` -> `agent run --mode backtest|paper` | Prompt-driven agent logic using project config |
+| Run a hybrid agent | `init --template hybrid` -> `research run` -> `agent run --mode backtest|paper` | Model signals plus LLM reasoning in one project |
 | Keep using the older live loop | `live-trade` with runtime YAML files | Legacy compatibility for existing setups |
 
 ## How It Fits Together
@@ -62,7 +62,7 @@ QuantTradeAI is one framework with two connected tracks:
 | `agent run` for `model` agents in `backtest` | Supported |
 | `agent run` for `model` agents in `paper` | Supported |
 | `agent run` for `llm` and `hybrid` agents in `backtest` | Supported |
-| `agent run` for `llm` and `hybrid` agents in `paper` | Roadmap |
+| `agent run` for `llm` and `hybrid` agents in `paper` | Supported |
 | `rule` agents | Roadmap |
 | Deployment and promotion UX | Roadmap |
 
@@ -119,24 +119,25 @@ poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml 
 > [!IMPORTANT]
 > The `model-agent` template creates a placeholder model directory so the project structure is obvious. Replace it with a real trained model artifact before running the agent.
 
-### Backtest An LLM Agent
+### Run An LLM Agent
 
-Use this if you want prompt-driven agent logic from YAML.
+Use this if you want prompt-driven agent logic from YAML and want to move the same agent definition from backtest into paper mode.
 
 ```bash
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
 ```
 
-### Backtest A Hybrid Agent
+### Run A Hybrid Agent
 
-Use this if you want to combine trained model signals and LLM reasoning in one project.
+Use this if you want to combine trained model signals and LLM reasoning in one project and then run the agent in paper mode.
 
 ```bash
 poetry run quanttradeai init --template hybrid -o config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
-poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
 ```
 
 ## What A Project Looks Like
@@ -178,7 +179,7 @@ For the full shape, field reference, and supported agent modes, see [Project YAM
 | --- | --- | --- |
 | Research | `runs/research/<timestamp>_<project>/` | `resolved_project_config.yaml`, runtime YAML snapshots, `summary.json`, `metrics.json`, backtest artifacts |
 | Agent backtest | `runs/agent/backtest/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, backtest files |
-| Agent paper | `runs/agent/paper/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `executions.jsonl`, runtime YAML snapshots |
+| Agent paper | `runs/agent/paper/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime YAML snapshots |
 
 This makes it easier to compare runs, audit what actually executed, and reuse winning configurations.
 

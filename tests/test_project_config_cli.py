@@ -238,6 +238,30 @@ def test_model_agent_template_includes_canonical_streaming_block(
     assert payload["data"]["streaming"]["channels"] == ["trades", "quotes"]
 
 
+def test_llm_and_hybrid_templates_include_canonical_streaming_block(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    for template_name, expected_symbols in (
+        ("llm-agent", ["AAPL"]),
+        ("hybrid", ["AAPL", "TSLA"]),
+    ):
+        cfg_path = Path("config/project.yaml")
+        result = runner.invoke(
+            app,
+            ["init", "--template", template_name, "--output", str(cfg_path)],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert payload["agents"][0]["mode"] == "paper"
+        assert payload["data"]["streaming"]["enabled"] is True
+        assert payload["data"]["streaming"]["provider"] == "alpaca"
+        assert payload["data"]["streaming"]["symbols"] == expected_symbols
+        cfg_path.unlink()
+
+
 def test_validate_fails_when_model_agent_path_missing(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg_path = Path("config/project.yaml")
@@ -300,6 +324,31 @@ def test_validate_fails_when_model_agent_paper_streaming_is_incomplete(
 
     assert result.exit_code == 1
     assert "data.streaming requires websocket_url" in result.stderr.lower()
+
+
+def test_validate_fails_when_llm_agent_paper_streaming_is_missing(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path = Path("prompts/breakout.md")
+    prompt_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.write_text("Return JSON only.", encoding="utf-8")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["llm-agent"], sort_keys=False)
+    )
+    config_payload["data"].pop("streaming")
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "data.streaming.enabled must be true" in result.stderr.lower()
 
 
 def test_validate_fails_when_agent_prompt_file_missing(tmp_path: Path, monkeypatch):

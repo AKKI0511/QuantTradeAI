@@ -8,6 +8,7 @@ import yaml
 from typer.testing import CliRunner
 
 from quanttradeai.cli import app
+from quanttradeai.streaming.stream_buffer import StreamBuffer
 
 
 runner = CliRunner()
@@ -280,6 +281,16 @@ class FakePaperEngine:
         ]
 
 
+class FakeStreamingGateway:
+    def __init__(self, messages: list[dict]) -> None:
+        self.buffer = StreamBuffer(32)
+        self.messages = messages
+
+    async def _start(self) -> None:
+        for message in self.messages:
+            await self.buffer.put(message)
+
+
 def test_hybrid_agent_run_includes_model_signals(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
@@ -501,3 +512,286 @@ def test_model_agent_paper_run_writes_metrics_and_execution_log(
     assert metrics_payload["execution_count"] == 2
     assert metrics_payload["realized_pnl"] == 120.0
     assert metrics_payload["open_positions"]["AAPL"]["unrealized_pnl"] == 50.0
+
+
+def test_llm_agent_paper_run_writes_standardized_artifacts(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "llm-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["start_date"] = "2024-01-01"
+    config_payload["data"]["end_date"] = "2024-02-09"
+    config_payload["data"]["test_start"] = "2024-02-01"
+    config_payload["data"]["test_end"] = "2024-02-09"
+    config_payload["agents"][0]["mode"] = "paper"
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    gateway = FakeStreamingGateway(
+        [
+            {
+                "symbol": "AAPL",
+                "price": 121.0,
+                "volume": 10,
+                "timestamp": "2024-02-10T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 123.0,
+                "volume": 12,
+                "timestamp": "2024-02-11T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 124.0,
+                "volume": 14,
+                "timestamp": "2024-02-12T00:00:00Z",
+            },
+        ]
+    )
+
+    with (
+        patch(
+            "quanttradeai.agents.paper.StreamingGateway",
+            return_value=gateway,
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataLoader.fetch_data",
+            return_value={"AAPL": _mock_history()},
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataProcessor.generate_features",
+            _fake_generate_features,
+        ),
+        patch(
+            "quanttradeai.agents.llm.completion",
+            side_effect=_completion_from_actions(["buy", "hold"]),
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "breakout_gpt",
+                "--config",
+                str(config_path),
+                "--mode",
+                "paper",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    run_dir = Path(payload["run_dir"])
+    assert payload["status"] == "success"
+    assert payload["mode"] == "paper"
+    assert payload["agent_kind"] == "llm"
+    assert (run_dir / "resolved_project_config.yaml").is_file()
+    assert (run_dir / "runtime_model_config.yaml").is_file()
+    assert (run_dir / "runtime_features_config.yaml").is_file()
+    assert (run_dir / "runtime_streaming_config.yaml").is_file()
+    assert (run_dir / "metrics.json").is_file()
+    assert (run_dir / "decisions.jsonl").is_file()
+    assert (run_dir / "executions.jsonl").is_file()
+    assert (run_dir / "prompt_samples.json").is_file()
+
+    decision_lines = (
+        (run_dir / "decisions.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    )
+    execution_lines = (
+        (run_dir / "executions.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    )
+    assert len(decision_lines) == 2
+    assert len(execution_lines) == 1
+
+    metrics_payload = json.loads((run_dir / "metrics.json").read_text("utf-8"))
+    assert metrics_payload["decision_count"] == 2
+    assert metrics_payload["execution_count"] == 1
+
+
+def test_hybrid_agent_paper_run_includes_model_signals_in_decisions(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "hybrid", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    model_dir = Path("models/trained/aapl_daily_classifier")
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["start_date"] = "2024-01-01"
+    config_payload["data"]["end_date"] = "2024-02-09"
+    config_payload["data"]["test_start"] = "2024-02-01"
+    config_payload["data"]["test_end"] = "2024-02-09"
+    config_payload["agents"][0]["mode"] = "paper"
+    config_payload["agents"][0]["model_signal_sources"] = [
+        {
+            "name": "aapl_daily_classifier",
+            "path": "models/trained/aapl_daily_classifier",
+        }
+    ]
+    config_payload["agents"][0]["context"]["model_signals"] = ["aapl_daily_classifier"]
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    gateway = FakeStreamingGateway(
+        [
+            {
+                "symbol": "AAPL",
+                "price": 121.0,
+                "volume": 10,
+                "timestamp": "2024-02-10T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 123.0,
+                "volume": 12,
+                "timestamp": "2024-02-11T00:00:00Z",
+            },
+        ]
+    )
+
+    def _hybrid_completion(**kwargs):
+        content = kwargs["messages"][-1]["content"]
+        action = "buy" if '"signal": 1' in content else "hold"
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {"action": action, "reason": "Model signal driven"}
+                        )
+                    }
+                }
+            ]
+        }
+
+    with (
+        patch(
+            "quanttradeai.agents.paper.StreamingGateway",
+            return_value=gateway,
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataLoader.fetch_data",
+            return_value={"AAPL": _mock_history()},
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataProcessor.generate_features",
+            _fake_generate_features,
+        ),
+        patch(
+            "quanttradeai.agents.backtest.MomentumClassifier",
+            FakeSignalClassifier,
+        ),
+        patch(
+            "quanttradeai.agents.backtest._load_feature_preprocessor",
+            return_value=None,
+        ),
+        patch(
+            "quanttradeai.agents.llm.completion",
+            side_effect=_hybrid_completion,
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "hybrid_swing_agent",
+                "--config",
+                str(config_path),
+                "--mode",
+                "paper",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    run_dir = Path(payload["run_dir"])
+    decision_lines = (
+        (run_dir / "decisions.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    )
+    assert len(decision_lines) == 1
+    first_decision = json.loads(decision_lines[0])
+    assert first_decision["model_signals"]["aapl_daily_classifier"]["signal"] == 1
+    assert first_decision["action"] == "buy"
+
+
+def test_agent_run_warns_when_cli_mode_differs_from_configured_mode(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "llm-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["start_date"] = "2024-01-01"
+    config_payload["data"]["end_date"] = "2024-02-09"
+    config_payload["data"]["test_start"] = "2024-02-01"
+    config_payload["data"]["test_end"] = "2024-02-09"
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    with (
+        patch(
+            "quanttradeai.agents.backtest.DataLoader.fetch_data",
+            return_value={"AAPL": _mock_history()},
+        ),
+        patch(
+            "quanttradeai.agents.backtest.DataProcessor.generate_features",
+            _fake_generate_features,
+        ),
+        patch(
+            "quanttradeai.agents.llm.completion",
+            side_effect=_completion_from_actions(["hold", "hold", "hold", "hold", "hold"]),
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "breakout_gpt",
+                "--config",
+                str(config_path),
+                "--mode",
+                "backtest",
+                "--skip-validation",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert "configured with mode=paper but cli requested mode=backtest" in combined_output.lower()
