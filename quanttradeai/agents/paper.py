@@ -169,7 +169,7 @@ def _build_paper_runtime_model_config(
     except (TypeError, ValueError):
         start_dt = recent_start
 
-    data_cfg["start_date"] = max(start_dt, recent_start).isoformat()
+    data_cfg["start_date"] = min(start_dt, recent_start).isoformat()
     data_cfg["end_date"] = now.date().isoformat()
     data_cfg["test_start"] = None
     data_cfg["test_end"] = None

@@ -6,7 +6,11 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from quanttradeai.agents.paper import PaperAgentEngine
+from quanttradeai.agents.paper import (
+    PaperAgentEngine,
+    _build_paper_runtime_model_config,
+    _required_bootstrap_bars,
+)
 from quanttradeai.streaming.stream_buffer import StreamBuffer
 
 
@@ -168,6 +172,26 @@ def test_paper_engine_warm_starts_history_from_loader(tmp_path: Path, monkeypatc
 
     assert "AAPL" in engine._history
     assert len(engine._history["AAPL"]) == 260
+
+
+def test_runtime_model_config_extends_start_date_for_bootstrap_window():
+    model_cfg = {
+        "data": {
+            "symbols": ["AAPL"],
+            "timeframe": "1d",
+            "start_date": "2100-01-01",
+            "end_date": "2100-12-31",
+        }
+    }
+    agent_config = {"context": {"market_data": {"lookback_bars": 20}}}
+
+    runtime_cfg = _build_paper_runtime_model_config(model_cfg, agent_config)
+
+    assert runtime_cfg["data"]["start_date"] < model_cfg["data"]["start_date"]
+    assert runtime_cfg["data"]["test_start"] is None
+    assert runtime_cfg["data"]["test_end"] is None
+    assert runtime_cfg["data"]["end_date"] <= pd.Timestamp.now(tz="UTC").date().isoformat()
+    assert _required_bootstrap_bars(agent_config) == 260
 
 
 def test_paper_engine_aggregates_messages_once_per_completed_bar(
