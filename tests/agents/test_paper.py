@@ -266,6 +266,7 @@ def test_paper_engine_sell_without_position_is_audited_as_no_op(
     assert len(engine.decision_log) == 1
     assert engine.execution_log == []
     assert engine.decision_log[0]["execution_status"] == "no_position"
+    assert engine.decision_log[0]["desired_target_position"] == -1
     assert engine.decision_log[0]["target_position"] == 0
 
 

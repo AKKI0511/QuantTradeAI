@@ -557,7 +557,7 @@ class PaperAgentEngine:
         desired_target = (
             1
             if decision.action == "buy"
-            else 0 if decision.action == "sell" else position_before
+            else -1 if decision.action == "sell" else position_before
         )
         execution_status = "hold"
         execution_payload: dict[str, Any] | None = None
