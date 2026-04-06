@@ -597,6 +597,19 @@ class ProjectAgentModelConfig(BaseModel):
     path: str
 
 
+class ProjectAgentRuleConfig(BaseModel):
+    preset: Literal["rsi_threshold"]
+    feature: str
+    buy_below: float
+    sell_above: float
+
+    @model_validator(mode="after")
+    def validate_thresholds(self) -> "ProjectAgentRuleConfig":
+        if self.buy_below >= self.sell_above:
+            raise ValueError("rule.buy_below must be less than rule.sell_above.")
+        return self
+
+
 class ProjectAgentMarketDataContext(BaseModel):
     enabled: bool = True
     timeframe: str = "1d"
@@ -633,6 +646,7 @@ class ProjectAgentConfig(BaseModel):
     name: str
     kind: Literal["rule", "model", "llm", "hybrid"]
     mode: Literal["backtest", "paper", "live"]
+    rule: Optional[ProjectAgentRuleConfig] = None
     llm: Optional[ProjectAgentLLMConfig] = None
     model: Optional[ProjectAgentModelConfig] = None
     context: ProjectAgentContextConfig = Field(
@@ -648,6 +662,14 @@ class ProjectAgentConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_requirements(self) -> "ProjectAgentConfig":
+        if self.kind == "rule" and self.rule is None:
+            raise ValueError(
+                f"agents.{self.name} requires a rule block when kind is rule."
+            )
+        if self.kind != "rule" and self.rule is not None:
+            raise ValueError(
+                f"agents.{self.name} only supports a rule block when kind is rule."
+            )
         if self.kind in {"llm", "hybrid"} and self.llm is None:
             raise ValueError(
                 f"agents.{self.name} requires an llm block when kind is {self.kind}."
@@ -663,6 +685,14 @@ class ProjectAgentConfig(BaseModel):
         if self.kind not in {"llm", "hybrid"} and self.llm is not None:
             raise ValueError(
                 f"agents.{self.name} only supports an llm block when kind is llm or hybrid."
+            )
+        if (
+            self.kind == "rule"
+            and self.rule is not None
+            and self.rule.feature not in self.context.features
+        ):
+            raise ValueError(
+                f"agents.{self.name} must include rule.feature '{self.rule.feature}' in context.features."
             )
         return self
 

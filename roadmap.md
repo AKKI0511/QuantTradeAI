@@ -1,6 +1,6 @@
 # QuantTradeAI Roadmap
 
-Last updated: 2026-03-23
+Last updated: 2026-04-01
 
 This document is the product source of truth for QuantTradeAI.
 It is written for both human contributors and coding agents.
@@ -322,12 +322,14 @@ Status on 2026-03-29:
 - Implemented for the research happy path: canonical `config/project.yaml`, `init`, `validate`, legacy config import via flags, resolved-config artifacts, standardized research run directories, automatic backtests from `research run`, and time-aware preprocessing/evaluation defaults.
 - `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest|paper` is implemented for `llm` and `hybrid` agents.
 - `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest|paper` is implemented for `model` agents.
+- `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest|paper` is implemented for `rule` agents.
 - Agent templates now write the referenced prompt markdown assets.
 - Agent backtest runs now persist resolved config, runtime YAML snapshots, metrics, equity curve, ledger, decisions, sampled prompt/response payloads where applicable, and standardized run metadata under `runs/agent/backtest/...`.
 - Model-agent paper runs now persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, and `executions.jsonl` under `runs/agent/paper/...`.
 - LLM and hybrid paper runs now persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, and sampled prompt payloads under `runs/agent/paper/...`.
+- Rule-agent paper runs now persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, `decisions.jsonl`, and `executions.jsonl` under `runs/agent/paper/...`.
 - `quanttradeai runs list` is implemented for local research and agent run discovery.
-- Remaining Stage 1 work includes `rule` agents, live execution for `llm` and `hybrid` agents, and promotion UX.
+- Remaining Stage 1 work includes live execution for `llm` and `hybrid` agents, and promotion UX.
 
 ### Stage 2: Multi-Agent Lab
 

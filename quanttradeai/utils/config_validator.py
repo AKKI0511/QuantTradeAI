@@ -84,6 +84,7 @@ def _validate_agent_project_sections(
         context_cfg = dict(agent.get("context") or {})
         llm_cfg = agent.get("llm") or {}
         model_cfg = agent.get("model") or {}
+        rule_cfg = dict(agent.get("rule") or {})
 
         if agent_kind in {"llm", "hybrid"}:
             prompt_file = llm_cfg.get("prompt_file")
@@ -107,6 +108,16 @@ def _validate_agent_project_sections(
             if model_path_raw and not model_path.exists():
                 errors.append(
                     f"Agent '{agent_name}' model path does not exist: {model_path}"
+                )
+        if agent_kind == "rule":
+            rule_feature = str(rule_cfg.get("feature", "")).strip()
+            if rule_feature and rule_feature not in feature_names:
+                errors.append(
+                    f"Agent '{agent_name}' rule.feature references unknown feature: {rule_feature}"
+                )
+            if rule_feature and rule_feature not in (context_cfg.get("features") or []):
+                errors.append(
+                    f"Agent '{agent_name}' must include rule.feature '{rule_feature}' in context.features."
                 )
 
         missing_features = sorted(

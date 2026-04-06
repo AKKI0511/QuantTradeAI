@@ -32,6 +32,15 @@ poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml 
 
 The `model-agent` template also creates a placeholder model artifact at `models/trained/aapl_daily_classifier/README.md`. Replace that directory with a real saved model before you run the agent.
 
+### Rule Agents
+
+```bash
+poetry run quanttradeai init --template rule-agent -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode paper
+```
+
 ### LLM And Hybrid Agents
 
 ```bash
@@ -50,7 +59,7 @@ Current support:
 | `model` | Yes | Yes | No |
 | `llm` | Yes | Yes | No |
 | `hybrid` | Yes | Yes | No |
-| `rule` | No | No | No |
+| `rule` | Yes | Yes | No |
 
 ## Canonical Shape
 
@@ -126,6 +135,24 @@ agents:
 deployment:
   target: "docker-compose"
   mode: "paper"
+```
+
+Rule-agent example:
+
+```yaml
+agents:
+  - name: "rsi_reversion"
+    kind: "rule"
+    mode: "paper"
+    rule:
+      preset: "rsi_threshold"
+      feature: "rsi_14"
+      buy_below: 30.0
+      sell_above: 70.0
+    context:
+      features: ["rsi_14"]
+      positions: true
+      risk_state: true
 ```
 
 ## Section Reference
@@ -243,6 +270,43 @@ Practical notes:
 Even when `research.enabled` is `false`, the agent runtime still reuses these defaults to compile consistent runtime configs.
 
 ### `agents`
+
+#### `rule` agents
+
+Required fields:
+
+- `name`
+- `kind: rule`
+- `rule.preset`
+- `rule.feature`
+- `rule.buy_below`
+- `rule.sell_above`
+
+Current built-in preset support:
+
+- `rsi_threshold`
+
+Validation checks that:
+
+- the `rule` block exists for rule agents
+- `rule.feature` exists in `features.definitions`
+- `rule.feature` is also listed in `context.features`
+- `rule.buy_below < rule.sell_above`
+
+Backtest mode:
+
+- evaluates the configured feature on each completed bar
+- writes `summary.json`, `metrics.json`, `equity_curve.csv`, `decisions.jsonl`, and `ledger.csv` when trades are present
+- also writes compiled runtime config files and per-symbol coverage and metrics files under the run directory
+- does not emit prompt sample artifacts because no LLM is involved
+
+Paper mode:
+
+- compiles `data.streaming` into a runtime streaming config
+- warm-starts with recent historical OHLCV before streaming begins
+- evaluates the configured rule on each completed streaming bar
+- writes `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, and `runtime_streaming_config.yaml`
+- does not emit `prompt_samples.json`
 
 #### `model` agents
 

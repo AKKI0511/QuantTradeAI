@@ -18,6 +18,7 @@ _EXPORT_MAP = {
     "AgentDecision": ("quanttradeai.agents", "AgentDecision"),
     "AgentSimulationState": ("quanttradeai.agents", "AgentSimulationState"),
     "BaseStrategy": ("quanttradeai.agents", "BaseStrategy"),
+    "RuleAgentStrategy": ("quanttradeai.agents", "RuleAgentStrategy"),
     "MomentumClassifier": ("quanttradeai.models.classifier", "MomentumClassifier"),
     "PortfolioManager": ("quanttradeai.trading.portfolio", "PortfolioManager"),
     "apply_stop_loss_take_profit": (

@@ -238,6 +238,28 @@ def test_model_agent_template_includes_canonical_streaming_block(
     assert payload["data"]["streaming"]["channels"] == ["trades", "quotes"]
 
 
+def test_rule_agent_template_includes_canonical_streaming_block(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    assert payload["agents"][0]["kind"] == "rule"
+    assert payload["agents"][0]["mode"] == "paper"
+    assert payload["agents"][0]["rule"]["preset"] == "rsi_threshold"
+    assert payload["agents"][0]["rule"]["feature"] == "rsi_14"
+    assert payload["data"]["streaming"]["enabled"] is True
+    assert payload["data"]["streaming"]["provider"] == "alpaca"
+    assert payload["research"]["enabled"] is False
+
+
 def test_llm_and_hybrid_templates_include_canonical_streaming_block(
     tmp_path: Path, monkeypatch
 ):
@@ -281,6 +303,106 @@ def test_validate_fails_when_model_agent_path_missing(tmp_path: Path, monkeypatc
 
     assert result.exit_code == 1
     assert "model path does not exist" in result.stderr.lower()
+
+
+def test_validate_passes_for_rule_agent_template(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 0, result.stdout
+    assert "Resolved project config summary:" in result.stdout
+
+
+def test_validate_fails_when_rule_agent_rule_block_missing(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["agents"][0].pop("rule")
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "requires a rule block" in result.stderr.lower()
+
+
+def test_validate_fails_when_rule_agent_feature_unknown(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["agents"][0]["rule"]["feature"] = "rsi_21"
+    config_payload["agents"][0]["context"]["features"] = ["rsi_21"]
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "rule.feature references unknown feature" in result.stderr.lower()
+
+
+def test_validate_fails_when_rule_feature_missing_from_context_features(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["agents"][0]["context"]["features"] = []
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "must include rule.feature 'rsi_14' in context.features" in result.stderr
+
+
+def test_validate_fails_when_rule_thresholds_are_inverted(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["agents"][0]["rule"]["buy_below"] = 70.0
+    config_payload["agents"][0]["rule"]["sell_above"] = 30.0
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "rule.buy_below must be less than rule.sell_above" in result.stderr.lower()
 
 
 def test_validate_fails_when_model_agent_path_blank(tmp_path: Path, monkeypatch):
@@ -428,10 +550,7 @@ def test_validate_preserves_unknown_fields_in_resolved_artifact(
     assert resolved["risk"] == {"enabled": True, "max_drawdown": 0.15}
     assert resolved["data"]["streaming"]["enabled"] is True
     assert resolved["data"]["streaming"]["provider"] == "paper-feed"
-    assert (
-        resolved["data"]["streaming"]["websocket_url"]
-        == "wss://example.test/stream"
-    )
+    assert resolved["data"]["streaming"]["websocket_url"] == "wss://example.test/stream"
     assert resolved["data"]["streaming"]["auth_method"] == "api_key"
     assert resolved["data"]["streaming"]["symbols"] == ["AAPL"]
     assert resolved["data"]["streaming"]["channels"] == ["trades"]

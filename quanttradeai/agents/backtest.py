@@ -29,11 +29,11 @@ from quanttradeai.utils.run_records import apply_required_run_fields, create_run
 
 from .base import AgentSimulationState, action_to_target, signal_to_action
 from .context import build_context_payload
-from .llm import LLMAgentStrategy
+from .factory import build_strategy
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_AGENT_KINDS = {"llm", "hybrid"}
+SUPPORTED_AGENT_KINDS = {"rule", "llm", "hybrid"}
 PROMPT_SAMPLE_LIMIT = 20
 
 
@@ -146,14 +146,14 @@ def _build_strategy(
     *,
     agent_config: dict[str, Any],
     project_config_path: str | Path,
-) -> LLMAgentStrategy:
+) -> Any:
     if agent_config.get("kind") not in SUPPORTED_AGENT_KINDS:
         raise ValueError(
-            "Only llm and hybrid agents are supported by `quanttradeai agent run`."
+            "Only rule, llm, and hybrid agents are supported by `quanttradeai agent run`."
         )
-    return LLMAgentStrategy(
+    return build_strategy(
+        agent_config=agent_config,
         project_config_path=project_config_path,
-        llm_config=dict(agent_config.get("llm") or {}),
     )
 
 
@@ -164,7 +164,7 @@ def run_agent_backtest(
     mode: str = "backtest",
     skip_validation: bool = False,
 ) -> dict[str, Any]:
-    """Run an agent over the configured backtest window."""
+    """Run a rule, LLM, or hybrid agent over the configured backtest window."""
 
     if mode != "backtest":
         raise ValueError(
@@ -216,11 +216,16 @@ def run_agent_backtest(
         )
         if agent_config is None:
             raise ValueError(f"Agent '{agent_name}' not found in project config.")
+        if agent_config.get("kind") not in SUPPORTED_AGENT_KINDS:
+            raise ValueError(
+                f"Agent '{agent_name}' is kind={agent_config.get('kind')}; expected kind=rule, kind=llm, or kind=hybrid."
+            )
 
         strategy = _build_strategy(
             agent_config=agent_config,
             project_config_path=project_config_path,
         )
+        include_prompt_artifacts = agent_config.get("kind") in {"llm", "hybrid"}
 
         model_cfg, features_cfg, backtest_cfg = compile_research_runtime_configs(
             project_config,
@@ -341,7 +346,10 @@ def run_agent_backtest(
                     },
                 }
                 decision_records.append(decision_record)
-                if len(prompt_samples) < PROMPT_SAMPLE_LIMIT:
+                if (
+                    include_prompt_artifacts
+                    and len(prompt_samples) < PROMPT_SAMPLE_LIMIT
+                ):
                     prompt_samples.append(
                         {
                             "symbol": symbol,
@@ -417,15 +425,16 @@ def run_agent_backtest(
             )
 
         _write_jsonl(run_dir / "decisions.jsonl", decision_records)
-        _write_json(run_dir / "prompt_samples.json", prompt_samples)
 
         artifacts = {
             **summary["artifacts"],
             "metrics": str(run_dir / "metrics.json"),
             "equity_curve": str(run_dir / "equity_curve.csv"),
             "decisions": str(run_dir / "decisions.jsonl"),
-            "prompt_samples": str(run_dir / "prompt_samples.json"),
         }
+        if include_prompt_artifacts:
+            _write_json(run_dir / "prompt_samples.json", prompt_samples)
+            artifacts["prompt_samples"] = str(run_dir / "prompt_samples.json")
         if combined_ledger_path is not None:
             artifacts["ledger"] = str(combined_ledger_path)
 
