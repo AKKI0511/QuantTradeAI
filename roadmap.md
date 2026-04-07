@@ -329,7 +329,8 @@ Status on 2026-03-29:
 - LLM and hybrid paper runs now persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, and sampled prompt payloads under `runs/agent/paper/...`.
 - Rule-agent paper runs now persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, `decisions.jsonl`, and `executions.jsonl` under `runs/agent/paper/...`.
 - `quanttradeai runs list` is implemented for local research and agent run discovery.
-- Remaining Stage 1 work includes live execution for `llm` and `hybrid` agents, and promotion UX.
+- `quanttradeai promote --run <run_id>` is implemented for successful agent backtest-to-paper promotion.
+- Remaining Stage 1 work includes project-agent live execution, live promotion safety gates, and deployment UX.
 
 ### Stage 2: Multi-Agent Lab
 

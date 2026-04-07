@@ -8,6 +8,7 @@ It drives:
 - `quanttradeai validate`
 - `quanttradeai research run`
 - `quanttradeai agent run` for project-defined agents
+- `quanttradeai promote` for agent backtest-to-paper promotion
 
 `live-trade` still uses the legacy runtime YAML files documented in [Runtime and Live Trading Configs](live-runtime-files.md).
 
@@ -27,6 +28,7 @@ poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai init --template model-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
+poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
 ```
 
@@ -38,6 +40,7 @@ The `model-agent` template also creates a placeholder model artifact at `models/
 poetry run quanttradeai init --template rule-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode backtest
+poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode paper
 ```
 
@@ -47,6 +50,7 @@ poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml -
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
 ```
 
@@ -60,6 +64,14 @@ Current support:
 | `llm` | Yes | Yes | No |
 | `hybrid` | Yes | Yes | No |
 | `rule` | Yes | Yes | No |
+
+Successful agent backtest runs can be promoted to paper mode with:
+
+```bash
+poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
+```
+
+This updates the matching agent's `mode` and `deployment.mode` to `paper`. Promotion to `live` remains future work.
 
 ## Canonical Shape
 
@@ -354,7 +366,7 @@ Paper mode:
 
 ### `deployment`
 
-Required metadata. It is not yet a complete workflow driver.
+Required metadata. `quanttradeai promote --run <run_id>` updates `deployment.mode` to `paper` when promoting a successful agent backtest run. Deployment generation and live promotion remain future work.
 
 ## Runtime Artifacts
 

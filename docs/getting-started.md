@@ -47,9 +47,10 @@ Replace the placeholder model directory with a real trained model artifact befor
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
 ```
 
-### Run The Same Agent In Paper Mode
+### Promote And Run The Same Agent In Paper Mode
 
 ```bash
+poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
 ```
 
@@ -68,6 +69,7 @@ LLM and hybrid agents are supported in both backtest and paper mode from `projec
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
 ```
 
@@ -76,6 +78,8 @@ Hybrid projects use the same pattern:
 ```bash
 poetry run quanttradeai init --template hybrid -o config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode backtest
+poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
 ```
 

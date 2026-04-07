@@ -4,7 +4,8 @@
 
 - research runs
 - project-defined agent backtests
-- project-defined `model` agent paper runs
+- project-defined agent paper runs
+- agent backtest-to-paper promotion
 
 The legacy runtime YAML files still matter for:
 
@@ -31,11 +32,11 @@ This page explains that boundary.
 
 ### Canonical Paper Agent Path
 
-`quanttradeai agent run --mode paper` for `model` agents:
+`quanttradeai agent run --mode paper` for project-defined agents:
 
 - reads `config/project.yaml`
 - compiles runtime model, features, backtest, and streaming YAMLs into the run directory
-- passes the compiled feature config into the live/paper engine
+- passes the compiled feature config into the paper runtime
 
 ### Legacy Live Path
 

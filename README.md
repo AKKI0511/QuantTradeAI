@@ -30,10 +30,10 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 | I want to... | Best path today | What I get |
 | --- | --- | --- |
 | Research a strategy end to end | `init` -> `validate` -> `research run` | Time-aware evaluation, backtests, metrics, run records |
-| Run a deterministic rule agent | `init --template rule-agent` -> `agent run --mode backtest|paper` | A no-LLM baseline agent driven entirely by YAML thresholds |
-| Run a trained model as an agent | `init --template model-agent` -> `agent run --mode backtest|paper` | One YAML-defined agent that can be backtested and paper-run |
-| Run an LLM agent | `init --template llm-agent` -> `agent run --mode backtest|paper` | Prompt-driven agent logic using project config |
-| Run a hybrid agent | `init --template hybrid` -> `research run` -> `agent run --mode backtest|paper` | Model signals plus LLM reasoning in one project |
+| Run a deterministic rule agent | `init --template rule-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` | A no-LLM baseline agent driven entirely by YAML thresholds |
+| Run a trained model as an agent | `init --template model-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` | One YAML-defined agent that can be backtested, promoted, and paper-run |
+| Run an LLM agent | `init --template llm-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` | Prompt-driven agent logic using project config |
+| Run a hybrid agent | `init --template hybrid` -> `research run` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` | Model signals plus LLM reasoning in one project |
 | Keep using the older live loop | `live-trade` with runtime YAML files | Legacy compatibility for existing setups |
 
 ## How It Fits Together
@@ -66,7 +66,8 @@ QuantTradeAI is one framework with two connected tracks:
 | `agent run` for `model` agents in `paper` | Supported |
 | `agent run` for `llm` and `hybrid` agents in `backtest` | Supported |
 | `agent run` for `llm` and `hybrid` agents in `paper` | Supported |
-| Deployment and promotion UX | Roadmap |
+| Agent backtest-to-paper promotion | Supported |
+| Deployment and live promotion UX | Roadmap |
 
 > [!NOTE]
 > `live-trade` still exists for legacy runtime YAML workflows. It does not read `config/project.yaml`.
@@ -112,6 +113,7 @@ Use this if you want the smallest deterministic agent workflow with no LLM depen
 poetry run quanttradeai init --template rule-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode backtest
+poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode paper
 ```
 
@@ -140,6 +142,7 @@ poetry run quanttradeai validate -c config/project.yaml
 # Replace models/trained/aapl_daily_classifier/ with a real trained model artifact
 
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
+poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
 ```
 
@@ -154,6 +157,7 @@ Use this if you want prompt-driven agent logic from YAML and want to move the sa
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
 ```
 
@@ -164,6 +168,8 @@ Use this if you want to combine trained model signals and LLM reasoning in one p
 ```bash
 poetry run quanttradeai init --template hybrid -o config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode backtest
+poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
 ```
 
