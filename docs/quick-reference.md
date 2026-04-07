@@ -20,6 +20,8 @@ poetry run quanttradeai runs list
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+# Promote the successful backtest run before starting paper mode
+poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
 
 # Import an existing legacy config/ directory into the canonical workflow

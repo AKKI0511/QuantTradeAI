@@ -802,7 +802,7 @@ def cmd_research_run(
         help="Skip data-quality validation before training",
     ),
 ):
-    """Run the Stage 1 canonical research workflow from project.yaml."""
+    """Run the canonical research workflow from project.yaml."""
 
     import yaml
 
@@ -1105,6 +1105,43 @@ def cmd_runs_list(
         return
 
     typer.echo(_render_runs_table(records))
+
+
+@app.command("promote")
+def cmd_promote(
+    run: str = typer.Option(
+        ..., "--run", help="Run id to promote, for example agent/backtest/<run>"
+    ),
+    config: str = typer.Option(
+        "config/project.yaml", "-c", "--config", help="Path to project config YAML"
+    ),
+    target: str = typer.Option(
+        "paper",
+        "--to",
+        help="Target mode. Only paper is supported in this release.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show the proposed promotion without writing project.yaml",
+    ),
+):
+    """Promote a successful agent backtest run to paper mode."""
+
+    from .utils.promotion import promote_agent_run
+
+    try:
+        result = promote_agent_run(
+            run_id=run,
+            config_path=config,
+            target_mode=target,
+            dry_run=dry_run,
+        )
+    except Exception as exc:
+        typer.echo(f"Promotion failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(json.dumps(result, indent=2))
 
 
 @agent_app.command("run")

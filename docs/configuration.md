@@ -10,7 +10,7 @@ QuantTradeAI has one **canonical project config** for research and agent backtes
 | What you want to do | Primary file(s) | Used by |
 | --- | --- | --- |
 | Run the canonical research workflow | `config/project.yaml` | `quanttradeai validate`, `quanttradeai research run` |
-| Run an LLM or hybrid agent backtest | `config/project.yaml` | `quanttradeai agent run` |
+| Run or promote a project-defined agent | `config/project.yaml` | `quanttradeai agent run`, `quanttradeai promote` |
 | Run live streaming inference | `config/model_config.yaml`, `config/features_config.yaml`, `config/streaming.yaml`, `config/risk_config.yaml`, `config/position_manager.yaml` | `quanttradeai live-trade` |
 | Backtest a saved model with execution costs | `config/model_config.yaml`, `config/backtest_config.yaml`, optional `config/risk_config.yaml`, optional `config/impact_config.yaml` | `quanttradeai backtest-model` |
 | Validate the runtime YAML bundle | Runtime YAML files under `config/` | `quanttradeai validate-config` |
@@ -39,6 +39,7 @@ poetry run quanttradeai runs list
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 ```
 
 ### Live Trading
@@ -54,7 +55,7 @@ poetry run quanttradeai live-trade \
 
 ## Important Boundaries
 
-- `config/project.yaml` is the center of gravity for **research** and **agent backtests**
+- `config/project.yaml` is the center of gravity for **research**, **agent backtests**, and **agent backtest-to-paper promotion**
 - `quanttradeai live-trade` does **not** read `config/project.yaml` today
 - `config/streaming.yaml`, `config/risk_config.yaml`, and `config/position_manager.yaml` are still first-class runtime files
 - `quanttradeai validate-config` is the fastest way to catch malformed runtime YAMLs before running live or backtest commands
