@@ -63,6 +63,29 @@ LEGACY_PROJECT_SECTIONS = {
 }
 
 
+def _rule_feature_is_rsi_resolvable(feature_definition: dict[str, Any]) -> bool:
+    """Return whether a feature definition resolves to a scalar RSI payload."""
+
+    feature_name = str(feature_definition.get("name") or "").strip().lower()
+    if not feature_name:
+        return False
+
+    if feature_name.startswith("rsi"):
+        return True
+
+    feature_type = str(feature_definition.get("type") or "").strip().lower()
+    params = dict(feature_definition.get("params") or {})
+
+    if feature_type == "technical":
+        return any(key in params for key in ("period", "rsi_period"))
+
+    if feature_type == "custom":
+        kind = str(params.get("kind") or "").strip().lower()
+        return kind == "rsi"
+
+    return False
+
+
 def _validate_agent_project_sections(
     *,
     resolved: dict[str, Any],
@@ -71,11 +94,12 @@ def _validate_agent_project_sections(
     warnings: list[str] = []
     errors: list[str] = []
 
-    feature_names = {
-        str(item.get("name"))
+    feature_definitions = {
+        str(item.get("name")): item
         for item in (resolved.get("features") or {}).get("definitions", [])
         if isinstance(item, dict) and item.get("name")
     }
+    feature_names = set(feature_definitions)
     data_streaming_cfg = dict((resolved.get("data") or {}).get("streaming") or {})
 
     for agent in resolved.get("agents") or []:
@@ -111,6 +135,7 @@ def _validate_agent_project_sections(
                 )
         if agent_kind == "rule":
             rule_feature = str(rule_cfg.get("feature", "")).strip()
+            rule_preset = str(rule_cfg.get("preset", "")).strip()
             if rule_feature and rule_feature not in feature_names:
                 errors.append(
                     f"Agent '{agent_name}' rule.feature references unknown feature: {rule_feature}"
@@ -118,6 +143,15 @@ def _validate_agent_project_sections(
             if rule_feature and rule_feature not in (context_cfg.get("features") or []):
                 errors.append(
                     f"Agent '{agent_name}' must include rule.feature '{rule_feature}' in context.features."
+                )
+            if (
+                rule_feature
+                and rule_preset == "rsi_threshold"
+                and rule_feature in feature_definitions
+                and not _rule_feature_is_rsi_resolvable(feature_definitions[rule_feature])
+            ):
+                errors.append(
+                    f"Agent '{agent_name}' rule.feature '{rule_feature}' must resolve to a scalar RSI value for preset '{rule_preset}'."
                 )
 
         missing_features = sorted(

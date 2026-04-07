@@ -405,6 +405,40 @@ def test_validate_fails_when_rule_thresholds_are_inverted(tmp_path: Path, monkey
     assert "rule.buy_below must be less than rule.sell_above" in result.stderr.lower()
 
 
+def test_validate_fails_when_rule_feature_is_not_rsi_resolvable(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["features"]["definitions"] = [
+        {
+            "name": "technical_core",
+            "type": "technical",
+            "params": {
+                "price_features": ["returns"],
+                "rsi_period": 14,
+                "macd_params": {"fast": 12, "slow": 26, "signal": 9},
+            },
+        }
+    ]
+    config_payload["agents"][0]["rule"]["feature"] = "technical_core"
+    config_payload["agents"][0]["context"]["features"] = ["technical_core"]
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "must resolve to a scalar rsi value" in result.stderr.lower()
+
+
 def test_validate_fails_when_model_agent_path_blank(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg_path = Path("config/project.yaml")
