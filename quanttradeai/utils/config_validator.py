@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, Iterable, Mapping
 import yaml
 from pydantic import ValidationError
 
+from quanttradeai.agents.context import _infer_feature_columns
 from quanttradeai.utils.config_schemas import (
     BacktestConfigSchema,
     FeaturesConfigSchema,
@@ -66,24 +67,18 @@ LEGACY_PROJECT_SECTIONS = {
 def _rule_feature_is_rsi_resolvable(feature_definition: dict[str, Any]) -> bool:
     """Return whether a feature definition resolves to a scalar RSI payload."""
 
-    feature_name = str(feature_definition.get("name") or "").strip().lower()
+    feature_name = str(feature_definition.get("name") or "").strip()
     if not feature_name:
         return False
 
-    if feature_name.startswith("rsi"):
+    if feature_name.lower().startswith("rsi"):
         return True
 
-    feature_type = str(feature_definition.get("type") or "").strip().lower()
-    params = dict(feature_definition.get("params") or {})
-
-    if feature_type == "technical":
-        return any(key in params for key in ("period", "rsi_period"))
-
-    if feature_type == "custom":
-        kind = str(params.get("kind") or "").strip().lower()
-        return kind == "rsi"
-
-    return False
+    resolved_columns = _infer_feature_columns(
+        feature_definition,
+        {"rsi", "macd", "macd_signal", "macd_hist"},
+    )
+    return len(resolved_columns) == 1 and resolved_columns[0] == "rsi"
 
 
 def _validate_agent_project_sections(
@@ -148,7 +143,9 @@ def _validate_agent_project_sections(
                 rule_feature
                 and rule_preset == "rsi_threshold"
                 and rule_feature in feature_definitions
-                and not _rule_feature_is_rsi_resolvable(feature_definitions[rule_feature])
+                and not _rule_feature_is_rsi_resolvable(
+                    feature_definitions[rule_feature]
+                )
             ):
                 errors.append(
                     f"Agent '{agent_name}' rule.feature '{rule_feature}' must resolve to a scalar RSI value for preset '{rule_preset}'."
