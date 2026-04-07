@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, Iterable, Mapping
 import yaml
 from pydantic import ValidationError
 
+from quanttradeai.agents.context import _infer_feature_columns
 from quanttradeai.utils.config_schemas import (
     BacktestConfigSchema,
     FeaturesConfigSchema,
@@ -63,6 +64,23 @@ LEGACY_PROJECT_SECTIONS = {
 }
 
 
+def _rule_feature_is_rsi_resolvable(feature_definition: dict[str, Any]) -> bool:
+    """Return whether a feature definition resolves to a scalar RSI payload."""
+
+    feature_name = str(feature_definition.get("name") or "").strip()
+    if not feature_name:
+        return False
+
+    if feature_name.lower().startswith("rsi"):
+        return True
+
+    resolved_columns = _infer_feature_columns(
+        feature_definition,
+        {"rsi", "macd", "macd_signal", "macd_hist"},
+    )
+    return len(resolved_columns) == 1 and resolved_columns[0] == "rsi"
+
+
 def _validate_agent_project_sections(
     *,
     resolved: dict[str, Any],
@@ -71,11 +89,12 @@ def _validate_agent_project_sections(
     warnings: list[str] = []
     errors: list[str] = []
 
-    feature_names = {
-        str(item.get("name"))
+    feature_definitions = {
+        str(item.get("name")): item
         for item in (resolved.get("features") or {}).get("definitions", [])
         if isinstance(item, dict) and item.get("name")
     }
+    feature_names = set(feature_definitions)
     data_streaming_cfg = dict((resolved.get("data") or {}).get("streaming") or {})
 
     for agent in resolved.get("agents") or []:
@@ -84,6 +103,7 @@ def _validate_agent_project_sections(
         context_cfg = dict(agent.get("context") or {})
         llm_cfg = agent.get("llm") or {}
         model_cfg = agent.get("model") or {}
+        rule_cfg = dict(agent.get("rule") or {})
 
         if agent_kind in {"llm", "hybrid"}:
             prompt_file = llm_cfg.get("prompt_file")
@@ -107,6 +127,28 @@ def _validate_agent_project_sections(
             if model_path_raw and not model_path.exists():
                 errors.append(
                     f"Agent '{agent_name}' model path does not exist: {model_path}"
+                )
+        if agent_kind == "rule":
+            rule_feature = str(rule_cfg.get("feature", "")).strip()
+            rule_preset = str(rule_cfg.get("preset", "")).strip()
+            if rule_feature and rule_feature not in feature_names:
+                errors.append(
+                    f"Agent '{agent_name}' rule.feature references unknown feature: {rule_feature}"
+                )
+            if rule_feature and rule_feature not in (context_cfg.get("features") or []):
+                errors.append(
+                    f"Agent '{agent_name}' must include rule.feature '{rule_feature}' in context.features."
+                )
+            if (
+                rule_feature
+                and rule_preset == "rsi_threshold"
+                and rule_feature in feature_definitions
+                and not _rule_feature_is_rsi_resolvable(
+                    feature_definitions[rule_feature]
+                )
+            ):
+                errors.append(
+                    f"Agent '{agent_name}' rule.feature '{rule_feature}' must resolve to a scalar RSI value for preset '{rule_preset}'."
                 )
 
         missing_features = sorted(

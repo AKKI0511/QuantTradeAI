@@ -35,6 +35,38 @@ def _fake_generate_features(self, df: pd.DataFrame) -> pd.DataFrame:
     return featured
 
 
+def _rule_backtest_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    featured = df.copy()
+    rsi_values = np.full(len(featured), 55.0)
+    index = pd.to_datetime(featured.index)
+    for timestamp, value in {
+        pd.Timestamp("2024-01-26"): 45.0,
+        pd.Timestamp("2024-01-27"): 48.0,
+        pd.Timestamp("2024-01-28"): 52.0,
+        pd.Timestamp("2024-01-29"): 58.0,
+        pd.Timestamp("2024-01-30"): 62.0,
+        pd.Timestamp("2024-01-31"): 64.0,
+    }.items():
+        matches = index == timestamp
+        if matches.any():
+            rsi_values[matches] = value
+    featured["rsi"] = rsi_values
+    return featured
+
+
+def _rule_paper_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    featured = df.copy()
+    featured["rsi"] = 55.0
+    for timestamp, value in {
+        pd.Timestamp("2024-02-10T00:00:00Z"): 45.0,
+        pd.Timestamp("2024-02-11T00:00:00Z"): 65.0,
+        pd.Timestamp("2024-02-12T00:00:00Z"): 55.0,
+    }.items():
+        if timestamp in featured.index:
+            featured.loc[timestamp, "rsi"] = value
+    return featured
+
+
 def _completion_from_actions(actions: list[str]):
     action_iter = iter(actions)
 
@@ -248,8 +280,7 @@ class FakePaperPortfolio:
     @property
     def portfolio_value(self) -> float:
         return self.cash + sum(
-            position["qty"] * position["price"]
-            for position in self.positions.values()
+            position["qty"] * position["price"] for position in self.positions.values()
         )
 
 
@@ -386,6 +417,78 @@ def test_hybrid_agent_run_includes_model_signals(tmp_path: Path, monkeypatch):
     assert first_decision["action"] == "buy"
 
 
+def test_rule_agent_backtest_writes_standardized_artifacts(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["start_date"] = "2024-01-01"
+    config_payload["data"]["end_date"] = "2024-02-09"
+    config_payload["data"]["test_start"] = "2024-01-26"
+    config_payload["data"]["test_end"] = "2024-01-31"
+    config_payload["agents"][0]["rule"]["buy_below"] = 50.0
+    config_payload["agents"][0]["rule"]["sell_above"] = 60.0
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    with (
+        patch(
+            "quanttradeai.agents.backtest.DataLoader.fetch_data",
+            return_value={"AAPL": _mock_history()},
+        ),
+        patch(
+            "quanttradeai.agents.backtest.DataProcessor.generate_features",
+            _rule_backtest_features,
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "rsi_reversion",
+                "--config",
+                str(config_path),
+                "--mode",
+                "backtest",
+                "--skip-validation",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    run_dir = Path(payload["run_dir"])
+    assert payload["status"] == "success"
+    assert payload["agent_kind"] == "rule"
+    assert (run_dir / "metrics.json").is_file()
+    assert (run_dir / "equity_curve.csv").is_file()
+    assert (run_dir / "decisions.jsonl").is_file()
+    assert "prompt_samples" not in payload["artifacts"]
+    assert not (run_dir / "prompt_samples.json").exists()
+
+    decision_lines = (
+        (run_dir / "decisions.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    )
+    actions = [json.loads(line)["action"] for line in decision_lines]
+    assert actions[:2] == ["buy", "buy"]
+    assert "sell" in actions
+
+    runs_result = runner.invoke(app, ["runs", "list", "--json"])
+    assert runs_result.exit_code == 0, runs_result.stdout
+    run_records = json.loads(runs_result.stdout)
+    assert run_records[0]["name"] == "rsi_reversion"
+    assert run_records[0]["run_type"] == "agent"
+
+
 def test_model_agent_backtest_writes_standardized_artifacts(
     tmp_path: Path, monkeypatch
 ):
@@ -514,9 +617,7 @@ def test_model_agent_paper_run_writes_metrics_and_execution_log(
     assert metrics_payload["open_positions"]["AAPL"]["unrealized_pnl"] == 50.0
 
 
-def test_llm_agent_paper_run_writes_standardized_artifacts(
-    tmp_path: Path, monkeypatch
-):
+def test_llm_agent_paper_run_writes_standardized_artifacts(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
@@ -620,6 +721,114 @@ def test_llm_agent_paper_run_writes_standardized_artifacts(
     metrics_payload = json.loads((run_dir / "metrics.json").read_text("utf-8"))
     assert metrics_payload["decision_count"] == 2
     assert metrics_payload["execution_count"] == 1
+
+
+def test_rule_agent_paper_run_writes_metrics_and_execution_log(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["start_date"] = "2024-01-01"
+    config_payload["data"]["end_date"] = "2024-02-09"
+    config_payload["data"]["test_start"] = "2024-02-01"
+    config_payload["data"]["test_end"] = "2024-02-09"
+    config_payload["agents"][0]["rule"]["buy_below"] = 50.0
+    config_payload["agents"][0]["rule"]["sell_above"] = 60.0
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    gateway = FakeStreamingGateway(
+        [
+            {
+                "symbol": "AAPL",
+                "price": 121.0,
+                "volume": 10,
+                "timestamp": "2024-02-10T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 123.0,
+                "volume": 12,
+                "timestamp": "2024-02-11T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 124.0,
+                "volume": 14,
+                "timestamp": "2024-02-12T00:00:00Z",
+            },
+        ]
+    )
+
+    with (
+        patch(
+            "quanttradeai.agents.paper.StreamingGateway",
+            return_value=gateway,
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataLoader.fetch_data",
+            return_value={"AAPL": _mock_history()},
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataProcessor.generate_features",
+            _rule_paper_features,
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "rsi_reversion",
+                "--config",
+                str(config_path),
+                "--mode",
+                "paper",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    run_dir = Path(payload["run_dir"])
+    assert payload["status"] == "success"
+    assert payload["agent_kind"] == "rule"
+    assert (run_dir / "metrics.json").is_file()
+    assert (run_dir / "decisions.jsonl").is_file()
+    assert (run_dir / "executions.jsonl").is_file()
+    assert "prompt_samples" not in payload["artifacts"]
+    assert not (run_dir / "prompt_samples.json").exists()
+
+    decision_lines = [
+        json.loads(line)
+        for line in (run_dir / "decisions.jsonl")
+        .read_text(encoding="utf-8")
+        .strip()
+        .splitlines()
+    ]
+    execution_lines = [
+        json.loads(line)
+        for line in (run_dir / "executions.jsonl")
+        .read_text(encoding="utf-8")
+        .strip()
+        .splitlines()
+    ]
+    assert [entry["action"] for entry in decision_lines] == ["buy", "sell"]
+    assert [entry["action"] for entry in execution_lines] == ["buy", "sell"]
+
+    metrics_payload = json.loads((run_dir / "metrics.json").read_text("utf-8"))
+    assert metrics_payload["decision_count"] == 2
+    assert metrics_payload["execution_count"] == 2
 
 
 def test_hybrid_agent_paper_run_includes_model_signals_in_decisions(
@@ -774,7 +983,9 @@ def test_agent_run_warns_when_cli_mode_differs_from_configured_mode(
         ),
         patch(
             "quanttradeai.agents.llm.completion",
-            side_effect=_completion_from_actions(["hold", "hold", "hold", "hold", "hold"]),
+            side_effect=_completion_from_actions(
+                ["hold", "hold", "hold", "hold", "hold"]
+            ),
         ),
     ):
         result = runner.invoke(
@@ -794,4 +1005,7 @@ def test_agent_run_warns_when_cli_mode_differs_from_configured_mode(
 
     assert result.exit_code == 0, result.stdout
     combined_output = f"{result.stdout}\n{result.stderr}"
-    assert "configured with mode=paper but cli requested mode=backtest" in combined_output.lower()
+    assert (
+        "configured with mode=paper but cli requested mode=backtest"
+        in combined_output.lower()
+    )

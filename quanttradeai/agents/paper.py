@@ -1,4 +1,4 @@
-"""Paper execution workflow for LLM and hybrid agents."""
+"""Paper execution workflow for rule, LLM, and hybrid agents."""
 
 from __future__ import annotations
 
@@ -276,7 +276,7 @@ class OpenBar:
 
 @dataclass
 class PaperAgentEngine:
-    """Run an LLM or hybrid agent in paper mode from streaming bars."""
+    """Run a rule, LLM, or hybrid agent in paper mode from streaming bars."""
 
     project_config_path: str
     agent_config: dict[str, Any]
@@ -313,6 +313,10 @@ class PaperAgentEngine:
             agent_config=self.agent_config,
             project_config_path=self.project_config_path,
         )
+        self.include_prompt_artifacts = self.agent_config.get("kind") in {
+            "llm",
+            "hybrid",
+        }
         self.portfolio = PortfolioManager(
             capital=self.initial_capital,
             max_risk_per_trade=self.max_risk_per_trade,
@@ -679,7 +683,10 @@ class PaperAgentEngine:
             **execution_result,
         }
         self.decision_log.append(decision_record)
-        if len(self.prompt_samples) < self.prompt_sample_limit:
+        if (
+            self.include_prompt_artifacts
+            and len(self.prompt_samples) < self.prompt_sample_limit
+        ):
             self.prompt_samples.append(
                 {
                     "symbol": symbol,
@@ -757,7 +764,7 @@ def run_agent_paper(
     project_config_path: str = "config/project.yaml",
     agent_name: str,
 ) -> dict[str, Any]:
-    """Run an LLM or hybrid agent in paper mode using streaming input."""
+    """Run a rule, LLM, or hybrid agent in paper mode using streaming input."""
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     run_dir, run_id = create_run_dir(
@@ -811,9 +818,9 @@ def run_agent_paper(
         )
         if agent_config is None:
             raise ValueError(f"Agent '{agent_name}' not found in project config.")
-        if agent_config.get("kind") not in {"llm", "hybrid"}:
+        if agent_config.get("kind") not in {"rule", "llm", "hybrid"}:
             raise ValueError(
-                f"Agent '{agent_name}' is kind={agent_config.get('kind')}; expected kind=llm or kind=hybrid."
+                f"Agent '{agent_name}' is kind={agent_config.get('kind')}; expected kind=rule, kind=llm, or kind=hybrid."
             )
 
         model_cfg, features_cfg, _ = compile_research_runtime_configs(
@@ -890,7 +897,6 @@ def run_agent_paper(
 
         _write_jsonl(run_dir / "decisions.jsonl", engine.decision_log)
         _write_jsonl(run_dir / "executions.jsonl", engine.execution_log)
-        _write_json(run_dir / "prompt_samples.json", engine.prompt_samples)
         metrics_payload = _paper_metrics(engine.portfolio, engine.execution_log)
         metrics_payload["decision_count"] = len(engine.decision_log)
         _write_json(run_dir / "metrics.json", metrics_payload)
@@ -900,8 +906,10 @@ def run_agent_paper(
             "metrics": str(run_dir / "metrics.json"),
             "decisions": str(run_dir / "decisions.jsonl"),
             "executions": str(run_dir / "executions.jsonl"),
-            "prompt_samples": str(run_dir / "prompt_samples.json"),
         }
+        if engine.include_prompt_artifacts:
+            _write_json(run_dir / "prompt_samples.json", engine.prompt_samples)
+            artifacts["prompt_samples"] = str(run_dir / "prompt_samples.json")
         summary.update(
             {
                 "status": "success",

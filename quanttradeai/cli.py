@@ -323,6 +323,68 @@ PROJECT_TEMPLATES = {
         ],
         "deployment": {"target": "docker-compose", "mode": "paper"},
     },
+    "rule-agent": {
+        "project": {"name": "rule_lab", "profile": "paper"},
+        "profiles": {
+            "research": {"mode": "research"},
+            "paper": {"mode": "paper"},
+            "live": {"mode": "live"},
+        },
+        "data": {
+            "symbols": ["AAPL"],
+            "start_date": "2022-01-01",
+            "end_date": "2024-12-31",
+            "timeframe": "1d",
+            "test_start": "2024-09-01",
+            "test_end": "2024-12-31",
+            "streaming": {
+                "enabled": True,
+                "provider": "alpaca",
+                "websocket_url": "wss://stream.data.alpaca.markets/v2/iex",
+                "auth_method": "api_key",
+                "symbols": ["AAPL"],
+                "channels": ["trades", "quotes"],
+                "buffer_size": 1000,
+                "reconnect_attempts": 5,
+                "monitoring": {"enabled": True, "check_interval": 5},
+                "metrics": {"enabled": False, "host": "0.0.0.0", "port": 9000},
+                "api": {"enabled": False, "host": "0.0.0.0", "port": 8000},
+            },
+        },
+        "features": {
+            "definitions": [
+                {"name": "rsi_14", "type": "technical", "params": {"period": 14}}
+            ]
+        },
+        "research": {
+            "enabled": False,
+            "labels": {},
+            "model": {},
+            "evaluation": {},
+            "backtest": {},
+        },
+        "agents": [
+            {
+                "name": "rsi_reversion",
+                "kind": "rule",
+                "mode": "paper",
+                "rule": {
+                    "preset": "rsi_threshold",
+                    "feature": "rsi_14",
+                    "buy_below": 30.0,
+                    "sell_above": 70.0,
+                },
+                "context": {
+                    "features": ["rsi_14"],
+                    "positions": True,
+                    "risk_state": True,
+                },
+                "tools": [],
+                "risk": {"max_position_pct": 0.05},
+            }
+        ],
+        "deployment": {"target": "docker-compose", "mode": "paper"},
+    },
 }
 
 PROJECT_TEMPLATE_PROMPTS = {
@@ -1110,7 +1172,7 @@ def cmd_agent_run(
                 raise ValueError(
                     "Model agents currently support only --mode backtest or --mode paper."
                 )
-        elif agent_kind in {"llm", "hybrid"}:
+        elif agent_kind in {"llm", "hybrid", "rule"}:
             if mode == "backtest":
                 summary = run_agent_backtest(
                     project_config_path=config,
@@ -1121,7 +1183,7 @@ def cmd_agent_run(
             elif mode == "paper":
                 if skip_validation:
                     typer.echo(
-                        "Warning: --skip-validation is ignored for llm/hybrid agent paper runs.",
+                        "Warning: --skip-validation is ignored for rule/llm/hybrid agent paper runs.",
                         err=True,
                     )
                 summary = run_agent_paper(
@@ -1130,10 +1192,8 @@ def cmd_agent_run(
                 )
             else:
                 raise ValueError(
-                    "LLM and hybrid agents currently support only --mode backtest or --mode paper."
+                    "Rule, LLM, and hybrid agents currently support only --mode backtest or --mode paper. Live remains future work."
                 )
-        elif agent_kind == "rule":
-            raise ValueError("Rule agents are not implemented yet.")
         else:
             raise ValueError(f"Unsupported agent kind: {agent_kind}")
     except Exception as exc:
