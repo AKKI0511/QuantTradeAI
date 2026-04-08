@@ -352,13 +352,13 @@ def deploy_project_agent(
         raise FileExistsError(
             f"Refusing to overwrite existing deployment bundle: {output_path}"
         )
-    output_path.mkdir(parents=True, exist_ok=True)
 
-    resolved_project_path = output_path / "resolved_project_config.yaml"
-    resolved_project, warnings = _copy_resolved_project_config(
-        config_path=config_path,
-        destination=resolved_project_path,
-    )
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_resolved_project_path = Path(temp_dir) / "resolved_project_config.yaml"
+        resolved_project, warnings = _copy_resolved_project_config(
+            config_path=config_path,
+            destination=temp_resolved_project_path,
+        )
 
     deployment_cfg = dict(resolved_project.get("deployment") or {})
     resolved_target = str(target or deployment_cfg.get("target") or "docker-compose")
@@ -436,6 +436,14 @@ def deploy_project_agent(
             }
         }
     }
+
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    resolved_project_path = output_path / "resolved_project_config.yaml"
+    resolved_project_path.write_text(
+        yaml.safe_dump(resolved_project, sort_keys=False),
+        encoding="utf-8",
+    )
 
     dockerfile_path = output_path / "Dockerfile"
     dockerfile_path.write_text(_render_dockerfile(), encoding="utf-8")

@@ -208,8 +208,14 @@ def test_deploy_failure_cases(
 
     original_config = config_path.read_text(encoding="utf-8")
     for args, expected_error in cases:
+        output_index = args.index("--output") + 1
+        requested_output = Path(args[output_index])
         result = runner.invoke(app, args)
         assert result.exit_code == 1
         combined_output = f"{result.stdout}\n{result.stderr}"
         assert expected_error in combined_output
         assert config_path.read_text(encoding="utf-8") == original_config
+        if requested_output == existing_output:
+            assert (requested_output / "stale.txt").is_file()
+        else:
+            assert not requested_output.exists()
