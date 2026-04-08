@@ -110,6 +110,32 @@ def test_llm_agent_deploy_includes_llm_and_streaming_env_vars(
     assert manifest["command"][-1] == "paper"
 
 
+def test_deploy_normalizes_streaming_provider_env_var_prefix(
+    tmp_path: Path, monkeypatch
+):
+    config_path = _init_template(tmp_path, monkeypatch, "rule-agent")
+    project_text = config_path.read_text(encoding="utf-8")
+    config_path.write_text(
+        project_text.replace("provider: alpaca", "provider: foo-bar"),
+        encoding="utf-8",
+    )
+
+    result = _deploy_agent(
+        agent_name="rsi_reversion",
+        config_path=config_path,
+        output_dir="deployments/rule-hyphen",
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    output_dir = Path(payload["output_dir"])
+    env_example = (output_dir / ".env.example").read_text(encoding="utf-8")
+
+    assert "FOO_BAR_API_KEY" in env_example
+    assert "FOO_BAR_API_SECRET" in env_example
+    assert "FOO-BAR_API_KEY" not in env_example
+
+
 def test_model_agent_deploy_writes_manifest_and_models_mount(
     tmp_path: Path, monkeypatch
 ):

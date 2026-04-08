@@ -52,6 +52,14 @@ def test_auth_manager_refresh(monkeypatch):
     assert headers["Authorization"] == "Bearer KEY123"
 
 
+def test_auth_manager_normalizes_provider_env_var_prefix(monkeypatch):
+    monkeypatch.setenv("FOO_BAR_API_KEY", "KEY123")
+    am = AuthManager("foo-bar")
+    am._expires_at = datetime.now(UTC)
+    headers = asyncio.run(am.get_auth_headers())
+    assert headers["Authorization"] == "Bearer KEY123"
+
+
 def test_connection_pool_reuses_connections():
     pool = ConnectionPool(max_connections=1)
 

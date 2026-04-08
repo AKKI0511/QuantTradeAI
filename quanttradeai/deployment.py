@@ -13,6 +13,7 @@ from typing import Any
 
 import yaml
 
+from quanttradeai.streaming.env_vars import provider_env_var_prefix
 from quanttradeai.utils.config_validator import validate_project_config
 from quanttradeai.utils.project_config import compile_paper_streaming_runtime_config
 from quanttradeai.utils.project_paths import infer_project_root, resolve_project_path
@@ -87,7 +88,7 @@ def _required_env_vars(
     streaming_cfg = dict((project_config.get("data") or {}).get("streaming") or {})
     provider = str(streaming_cfg.get("provider") or "").strip()
     if provider:
-        prefix = re.sub(r"[^A-Za-z0-9]+", "_", provider.upper()).strip("_")
+        prefix = provider_env_var_prefix(provider)
         required[f"{prefix}_API_KEY"] = f"API key for streaming provider '{provider}'."
         required[f"{prefix}_API_SECRET"] = (
             f"API secret for streaming provider '{provider}'."
