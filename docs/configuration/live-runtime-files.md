@@ -6,6 +6,7 @@
 - project-defined agent backtests
 - project-defined agent paper runs
 - agent backtest-to-paper promotion
+- project-agent docker-compose deployment bundles
 
 The legacy runtime YAML files still matter for:
 

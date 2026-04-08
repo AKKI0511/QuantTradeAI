@@ -330,7 +330,8 @@ Status on 2026-03-29:
 - Rule-agent paper runs now persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, `decisions.jsonl`, and `executions.jsonl` under `runs/agent/paper/...`.
 - `quanttradeai runs list` is implemented for local research and agent run discovery.
 - `quanttradeai promote --run <run_id>` is implemented for successful agent backtest-to-paper promotion.
-- Remaining Stage 1 work includes project-agent live execution, live promotion safety gates, and deployment UX.
+- `quanttradeai deploy --agent <name> -c config/project.yaml --target docker-compose` now generates a paper-agent deployment bundle with compose, Dockerfile, env placeholders, resolved config, and a deployment manifest.
+- Remaining Stage 1 work includes project-agent live execution and live promotion safety gates.
 
 ### Stage 2: Multi-Agent Lab
 
@@ -429,7 +430,7 @@ quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-
 ```
 
 Current implementation note:
-`model`, `llm`, and `hybrid` agents support `--mode backtest` and `--mode paper` today. `live` and `deploy` remain roadmap work.
+`model`, `llm`, and `hybrid` agents support `--mode backtest` and `--mode paper` today. `deploy --target docker-compose` generates paper-agent bundles today. `live` remains roadmap work.
 
 ### Hybrid track
 

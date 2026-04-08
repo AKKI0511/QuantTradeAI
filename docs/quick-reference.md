@@ -24,6 +24,9 @@ poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
 
+# Generate a Docker Compose bundle for the paper agent
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
+
 # Import an existing legacy config/ directory into the canonical workflow
 poetry run quanttradeai validate --legacy-config-dir config
 poetry run quanttradeai research run --legacy-config-dir config
@@ -86,6 +89,14 @@ Canonical agent paper artifacts:
 - `runs/agent/paper/<timestamp>_<agent>/decisions.jsonl`
 - `runs/agent/paper/<timestamp>_<agent>/executions.jsonl`
 - `runs/agent/paper/<timestamp>_<agent>/prompt_samples.json`
+
+Canonical deployment bundle artifacts:
+- `reports/deployments/<agent>/<timestamp>/docker-compose.yml`
+- `reports/deployments/<agent>/<timestamp>/Dockerfile`
+- `reports/deployments/<agent>/<timestamp>/.env.example`
+- `reports/deployments/<agent>/<timestamp>/README.md`
+- `reports/deployments/<agent>/<timestamp>/resolved_project_config.yaml`
+- `reports/deployments/<agent>/<timestamp>/deployment_manifest.json`
 
 ## Python API Patterns
 

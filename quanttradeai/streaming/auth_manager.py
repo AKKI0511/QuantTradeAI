@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+
+from quanttradeai.streaming.env_vars import provider_env_var_prefix
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
@@ -18,8 +20,9 @@ class AuthManager:
 
     def _load_credentials(self) -> Dict[str, str]:
         """Load credentials from environment variables."""
-        key = os.getenv(f"{self.provider.upper()}_API_KEY", "")
-        secret = os.getenv(f"{self.provider.upper()}_API_SECRET", "")
+        prefix = provider_env_var_prefix(self.provider)
+        key = os.getenv(f"{prefix}_API_KEY", "")
+        secret = os.getenv(f"{prefix}_API_SECRET", "")
         return {"key": key, "secret": secret}
 
     def _token_needs_refresh(self) -> bool:

@@ -54,6 +54,12 @@ poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
 ```
 
+### Generate A Docker Compose Bundle
+
+```bash
+poetry run quanttradeai deploy --agent paper_momentum -c config/project.yaml --target docker-compose
+```
+
 Paper runs write standardized artifacts under `runs/agent/paper/...`, including:
 
 - `summary.json`
@@ -82,6 +88,8 @@ poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.y
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
 ```
+
+Deployment bundles for project-defined paper agents are written under `reports/deployments/<agent>/<timestamp>/`.
 
 ## Legacy Runtime Workflows
 
