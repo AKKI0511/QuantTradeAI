@@ -11,6 +11,7 @@ QuantTradeAI has one **canonical project config** for research and agent backtes
 | --- | --- | --- |
 | Run the canonical research workflow | `config/project.yaml` | `quanttradeai validate`, `quanttradeai research run` |
 | Run or promote a project-defined agent | `config/project.yaml` | `quanttradeai agent run`, `quanttradeai promote` |
+| Generate a project-agent deployment bundle | `config/project.yaml` | `quanttradeai deploy` |
 | Run live streaming inference | `config/model_config.yaml`, `config/features_config.yaml`, `config/streaming.yaml`, `config/risk_config.yaml`, `config/position_manager.yaml` | `quanttradeai live-trade` |
 | Backtest a saved model with execution costs | `config/model_config.yaml`, `config/backtest_config.yaml`, optional `config/risk_config.yaml`, optional `config/impact_config.yaml` | `quanttradeai backtest-model` |
 | Validate the runtime YAML bundle | Runtime YAML files under `config/` | `quanttradeai validate-config` |
@@ -42,6 +43,12 @@ poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 ```
 
+### Agent Deployment
+
+```bash
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
+```
+
 ### Live Trading
 
 ```bash
@@ -55,7 +62,7 @@ poetry run quanttradeai live-trade \
 
 ## Important Boundaries
 
-- `config/project.yaml` is the center of gravity for **research**, **agent backtests**, and **agent backtest-to-paper promotion**
+- `config/project.yaml` is the center of gravity for **research**, **agent runs**, **promotion**, and **deployment generation**
 - `quanttradeai live-trade` does **not** read `config/project.yaml` today
 - `config/streaming.yaml`, `config/risk_config.yaml`, and `config/position_manager.yaml` are still first-class runtime files
 - `quanttradeai validate-config` is the fastest way to catch malformed runtime YAMLs before running live or backtest commands

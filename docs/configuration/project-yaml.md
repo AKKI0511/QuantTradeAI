@@ -9,6 +9,7 @@ It drives:
 - `quanttradeai research run`
 - `quanttradeai agent run` for project-defined agents
 - `quanttradeai promote` for agent backtest-to-paper promotion
+- `quanttradeai deploy` for docker-compose paper-agent bundles
 
 `live-trade` still uses the legacy runtime YAML files documented in [Runtime and Live Trading Configs](live-runtime-files.md).
 
@@ -72,6 +73,12 @@ poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.
 ```
 
 This updates the matching agent's `mode` and `deployment.mode` to `paper`. Promotion to `live` remains future work.
+
+Docker Compose deployment bundles can be generated with:
+
+```bash
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
+```
 
 ## Canonical Shape
 
@@ -366,7 +373,29 @@ Paper mode:
 
 ### `deployment`
 
-Required metadata. `quanttradeai promote --run <run_id>` updates `deployment.mode` to `paper` when promoting a successful agent backtest run. Deployment generation and live promotion remain future work.
+Deployment metadata for the canonical project workflow.
+
+Current happy-path support:
+
+- `target: "docker-compose"`
+- `mode: "paper"`
+
+Example:
+
+```yaml
+deployment:
+  target: "docker-compose"
+  mode: "paper"
+```
+
+Behavior:
+
+- `quanttradeai promote --run <run_id>` updates `deployment.mode` to `paper` when promoting a successful agent backtest run
+- `quanttradeai deploy --agent <name> -c config/project.yaml --target docker-compose` generates a bundle under `reports/deployments/<agent>/<timestamp>/`
+- generated bundles include `docker-compose.yml`, `Dockerfile`, `.env.example`, `README.md`, `resolved_project_config.yaml`, and `deployment_manifest.json`
+- generated compose services run `quanttradeai agent run --agent <name> -c config/project.yaml --mode paper`
+
+Live deployment and live promotion remain future work.
 
 ## Runtime Artifacts
 

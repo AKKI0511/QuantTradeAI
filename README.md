@@ -34,6 +34,7 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 | Run a trained model as an agent | `init --template model-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` | One YAML-defined agent that can be backtested, promoted, and paper-run |
 | Run an LLM agent | `init --template llm-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` | Prompt-driven agent logic using project config |
 | Run a hybrid agent | `init --template hybrid` -> `research run` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` | Model signals plus LLM reasoning in one project |
+| Generate a Docker Compose deployment bundle | `deploy --agent <name> --target docker-compose` | A paper-agent bundle with compose, Dockerfile, env placeholders, and resolved config |
 | Keep using the older live loop | `live-trade` with runtime YAML files | Legacy compatibility for existing setups |
 
 ## How It Fits Together
@@ -67,7 +68,8 @@ QuantTradeAI is one framework with two connected tracks:
 | `agent run` for `llm` and `hybrid` agents in `backtest` | Supported |
 | `agent run` for `llm` and `hybrid` agents in `paper` | Supported |
 | Agent backtest-to-paper promotion | Supported |
-| Deployment and live promotion UX | Roadmap |
+| `deploy --target docker-compose` for paper agents | Supported |
+| Live promotion UX | Roadmap |
 
 > [!NOTE]
 > `live-trade` still exists for legacy runtime YAML workflows. It does not read `config/project.yaml`.
@@ -172,6 +174,23 @@ poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.y
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
 ```
+
+### Deploy A Paper Agent
+
+Use this if you want a generated Docker Compose bundle for a project-defined paper agent.
+
+```bash
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
+```
+
+This writes a deployment bundle under `reports/deployments/<agent>/<timestamp>/` with:
+
+- `docker-compose.yml`
+- `Dockerfile`
+- `.env.example`
+- `README.md`
+- `resolved_project_config.yaml`
+- `deployment_manifest.json`
 
 ## What A Project Looks Like
 

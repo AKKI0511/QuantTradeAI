@@ -1144,6 +1144,54 @@ def cmd_promote(
     typer.echo(json.dumps(result, indent=2))
 
 
+@app.command("deploy")
+def cmd_deploy(
+    agent: str = typer.Option(..., "--agent", help="Agent name from project config"),
+    config: str = typer.Option(
+        "config/project.yaml", "-c", "--config", help="Path to project config YAML"
+    ),
+    target: Optional[str] = typer.Option(
+        None,
+        "--target",
+        help="Deployment target. Defaults to deployment.target from project config.",
+    ),
+    mode: Optional[str] = typer.Option(
+        None,
+        "--mode",
+        help="Deployment mode. Defaults to deployment.mode from project config; only paper is supported in this release.",
+    ),
+    output: Optional[str] = typer.Option(
+        None,
+        "-o",
+        "--output",
+        help="Directory for generated deployment bundle. Defaults to reports/deployments/<agent>/<timestamp>/",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Overwrite generated deployment files in an existing bundle directory.",
+    ),
+):
+    """Generate a project-agent deployment bundle."""
+
+    from .deployment import deploy_project_agent
+
+    try:
+        result = deploy_project_agent(
+            agent_name=agent,
+            config_path=config,
+            target=target,
+            mode=mode,
+            output_dir=output,
+            force=force,
+        )
+    except Exception as exc:
+        typer.echo(f"Deployment failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(json.dumps(result, indent=2))
+
+
 @agent_app.command("run")
 def cmd_agent_run(
     agent: str = typer.Option(..., "--agent", help="Agent name from project config"),
