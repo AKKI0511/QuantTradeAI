@@ -37,7 +37,8 @@ The model-agent template creates:
 
 - a canonical `config/project.yaml`
 - a placeholder model artifact directory at `models/trained/aapl_daily_classifier/`
-- a minimal `data.streaming` block for paper execution
+- a minimal `data.streaming` block
+- top-level `risk` and `position_manager` defaults for later live promotion
 
 Replace the placeholder model directory with a real trained model artifact before running the agent.
 
@@ -54,22 +55,31 @@ poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
 ```
 
+### Promote The Same Agent To Live
+
+```bash
+poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live paper_momentum
+poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode live
+```
+
 ### Generate A Docker Compose Bundle
 
 ```bash
 poetry run quanttradeai deploy --agent paper_momentum -c config/project.yaml --target docker-compose
 ```
 
-Paper runs write standardized artifacts under `runs/agent/paper/...`, including:
+Paper and live runs write standardized artifacts under `runs/agent/paper/...` and `runs/agent/live/...`, including:
 
 - `summary.json`
 - `metrics.json`
 - `executions.jsonl`
 - compiled runtime YAML snapshots
 
+Live runs also write compiled `runtime_risk_config.yaml` and `runtime_position_manager_config.yaml`.
+
 ## Workflow 3: LLM Or Hybrid Agent
 
-LLM and hybrid agents are supported in both backtest and paper mode from `project.yaml`.
+LLM and hybrid agents are supported in backtest, paper, and live mode from `project.yaml`.
 
 ```bash
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
@@ -77,6 +87,8 @@ poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
+poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live breakout_gpt
+poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode live
 ```
 
 Hybrid projects use the same pattern:
@@ -87,6 +99,8 @@ poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
+poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live hybrid_swing_agent
+poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode live
 ```
 
 Deployment bundles for project-defined paper agents are written under `reports/deployments/<agent>/<timestamp>/`.
@@ -104,7 +118,7 @@ poetry run quanttradeai live-trade -m <model_dir> -c config/model_config.yaml -s
 
 Important boundary:
 
-- project-defined `model` paper agents compile runtime config from `config/project.yaml`
+- project-defined paper and live agents compile runtime config from `config/project.yaml`
 - `live-trade` still uses the legacy runtime YAML files directly
 
 ## Where To Go Next

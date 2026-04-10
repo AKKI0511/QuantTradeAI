@@ -1,4 +1,9 @@
-from quanttradeai.utils.project_config import compile_research_runtime_configs
+from quanttradeai.utils.project_config import (
+    compile_live_position_manager_runtime_config,
+    compile_live_risk_runtime_config,
+    compile_live_streaming_runtime_config,
+    compile_research_runtime_configs,
+)
 from quanttradeai.utils.project_runtime import project_to_runtime_configs
 
 
@@ -74,3 +79,84 @@ def test_project_runtime_matches_canonical_compiler_for_agent_flows():
     assert runtime_features_cfg == expected_features_cfg
     assert runtime_model_cfg["data"]["test_start"] is None
     assert runtime_model_cfg["data"]["test_end"] is None
+
+
+def test_compile_live_runtime_configs_emit_canonical_streaming_risk_and_position_manager():
+    project_cfg = {
+        "data": {
+            "symbols": ["AAPL"],
+            "streaming": {
+                "enabled": True,
+                "provider": "alpaca",
+                "websocket_url": "wss://example.test/stream",
+                "auth_method": "api_key",
+                "symbols": ["AAPL"],
+                "channels": ["trades", "quotes"],
+            },
+        },
+        "risk": {
+            "drawdown_protection": {
+                "enabled": True,
+                "max_drawdown_pct": 0.1,
+            },
+            "turnover_limits": {"daily_max": 2.0},
+        },
+        "position_manager": {
+            "impact": {"enabled": False},
+            "reconciliation": {"intraday": "1m", "daily": "1d"},
+            "mode": "live",
+        },
+    }
+
+    streaming_cfg = compile_live_streaming_runtime_config(project_cfg)
+    risk_cfg = compile_live_risk_runtime_config(project_cfg)
+    position_manager_cfg = compile_live_position_manager_runtime_config(project_cfg)
+
+    assert streaming_cfg["streaming"]["providers"][0]["name"] == "alpaca"
+    assert risk_cfg["risk_management"]["drawdown_protection"]["enabled"] is True
+    assert (
+        position_manager_cfg["position_manager"]["risk_management"]["turnover_limits"][
+            "daily_max"
+        ]
+        == 2.0
+    )
+    assert position_manager_cfg["position_manager"]["mode"] == "live"
+
+
+def test_compile_live_runtime_accepts_legacy_nested_position_manager_risk():
+    project_cfg = {
+        "data": {
+            "symbols": ["AAPL"],
+            "streaming": {
+                "enabled": True,
+                "provider": "alpaca",
+                "websocket_url": "wss://example.test/stream",
+                "symbols": ["AAPL"],
+                "channels": ["trades"],
+            },
+        },
+        "position_manager": {
+            "impact": {"enabled": False},
+            "reconciliation": {"intraday": "1m", "daily": "1d"},
+            "mode": "live",
+            "risk_management": {
+                "drawdown_protection": {
+                    "enabled": True,
+                    "max_drawdown_pct": 0.15,
+                }
+            },
+        },
+    }
+
+    risk_cfg = compile_live_risk_runtime_config(project_cfg)
+    position_manager_cfg = compile_live_position_manager_runtime_config(project_cfg)
+
+    assert (
+        risk_cfg["risk_management"]["drawdown_protection"]["max_drawdown_pct"] == 0.15
+    )
+    assert (
+        position_manager_cfg["position_manager"]["risk_management"][
+            "drawdown_protection"
+        ]["max_drawdown_pct"]
+        == 0.15
+    )

@@ -36,6 +36,16 @@ from quanttradeai.main import _load_feature_preprocessor
 ExecutionHook = Callable[[dict], None]
 
 
+def _signal_to_action(signal: int | None) -> str:
+    if signal is None:
+        return "hold"
+    if signal > 0:
+        return "buy"
+    if signal < 0:
+        return "sell"
+    return "hold"
+
+
 def _load_risk_guard(risk_config: str | None) -> DrawdownGuard | None:
     if not risk_config:
         return None
@@ -100,6 +110,7 @@ class LiveTradingEngine:
     _history: Dict[str, pd.DataFrame] = field(default_factory=dict, init=False)
     _consumer: asyncio.Task | None = field(default=None, init=False)
     execution_log: list[dict] = field(default_factory=list, init=False)
+    decision_log: list[dict] = field(default_factory=list, init=False)
     feature_preprocessor: object | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
@@ -420,6 +431,15 @@ class LiveTradingEngine:
                 signal = self._predict_signal(features)
                 if signal is None:
                     continue
+                self.decision_log.append(
+                    {
+                        "symbol": symbol,
+                        "timestamp": timestamp,
+                        "signal": int(signal),
+                        "action": _signal_to_action(int(signal)),
+                        "source": "model",
+                    }
+                )
                 self._handle_signal(symbol, price, signal, timestamp)
                 self._mark_to_market(symbol, price, timestamp)
             except Exception as exc:  # pragma: no cover - runtime guard

@@ -164,6 +164,32 @@ PROJECT_TEMPLATES = {
             "evaluation": {},
             "backtest": {},
         },
+        "risk": {
+            "drawdown_protection": {
+                "enabled": True,
+                "max_drawdown_pct": 0.15,
+                "warning_threshold": 0.8,
+                "soft_stop_threshold": 0.9,
+                "hard_stop_threshold": 1.0,
+                "emergency_stop_threshold": 1.1,
+                "lookback_periods": [1, 7, 30],
+            },
+            "turnover_limits": {
+                "daily_max": 2.0,
+                "weekly_max": 5.0,
+                "monthly_max": 15.0,
+            },
+        },
+        "position_manager": {
+            "impact": {
+                "enabled": False,
+                "model": "linear",
+                "alpha": 0.0,
+                "beta": 0.0,
+            },
+            "reconciliation": {"intraday": "1m", "daily": "1d"},
+            "mode": "live",
+        },
         "agents": [
             {
                 "name": "breakout_gpt",
@@ -234,6 +260,32 @@ PROJECT_TEMPLATES = {
             },
             "evaluation": {"split": "time_aware", "use_configured_test_window": True},
             "backtest": {"costs": {"enabled": True, "bps": 5}},
+        },
+        "risk": {
+            "drawdown_protection": {
+                "enabled": True,
+                "max_drawdown_pct": 0.15,
+                "warning_threshold": 0.8,
+                "soft_stop_threshold": 0.9,
+                "hard_stop_threshold": 1.0,
+                "emergency_stop_threshold": 1.1,
+                "lookback_periods": [1, 7, 30],
+            },
+            "turnover_limits": {
+                "daily_max": 2.0,
+                "weekly_max": 5.0,
+                "monthly_max": 15.0,
+            },
+        },
+        "position_manager": {
+            "impact": {
+                "enabled": False,
+                "model": "linear",
+                "alpha": 0.0,
+                "beta": 0.0,
+            },
+            "reconciliation": {"intraday": "1m", "daily": "1d"},
+            "mode": "live",
         },
         "agents": [
             {
@@ -306,6 +358,32 @@ PROJECT_TEMPLATES = {
             "evaluation": {"split": "time_aware", "use_configured_test_window": True},
             "backtest": {"costs": {"enabled": True, "bps": 5}},
         },
+        "risk": {
+            "drawdown_protection": {
+                "enabled": True,
+                "max_drawdown_pct": 0.15,
+                "warning_threshold": 0.8,
+                "soft_stop_threshold": 0.9,
+                "hard_stop_threshold": 1.0,
+                "emergency_stop_threshold": 1.1,
+                "lookback_periods": [1, 7, 30],
+            },
+            "turnover_limits": {
+                "daily_max": 2.0,
+                "weekly_max": 5.0,
+                "monthly_max": 15.0,
+            },
+        },
+        "position_manager": {
+            "impact": {
+                "enabled": False,
+                "model": "linear",
+                "alpha": 0.0,
+                "beta": 0.0,
+            },
+            "reconciliation": {"intraday": "1m", "daily": "1d"},
+            "mode": "live",
+        },
         "agents": [
             {
                 "name": "paper_momentum",
@@ -362,6 +440,32 @@ PROJECT_TEMPLATES = {
             "model": {},
             "evaluation": {},
             "backtest": {},
+        },
+        "risk": {
+            "drawdown_protection": {
+                "enabled": True,
+                "max_drawdown_pct": 0.15,
+                "warning_threshold": 0.8,
+                "soft_stop_threshold": 0.9,
+                "hard_stop_threshold": 1.0,
+                "emergency_stop_threshold": 1.1,
+                "lookback_periods": [1, 7, 30],
+            },
+            "turnover_limits": {
+                "daily_max": 2.0,
+                "weekly_max": 5.0,
+                "monthly_max": 15.0,
+            },
+        },
+        "position_manager": {
+            "impact": {
+                "enabled": False,
+                "model": "linear",
+                "alpha": 0.0,
+                "beta": 0.0,
+            },
+            "reconciliation": {"intraday": "1m", "daily": "1d"},
+            "mode": "live",
         },
         "agents": [
             {
@@ -1118,15 +1222,20 @@ def cmd_promote(
     target: str = typer.Option(
         "paper",
         "--to",
-        help="Target mode. Only paper is supported in this release.",
+        help="Target mode. Supported targets are paper and live.",
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
         help="Show the proposed promotion without writing project.yaml",
     ),
+    acknowledge_live: Optional[str] = typer.Option(
+        None,
+        "--acknowledge-live",
+        help="Required for --to live. Must exactly match the agent name being promoted.",
+    ),
 ):
-    """Promote a successful agent backtest run to paper mode."""
+    """Promote a successful agent run to the next supported mode."""
 
     from .utils.promotion import promote_agent_run
 
@@ -1136,6 +1245,7 @@ def cmd_promote(
             config_path=config,
             target_mode=target,
             dry_run=dry_run,
+            acknowledge_live=acknowledge_live,
         )
     except Exception as exc:
         typer.echo(f"Promotion failed: {exc}", err=True)
@@ -1201,7 +1311,7 @@ def cmd_agent_run(
     mode: str = typer.Option(
         "backtest",
         "--mode",
-        help="Execution mode. backtest and paper are implemented; live remains future work.",
+        help="Execution mode. Supported modes are backtest, paper, and live.",
     ),
     skip_validation: bool = typer.Option(
         False,
@@ -1209,11 +1319,15 @@ def cmd_agent_run(
         help="Skip data-quality validation before backtesting",
     ),
 ):
-    """Run a first-class project agent in backtest or paper mode."""
+    """Run a first-class project agent in backtest, paper, or live mode."""
 
     from .agents.backtest import run_agent_backtest
-    from .agents.model_agent import run_model_agent_backtest, run_model_agent_paper
-    from .agents.paper import run_agent_paper
+    from .agents.model_agent import (
+        run_model_agent_backtest,
+        run_model_agent_live,
+        run_model_agent_paper,
+    )
+    from .agents.paper import run_agent_live, run_agent_paper
 
     try:
         loaded_project = load_project_config(config_path=config)
@@ -1229,7 +1343,16 @@ def cmd_agent_run(
             raise ValueError(f"Agent '{agent}' not found in project config.")
 
         configured_mode = str(agent_config.get("mode") or "").strip().lower()
-        if configured_mode and configured_mode != mode:
+        if mode == "live":
+            if skip_validation:
+                raise ValueError(
+                    "--skip-validation is not supported for live agent runs."
+                )
+            if configured_mode != "live":
+                raise ValueError(
+                    f"Agent '{agent}' must be configured with mode=live before running `quanttradeai agent run --mode live`."
+                )
+        elif configured_mode and configured_mode != mode:
             typer.echo(
                 f"Warning: agent '{agent}' is configured with mode={configured_mode} but CLI requested mode={mode}; continuing with CLI mode.",
                 err=True,
@@ -1253,9 +1376,14 @@ def cmd_agent_run(
                     project_config_path=config,
                     agent_name=agent,
                 )
+            elif mode == "live":
+                summary = run_model_agent_live(
+                    project_config_path=config,
+                    agent_name=agent,
+                )
             else:
                 raise ValueError(
-                    "Model agents currently support only --mode backtest or --mode paper."
+                    "Model agents currently support only --mode backtest, --mode paper, or --mode live."
                 )
         elif agent_kind in {"llm", "hybrid", "rule"}:
             if mode == "backtest":
@@ -1275,9 +1403,14 @@ def cmd_agent_run(
                     project_config_path=config,
                     agent_name=agent,
                 )
+            elif mode == "live":
+                summary = run_agent_live(
+                    project_config_path=config,
+                    agent_name=agent,
+                )
             else:
                 raise ValueError(
-                    "Rule, LLM, and hybrid agents currently support only --mode backtest or --mode paper. Live remains future work."
+                    "Rule, LLM, and hybrid agents currently support only --mode backtest, --mode paper, or --mode live."
                 )
         else:
             raise ValueError(f"Unsupported agent kind: {agent_kind}")

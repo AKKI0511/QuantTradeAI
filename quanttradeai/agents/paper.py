@@ -19,8 +19,20 @@ from quanttradeai.data.loader import DataLoader
 from quanttradeai.data.processor import DataProcessor
 from quanttradeai.streaming.gateway import StreamingGateway
 from quanttradeai.trading.portfolio import PortfolioManager
+from quanttradeai.trading.position_manager import (
+    PositionManager as RealtimePositionManager,
+)
+from quanttradeai.trading.drawdown_guard import DrawdownGuard
+from quanttradeai.trading.risk_manager import RiskManager
 from quanttradeai.utils.config_validator import validate_project_config
+from quanttradeai.utils.config_schemas import (
+    PositionManagerConfig,
+    RiskManagementConfig,
+)
 from quanttradeai.utils.project_config import (
+    compile_live_position_manager_runtime_config,
+    compile_live_risk_runtime_config,
+    compile_live_streaming_runtime_config,
     compile_paper_streaming_runtime_config,
     compile_research_runtime_configs,
 )
@@ -73,6 +85,32 @@ def _safe_float(value: Any, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _load_risk_guard(config_path: str | None) -> DrawdownGuard | None:
+    if not config_path:
+        return None
+    path = Path(config_path)
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    cfg = RiskManagementConfig(**raw.get("risk_management", raw))
+    if cfg.drawdown_protection.enabled:
+        return DrawdownGuard(cfg)
+    return None
+
+
+def _load_position_manager(
+    config_path: str | None,
+    *,
+    cash: float,
+) -> RealtimePositionManager | None:
+    if not config_path:
+        return None
+    path = Path(config_path)
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    cfg = PositionManagerConfig(**raw.get("position_manager", raw))
+    manager = RealtimePositionManager.from_config(cfg)
+    manager.cash = cash
+    return manager
 
 
 def _copy_artifact(source: str | Path, destination: Path) -> str:
@@ -177,9 +215,11 @@ def _build_paper_runtime_model_config(
     return runtime_model_cfg
 
 
-def _paper_metrics(
+def _streaming_metrics(
     portfolio: PortfolioManager,
     execution_log: list[dict[str, Any]],
+    *,
+    risk_manager: RiskManager | None = None,
 ) -> dict[str, Any]:
     positions: dict[str, Any] = {}
     unrealized_pnl = 0.0
@@ -200,7 +240,7 @@ def _paper_metrics(
         }
 
     portfolio_value = portfolio.portfolio_value
-    return {
+    payload = {
         "status": "available",
         "execution_count": len(execution_log),
         "realized_pnl": _safe_float(portfolio.realized_pnl, 0.0),
@@ -210,6 +250,12 @@ def _paper_metrics(
         "portfolio_value": portfolio_value,
         "open_positions": positions,
     }
+    if risk_manager is not None:
+        payload["risk_metrics"] = dict(risk_manager.get_risk_metrics() or {})
+        drawdown_guard = getattr(risk_manager, "drawdown_guard", None)
+        if drawdown_guard is not None:
+            payload["risk_status"] = drawdown_guard.check_drawdown_limits()
+    return payload
 
 
 @dataclass(slots=True)
@@ -276,7 +322,7 @@ class OpenBar:
 
 @dataclass
 class PaperAgentEngine:
-    """Run a rule, LLM, or hybrid agent in paper mode from streaming bars."""
+    """Run a rule, LLM, or hybrid agent in paper or live mode from streaming bars."""
 
     project_config_path: str
     agent_config: dict[str, Any]
@@ -284,6 +330,9 @@ class PaperAgentEngine:
     runtime_features_config: str
     runtime_streaming_config: str
     feature_definitions: list[dict[str, Any]]
+    mode: str = "paper"
+    runtime_risk_config: str | None = None
+    runtime_position_manager_config: str | None = None
     model_signal_runtimes: list[ModelSignalRuntime] = field(default_factory=list)
     gateway: StreamingGateway | None = None
     data_loader: DataLoader | None = None
@@ -317,10 +366,22 @@ class PaperAgentEngine:
             "llm",
             "hybrid",
         }
+        risk_manager = None
+        if self.mode == "live":
+            drawdown_guard = _load_risk_guard(self.runtime_risk_config)
+            risk_manager = RiskManager(drawdown_guard=drawdown_guard)
+            self.position_manager = _load_position_manager(
+                self.runtime_position_manager_config,
+                cash=self.initial_capital,
+            )
+        else:
+            self.position_manager = None
+        self.risk_manager = risk_manager
         self.portfolio = PortfolioManager(
             capital=self.initial_capital,
             max_risk_per_trade=self.max_risk_per_trade,
             max_portfolio_risk=self.max_portfolio_risk,
+            risk_manager=self.risk_manager,
         )
         with open(self.runtime_model_config, "r", encoding="utf-8") as handle:
             runtime_model = yaml.safe_load(handle) or {}
@@ -437,9 +498,24 @@ class PaperAgentEngine:
         volume_f = _safe_float(volume, default=0.0)
         return open_f, high_f, low_f, close_f, volume_f
 
-    def _mark_to_market(self, symbol: str, price: float) -> None:
+    def _mark_to_market(
+        self,
+        symbol: str,
+        price: float,
+        *,
+        timestamp: pd.Timestamp | None = None,
+    ) -> None:
         if symbol in self.portfolio.positions:
             self.portfolio.positions[symbol]["price"] = price
+        if self.risk_manager is not None:
+            self.risk_manager.update(
+                self.portfolio.portfolio_value,
+                (timestamp or pd.Timestamp(datetime.now(timezone.utc))).to_pydatetime(),
+            )
+
+    def _sync_position_manager(self) -> None:
+        if self.position_manager is not None:
+            self.position_manager.cash = self.portfolio.cash
 
     def _append_history(self, symbol: str, frame: pd.DataFrame) -> None:
         history = self._history.get(symbol)
@@ -576,6 +652,14 @@ class PaperAgentEngine:
                     stop_loss_pct=self.stop_loss_pct,
                 )
                 if qty > 0:
+                    if self.position_manager is not None:
+                        self.position_manager.open_position(
+                            symbol,
+                            qty,
+                            price,
+                            timestamp=timestamp.to_pydatetime(),
+                        )
+                        self._sync_position_manager()
                     execution_status = "executed"
                     execution_payload = {
                         "action": "buy",
@@ -594,6 +678,13 @@ class PaperAgentEngine:
             else:
                 qty = self.portfolio.close_position(symbol, price)
                 if qty > 0:
+                    if self.position_manager is not None:
+                        self.position_manager.close_position(
+                            symbol,
+                            price,
+                            timestamp=timestamp.to_pydatetime(),
+                        )
+                        self._sync_position_manager()
                     execution_status = "executed"
                     execution_payload = {
                         "action": "sell",
@@ -607,7 +698,7 @@ class PaperAgentEngine:
                 else:
                     execution_status = "blocked"
 
-        self._mark_to_market(symbol, price)
+        self._mark_to_market(symbol, price, timestamp=timestamp)
         position_after = 1 if symbol in self.portfolio.positions else 0
         state = self._states.setdefault(symbol, AgentSimulationState())
         state.target_position = position_after
@@ -712,7 +803,7 @@ class PaperAgentEngine:
                 if close <= 0:
                     continue
 
-                self._mark_to_market(symbol, close)
+                self._mark_to_market(symbol, close, timestamp=timestamp)
                 completed = self._update_open_bar(
                     symbol=symbol,
                     timestamp=timestamp,
@@ -730,6 +821,7 @@ class PaperAgentEngine:
                 self._mark_to_market(
                     symbol,
                     _safe_float(frame["Close"].iloc[-1], close),
+                    timestamp=completed_timestamp,
                 )
                 self._process_completed_bar(
                     symbol=symbol,
@@ -766,10 +858,39 @@ def run_agent_paper(
 ) -> dict[str, Any]:
     """Run a rule, LLM, or hybrid agent in paper mode using streaming input."""
 
+    return _run_agent_streaming(
+        project_config_path=project_config_path,
+        agent_name=agent_name,
+        mode="paper",
+    )
+
+
+def run_agent_live(
+    *,
+    project_config_path: str = "config/project.yaml",
+    agent_name: str,
+) -> dict[str, Any]:
+    """Run a rule, LLM, or hybrid agent in live mode using streaming input."""
+
+    return _run_agent_streaming(
+        project_config_path=project_config_path,
+        agent_name=agent_name,
+        mode="live",
+    )
+
+
+def _run_agent_streaming(
+    *,
+    project_config_path: str,
+    agent_name: str,
+    mode: str,
+) -> dict[str, Any]:
+    """Run a rule, LLM, or hybrid agent in paper or live mode using streaming input."""
+
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     run_dir, run_id = create_run_dir(
         run_type="agent",
-        mode="paper",
+        mode=mode,
         name=agent_name,
         timestamp=timestamp,
     )
@@ -785,7 +906,7 @@ def run_agent_paper(
         summary,
         run_dir=run_dir,
         run_type="agent",
-        mode="paper",
+        mode=mode,
         name=agent_name,
     )
     summary["run_id"] = run_id
@@ -822,6 +943,13 @@ def run_agent_paper(
             raise ValueError(
                 f"Agent '{agent_name}' is kind={agent_config.get('kind')}; expected kind=rule, kind=llm, or kind=hybrid."
             )
+        if (
+            mode == "live"
+            and str(agent_config.get("mode") or "").strip().lower() != "live"
+        ):
+            raise ValueError(
+                f"Agent '{agent_name}' must be configured with mode=live before running `quanttradeai agent run --mode live`."
+            )
 
         model_cfg, features_cfg, _ = compile_research_runtime_configs(
             project_config,
@@ -831,6 +959,8 @@ def run_agent_paper(
         runtime_model_path = run_dir / "runtime_model_config.yaml"
         runtime_features_path = run_dir / "runtime_features_config.yaml"
         runtime_streaming_path = run_dir / "runtime_streaming_config.yaml"
+        runtime_risk_path: Path | None = None
+        runtime_position_manager_path: Path | None = None
         runtime_model_path.write_text(
             yaml.safe_dump(runtime_model_cfg, sort_keys=False),
             encoding="utf-8",
@@ -839,7 +969,14 @@ def run_agent_paper(
             yaml.safe_dump(features_cfg, sort_keys=False),
             encoding="utf-8",
         )
-        runtime_streaming_cfg = compile_paper_streaming_runtime_config(project_config)
+        if mode == "paper":
+            runtime_streaming_cfg = compile_paper_streaming_runtime_config(
+                project_config
+            )
+        else:
+            runtime_streaming_cfg = compile_live_streaming_runtime_config(
+                project_config
+            )
         runtime_streaming_path.write_text(
             yaml.safe_dump(runtime_streaming_cfg, sort_keys=False),
             encoding="utf-8",
@@ -847,6 +984,28 @@ def run_agent_paper(
         summary["artifacts"]["runtime_model_config"] = str(runtime_model_path)
         summary["artifacts"]["runtime_features_config"] = str(runtime_features_path)
         summary["artifacts"]["runtime_streaming_config"] = str(runtime_streaming_path)
+        if mode == "live":
+            runtime_risk_cfg = compile_live_risk_runtime_config(project_config)
+            runtime_risk_path = run_dir / "runtime_risk_config.yaml"
+            runtime_risk_path.write_text(
+                yaml.safe_dump(runtime_risk_cfg, sort_keys=False),
+                encoding="utf-8",
+            )
+            summary["artifacts"]["runtime_risk_config"] = str(runtime_risk_path)
+
+            runtime_position_manager_cfg = compile_live_position_manager_runtime_config(
+                project_config
+            )
+            runtime_position_manager_path = (
+                run_dir / "runtime_position_manager_config.yaml"
+            )
+            runtime_position_manager_path.write_text(
+                yaml.safe_dump(runtime_position_manager_cfg, sort_keys=False),
+                encoding="utf-8",
+            )
+            summary["artifacts"]["runtime_position_manager_config"] = str(
+                runtime_position_manager_path
+            )
 
         feature_definitions = list(
             (project_config.get("features") or {}).get("definitions") or []
@@ -886,6 +1045,15 @@ def run_agent_paper(
             runtime_features_config=str(runtime_features_path),
             runtime_streaming_config=str(runtime_streaming_path),
             feature_definitions=feature_definitions,
+            mode=mode,
+            runtime_risk_config=(
+                str(runtime_risk_path) if runtime_risk_path is not None else None
+            ),
+            runtime_position_manager_config=(
+                str(runtime_position_manager_path)
+                if runtime_position_manager_path is not None
+                else None
+            ),
             model_signal_runtimes=model_signal_runtimes,
             initial_capital=initial_capital,
             max_risk_per_trade=max_risk_per_trade,
@@ -897,7 +1065,11 @@ def run_agent_paper(
 
         _write_jsonl(run_dir / "decisions.jsonl", engine.decision_log)
         _write_jsonl(run_dir / "executions.jsonl", engine.execution_log)
-        metrics_payload = _paper_metrics(engine.portfolio, engine.execution_log)
+        metrics_payload = _streaming_metrics(
+            engine.portfolio,
+            engine.execution_log,
+            risk_manager=engine.risk_manager,
+        )
         metrics_payload["decision_count"] = len(engine.decision_log)
         _write_json(run_dir / "metrics.json", metrics_payload)
 
@@ -930,7 +1102,7 @@ def run_agent_paper(
             summary,
             run_dir=run_dir,
             run_type="agent",
-            mode="paper",
+            mode=mode,
             name=agent_name,
         )
         _write_json(run_dir / "summary.json", summary)
@@ -944,7 +1116,7 @@ def run_agent_paper(
             summary,
             run_dir=run_dir,
             run_type="agent",
-            mode="paper",
+            mode=mode,
             name=agent_name,
         )
         _write_json(run_dir / "summary.json", summary)

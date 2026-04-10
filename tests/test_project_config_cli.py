@@ -284,6 +284,29 @@ def test_llm_and_hybrid_templates_include_canonical_streaming_block(
         cfg_path.unlink()
 
 
+def test_agent_templates_include_live_risk_and_position_manager_defaults(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    for template_name in ("rule-agent", "llm-agent", "hybrid", "model-agent"):
+        cfg_path = Path("config/project.yaml")
+        result = runner.invoke(
+            app,
+            ["init", "--template", template_name, "--output", str(cfg_path)],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert payload["risk"]["drawdown_protection"]["enabled"] is True
+        assert payload["position_manager"]["mode"] == "live"
+        assert payload["position_manager"]["reconciliation"] == {
+            "intraday": "1m",
+            "daily": "1d",
+        }
+        cfg_path.unlink()
+
+
 def test_validate_fails_when_model_agent_path_missing(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg_path = Path("config/project.yaml")
@@ -507,6 +530,166 @@ def test_validate_fails_when_llm_agent_paper_streaming_is_missing(
     assert "data.streaming.enabled must be true" in result.stderr.lower()
 
 
+def test_validate_passes_when_live_agent_has_canonical_risk_and_position_manager(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    config_payload["agents"][0]["mode"] = "live"
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 0, result.stdout
+    assert "Resolved project config summary:" in result.stdout
+
+
+def test_validate_fails_when_live_agent_streaming_is_disabled(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    config_payload["agents"][0]["mode"] = "live"
+    config_payload["data"]["streaming"]["enabled"] = False
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "data.streaming.enabled must be true" in result.stderr.lower()
+
+
+def test_validate_fails_when_live_agent_missing_top_level_risk(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    config_payload["agents"][0]["mode"] = "live"
+    config_payload.pop("risk", None)
+    config_payload["position_manager"].pop("risk_management", None)
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert (
+        "risk is required when an agent is configured with mode=live" in result.stderr
+    )
+
+
+def test_validate_fails_when_live_agent_drawdown_protection_is_disabled(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    config_payload["agents"][0]["mode"] = "live"
+    config_payload["risk"]["drawdown_protection"]["enabled"] = False
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "risk.drawdown_protection.enabled must be true" in result.stderr.lower()
+
+
+def test_validate_fails_when_live_agent_position_manager_is_invalid(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    config_payload["agents"][0]["mode"] = "live"
+    config_payload["position_manager"]["mode"] = "intraday"
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "position_manager.mode" in result.stderr.lower()
+
+
+def test_validate_warns_for_legacy_nested_live_risk_compatibility(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    config_payload["agents"][0]["mode"] = "live"
+    config_payload["position_manager"]["risk_management"] = config_payload.pop("risk")
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 0, result.stdout
+    assert "position_manager.risk_management is legacy compatibility only" in (
+        f"{result.stdout}\n{result.stderr}"
+    )
+
+
 def test_validate_fails_when_agent_prompt_file_missing(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg_path = Path("config/project.yaml")
@@ -581,7 +764,9 @@ def test_validate_preserves_unknown_fields_in_resolved_artifact(
     resolved_path = Path(payload["artifacts"]["resolved_config"])
     resolved = yaml.safe_load(resolved_path.read_text(encoding="utf-8"))
 
-    assert resolved["risk"] == {"enabled": True, "max_drawdown": 0.15}
+    assert resolved["risk"]["enabled"] is True
+    assert resolved["risk"]["max_drawdown"] == 0.15
+    assert "drawdown_protection" in resolved["risk"]
     assert resolved["data"]["streaming"]["enabled"] is True
     assert resolved["data"]["streaming"]["provider"] == "paper-feed"
     assert resolved["data"]["streaming"]["websocket_url"] == "wss://example.test/stream"

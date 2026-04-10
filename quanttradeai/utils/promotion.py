@@ -11,6 +11,7 @@ import yaml
 from pydantic import ValidationError
 
 from quanttradeai.utils.config_schemas import ProjectConfigSchema
+from quanttradeai.utils.project_config import extract_canonical_live_risk_config
 from quanttradeai.utils.run_records import RUNS_ROOT, discover_runs
 
 
@@ -71,14 +72,25 @@ def _summary_path_for_record(record: dict[str, Any], runs_root: Path | str) -> P
     )
 
 
-def _validate_promotable_run(record: dict[str, Any], summary: dict[str, Any]) -> str:
+def _validate_promotable_run(
+    record: dict[str, Any],
+    summary: dict[str, Any],
+    *,
+    target_mode: str,
+) -> tuple[str, str]:
     run_type = str(summary.get("run_type") or record.get("run_type") or "")
     mode = str(summary.get("mode") or record.get("mode") or "")
     status = str(summary.get("status") or record.get("status") or "")
 
-    if run_type != "agent" or mode != "backtest" or status != "success":
+    source_mode_by_target = {
+        "paper": "backtest",
+        "live": "paper",
+    }
+    required_source_mode = source_mode_by_target[target_mode]
+
+    if run_type != "agent" or mode != required_source_mode or status != "success":
         raise ValueError(
-            "Only successful agent backtest runs can be promoted to paper."
+            f"Only successful agent {required_source_mode} runs can be promoted to {target_mode}."
         )
 
     agent_name = str(
@@ -87,7 +99,7 @@ def _validate_promotable_run(record: dict[str, Any], summary: dict[str, Any]) ->
     if not agent_name:
         raise ValueError("Promotable agent run is missing an agent name.")
 
-    return agent_name
+    return agent_name, required_source_mode
 
 
 def _apply_paper_promotion(
@@ -135,33 +147,96 @@ def _apply_paper_promotion(
     return proposed, changed
 
 
+def _apply_live_promotion(
+    project_config: dict[str, Any],
+    *,
+    agent_name: str,
+) -> tuple[dict[str, Any], bool]:
+    proposed = copy.deepcopy(project_config)
+    agents = proposed.get("agents")
+    if not isinstance(agents, list):
+        raise ValueError("Project config must include an agents list.")
+
+    target_agent: dict[str, Any] | None = None
+    for agent in agents:
+        if isinstance(agent, dict) and agent.get("name") == agent_name:
+            target_agent = agent
+            break
+
+    if target_agent is None:
+        raise ValueError(f"Agent '{agent_name}' not found in project config.")
+
+    changed = False
+    if target_agent.get("mode") != "live":
+        target_agent["mode"] = "live"
+        changed = True
+
+    if (
+        not isinstance((proposed.get("data") or {}).get("streaming"), dict)
+        or (proposed.get("data") or {}).get("streaming", {}).get("enabled") is not True
+    ):
+        raise ValueError(
+            "data.streaming.enabled must be true before promoting an agent to live."
+        )
+    risk_cfg, used_nested_fallback = extract_canonical_live_risk_config(proposed)
+    if not risk_cfg:
+        raise ValueError("risk is required before promoting an agent to live.")
+    if used_nested_fallback:
+        proposed["risk"] = risk_cfg
+    if not isinstance(proposed.get("position_manager"), dict):
+        raise ValueError(
+            "position_manager is required before promoting an agent to live."
+        )
+
+    try:
+        ProjectConfigSchema(**proposed)
+    except ValidationError as exc:
+        raise ValueError(f"Promoted project config is invalid: {exc}") from exc
+
+    return proposed, changed
+
+
 def promote_agent_run(
     *,
     run_id: str | Path,
     config_path: str | Path = "config/project.yaml",
     target_mode: str = "paper",
     dry_run: bool = False,
+    acknowledge_live: str | None = None,
     runs_root: Path | str = RUNS_ROOT,
 ) -> dict[str, Any]:
-    """Promote a successful agent backtest run to paper mode in project.yaml."""
+    """Promote a successful project-defined agent run to paper or live."""
 
     target_mode = target_mode.strip().lower()
-    if target_mode != "paper":
-        raise ValueError(
-            "Only promotion to paper is supported. Live promotion remains future work."
-        )
+    if target_mode not in {"paper", "live"}:
+        raise ValueError("Only promotion to paper or live is supported.")
 
     record = _find_run_record(run_id, runs_root=runs_root)
     summary_path = _summary_path_for_record(record, runs_root)
     summary = _load_json(summary_path)
-    agent_name = _validate_promotable_run(record, summary)
+    agent_name, source_mode = _validate_promotable_run(
+        record,
+        summary,
+        target_mode=target_mode,
+    )
+    if target_mode == "live":
+        if acknowledge_live != agent_name:
+            raise ValueError(
+                f"Promoting to live requires --acknowledge-live {agent_name}"
+            )
 
     project_config_path = Path(config_path)
     project_config = _load_yaml_mapping(project_config_path)
-    promoted_config, changed = _apply_paper_promotion(
-        project_config,
-        agent_name=agent_name,
-    )
+    if target_mode == "paper":
+        promoted_config, changed = _apply_paper_promotion(
+            project_config,
+            agent_name=agent_name,
+        )
+    else:
+        promoted_config, changed = _apply_live_promotion(
+            project_config,
+            agent_name=agent_name,
+        )
 
     if changed and not dry_run:
         project_config_path.write_text(
@@ -172,14 +247,14 @@ def promote_agent_run(
     config_path_display = project_config_path.as_posix()
     next_command = (
         f"quanttradeai agent run --agent {agent_name} "
-        f"-c {config_path_display} --mode paper"
+        f"-c {config_path_display} --mode {target_mode}"
     )
     return {
         "status": "success",
         "source_run_id": str(record.get("run_id") or _normalize_run_id(run_id)),
         "agent_name": agent_name,
-        "from_mode": "backtest",
-        "to_mode": "paper",
+        "from_mode": source_mode,
+        "to_mode": target_mode,
         "changed": changed,
         "config_path": config_path_display,
         "dry_run": dry_run,
