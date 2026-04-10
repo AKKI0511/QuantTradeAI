@@ -116,6 +116,10 @@ def _initialize_model_agent_run(
         raise ValueError(
             f"Agent '{agent_name}' is kind={agent_config.get('kind')}; expected kind=model."
         )
+    if mode == "live" and str(agent_config.get("mode") or "").strip().lower() != "live":
+        raise ValueError(
+            f"Agent '{agent_name}' must be configured with mode=live before running `quanttradeai agent run --mode live`."
+        )
 
     model_cfg, features_cfg, backtest_cfg = compile_research_runtime_configs(
         project_config,
