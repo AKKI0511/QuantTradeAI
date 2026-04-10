@@ -7,8 +7,8 @@ It drives:
 - `quanttradeai init`
 - `quanttradeai validate`
 - `quanttradeai research run`
-- `quanttradeai agent run` for project-defined agents
-- `quanttradeai promote` for agent backtest-to-paper promotion
+- `quanttradeai agent run` for project-defined agents in `backtest`, `paper`, and `live`
+- `quanttradeai promote` for agent backtest-to-paper and paper-to-live promotion
 - `quanttradeai deploy` for docker-compose paper-agent bundles
 
 `live-trade` still uses the legacy runtime YAML files documented in [Runtime and Live Trading Configs](live-runtime-files.md).
@@ -31,6 +31,8 @@ poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
+poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live paper_momentum
+poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode live
 ```
 
 The `model-agent` template also creates a placeholder model artifact at `models/trained/aapl_daily_classifier/README.md`. Replace that directory with a real saved model before you run the agent.
@@ -43,6 +45,8 @@ poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode paper
+poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live rsi_reversion
+poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode live
 ```
 
 ### LLM And Hybrid Agents
@@ -53,6 +57,8 @@ poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
+poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live breakout_gpt
+poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode live
 ```
 
 The `llm-agent` and `hybrid` templates also create starter prompt files under `prompts/` so validation can pass immediately.
@@ -61,10 +67,10 @@ Current support:
 
 | Agent kind | Backtest | Paper | Live |
 | --- | --- | --- | --- |
-| `model` | Yes | Yes | No |
-| `llm` | Yes | Yes | No |
-| `hybrid` | Yes | Yes | No |
-| `rule` | Yes | Yes | No |
+| `model` | Yes | Yes | Yes |
+| `llm` | Yes | Yes | Yes |
+| `hybrid` | Yes | Yes | Yes |
+| `rule` | Yes | Yes | Yes |
 
 Successful agent backtest runs can be promoted to paper mode with:
 
@@ -72,7 +78,14 @@ Successful agent backtest runs can be promoted to paper mode with:
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 ```
 
-This updates the matching agent's `mode` and `deployment.mode` to `paper`. Promotion to `live` remains future work.
+Successful agent paper runs can be promoted to live mode with:
+
+```bash
+poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live <agent_name>
+```
+
+Paper promotion updates the matching agent's `mode` and `deployment.mode` to `paper`.
+Live promotion updates only the matching agent's `mode` to `live`. `deployment.mode` stays unchanged because live deployment is still out of scope for the canonical workflow.
 
 Docker Compose deployment bundles can be generated with:
 
@@ -154,6 +167,30 @@ agents:
 deployment:
   target: "docker-compose"
   mode: "paper"
+
+risk:
+  drawdown_protection:
+    enabled: true
+    max_drawdown_pct: 0.1
+    warning_threshold: 0.8
+    soft_stop_threshold: 0.9
+    hard_stop_threshold: 1.0
+    emergency_stop_threshold: 1.05
+  turnover_limits:
+    daily_max: 2.0
+    weekly_max: 5.0
+    monthly_max: 12.0
+
+position_manager:
+  impact:
+    enabled: false
+    model: "linear"
+    alpha: 0.0
+    beta: 0.0
+  reconciliation:
+    intraday: "1m"
+    daily: "1d"
+  mode: "live"
 ```
 
 Rule-agent example:
@@ -224,9 +261,9 @@ When you use mapping syntax, validation checks `asset_class` against the asset c
 
 ### `data.streaming`
 
-Used by project-defined paper agents.
+Used by project-defined paper and live agents.
 
-Required when any agent is configured with `mode: paper`:
+Required when any agent is configured with `mode: paper` or `mode: live`:
 
 - `enabled: true`
 - `provider`
@@ -250,7 +287,7 @@ Optional passthrough sections:
 
 These values are compiled into the runtime streaming YAML consumed by the current gateway.
 
-Validation also enforces one important rule here: if any agent is configured with `mode: paper`, then `data.streaming.enabled` must be `true`.
+Validation enforces the same rule for both paper and live agents: if any agent is configured with `mode: paper` or `mode: live`, then `data.streaming.enabled` must be `true`.
 
 ### `features`
 
@@ -327,6 +364,13 @@ Paper mode:
 - writes `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, and `runtime_streaming_config.yaml`
 - does not emit `prompt_samples.json`
 
+Live mode:
+
+- requires the agent itself to already be configured with `mode: live`
+- rejects `--skip-validation`
+- compiles `data.streaming`, top-level `risk`, and top-level `position_manager` into runtime YAML snapshots inside the run directory
+- writes `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, `runtime_streaming_config.yaml`, `runtime_risk_config.yaml`, and `runtime_position_manager_config.yaml`
+
 #### `model` agents
 
 Required fields:
@@ -350,6 +394,13 @@ Paper mode:
 - runs the existing paper/live engine with the compiled feature config
 - writes `summary.json`, `metrics.json`, `executions.jsonl`, and `runtime_streaming_config.yaml`
 
+Live mode:
+
+- requires `mode: live` in the agent config before `quanttradeai agent run --mode live` is allowed
+- rejects `--skip-validation`
+- compiles runtime streaming, risk, and position-manager YAML snapshots from `project.yaml`
+- writes `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, `runtime_streaming_config.yaml`, `runtime_risk_config.yaml`, and `runtime_position_manager_config.yaml`
+
 #### `llm` and `hybrid` agents
 
 `llm` and `hybrid` require an `llm` block with:
@@ -370,6 +421,13 @@ Paper mode:
 - warm-starts with recent historical OHLCV before streaming begins
 - aggregates streaming messages into completed bars before invoking the agent
 - writes `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, `prompt_samples.json`, and `runtime_streaming_config.yaml`
+
+Live mode:
+
+- requires `mode: live` in the agent config before `quanttradeai agent run --mode live` is allowed
+- rejects `--skip-validation`
+- compiles runtime streaming, risk, and position-manager YAML snapshots from `project.yaml`
+- writes `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, `prompt_samples.json`, `runtime_streaming_config.yaml`, `runtime_risk_config.yaml`, and `runtime_position_manager_config.yaml`
 
 ### `deployment`
 
@@ -395,7 +453,34 @@ Behavior:
 - generated bundles include `docker-compose.yml`, `Dockerfile`, `.env.example`, `README.md`, `resolved_project_config.yaml`, and `deployment_manifest.json`
 - generated compose services run `quanttradeai agent run --agent <name> -c config/project.yaml --mode paper`
 
-Live deployment and live promotion remain future work.
+Live deployment remains future work.
+
+### `risk`
+
+Top-level live guardrails used by project-defined live agents.
+
+Canonical live usage:
+
+- `risk.drawdown_protection.enabled` must be `true`
+- `drawdown_protection` drives drawdown safety states
+- `turnover_limits` drives trade-throttling thresholds
+
+Compatibility note:
+
+- `position_manager.risk_management` is accepted as a legacy compatibility input during validation
+- the top-level `risk` block is the canonical source going forward
+
+### `position_manager`
+
+Top-level runtime settings for project-defined live execution.
+
+Used for:
+
+- execution impact settings
+- reconciliation cadence
+- runtime mode
+
+The canonical live compiler injects the top-level `risk` block into the generated live runtime position-manager YAML.
 
 ## Runtime Artifacts
 
@@ -431,6 +516,22 @@ Writes under `runs/agent/backtest/<timestamp>_<agent>/`.
 Writes under `runs/agent/paper/<timestamp>_<agent>/`.
 
 For `llm` and `hybrid` paper runs, the run directory includes both `decisions.jsonl` and `executions.jsonl` so prompt-driven decisions and actual paper executions can be audited separately.
+
+### `quanttradeai agent run --mode live`
+
+Writes under `runs/agent/live/<timestamp>_<agent>/`.
+
+Live run directories include:
+
+- `resolved_project_config.yaml`
+- `summary.json`
+- `metrics.json`
+- `decisions.jsonl`
+- `executions.jsonl`
+- `runtime_streaming_config.yaml`
+- `runtime_risk_config.yaml`
+- `runtime_position_manager_config.yaml`
+- `prompt_samples.json` for `llm` and `hybrid`
 
 ## Compatibility Notes
 

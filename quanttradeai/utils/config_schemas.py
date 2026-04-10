@@ -514,6 +514,14 @@ class PositionManagerConfig(BaseModel):
     mode: Literal["paper", "live"] = "paper"
 
 
+class ProjectPositionManagerSection(BaseModel):
+    """Canonical position-manager settings for project-defined live agents."""
+
+    impact: MarketImpactConfig = MarketImpactConfig()
+    reconciliation: Dict[str, str] = {"intraday": "1m", "daily": "1d"}
+    mode: Literal["paper", "live"] = "live"
+
+
 class ProjectSection(BaseModel):
     name: str
     profile: str
@@ -710,14 +718,33 @@ class ProjectConfigSchema(BaseModel):
     research: ProjectResearchSection
     agents: List[ProjectAgentConfig]
     deployment: ProjectDeploymentSection
+    risk: Optional[RiskManagementConfig] = None
+    position_manager: Optional[ProjectPositionManagerSection] = None
 
     @model_validator(mode="after")
-    def validate_paper_streaming_requirements(self) -> "ProjectConfigSchema":
-        requires_streaming = any(agent.mode == "paper" for agent in self.agents)
+    def validate_agent_runtime_requirements(self) -> "ProjectConfigSchema":
+        requires_streaming = any(
+            agent.mode in {"paper", "live"} for agent in self.agents
+        )
         if requires_streaming and (
             self.data.streaming is None or not self.data.streaming.enabled
         ):
             raise ValueError(
-                "data.streaming.enabled must be true when an agent is configured with mode=paper."
+                "data.streaming.enabled must be true when an agent is configured with mode=paper or mode=live."
             )
+
+        requires_live = any(agent.mode == "live" for agent in self.agents)
+        if requires_live:
+            if self.risk is None:
+                raise ValueError(
+                    "risk is required when an agent is configured with mode=live."
+                )
+            if not self.risk.drawdown_protection.enabled:
+                raise ValueError(
+                    "risk.drawdown_protection.enabled must be true when an agent is configured with mode=live."
+                )
+            if self.position_manager is None:
+                raise ValueError(
+                    "position_manager is required when an agent is configured with mode=live."
+                )
         return self

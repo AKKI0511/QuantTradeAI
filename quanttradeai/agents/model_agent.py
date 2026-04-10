@@ -26,6 +26,9 @@ from quanttradeai.streaming.live_trading import LiveTradingEngine
 from quanttradeai.trading.portfolio import PortfolioManager
 from quanttradeai.utils.config_validator import validate_project_config
 from quanttradeai.utils.project_config import (
+    compile_live_position_manager_runtime_config,
+    compile_live_risk_runtime_config,
+    compile_live_streaming_runtime_config,
     compile_paper_streaming_runtime_config,
     compile_research_runtime_configs,
 )
@@ -88,6 +91,8 @@ def _initialize_model_agent_run(
     Path,
     Path,
     Path | None,
+    Path | None,
+    Path | None,
 ]:
     validation = validate_project_config(
         config_path=project_config_path,
@@ -136,14 +141,39 @@ def _initialize_model_agent_run(
     summary["artifacts"]["runtime_backtest_config"] = str(runtime_backtest_path)
 
     runtime_streaming_path: Path | None = None
-    if mode == "paper":
-        streaming_cfg = compile_paper_streaming_runtime_config(project_config)
+    runtime_risk_path: Path | None = None
+    runtime_position_manager_path: Path | None = None
+    if mode in {"paper", "live"}:
+        if mode == "paper":
+            streaming_cfg = compile_paper_streaming_runtime_config(project_config)
+        else:
+            streaming_cfg = compile_live_streaming_runtime_config(project_config)
         runtime_streaming_path = run_dir / "runtime_streaming_config.yaml"
         runtime_streaming_path.write_text(
             yaml.safe_dump(streaming_cfg, sort_keys=False),
             encoding="utf-8",
         )
         summary["artifacts"]["runtime_streaming_config"] = str(runtime_streaming_path)
+    if mode == "live":
+        runtime_risk_cfg = compile_live_risk_runtime_config(project_config)
+        runtime_risk_path = run_dir / "runtime_risk_config.yaml"
+        runtime_risk_path.write_text(
+            yaml.safe_dump(runtime_risk_cfg, sort_keys=False),
+            encoding="utf-8",
+        )
+        summary["artifacts"]["runtime_risk_config"] = str(runtime_risk_path)
+
+        runtime_position_manager_cfg = compile_live_position_manager_runtime_config(
+            project_config
+        )
+        runtime_position_manager_path = run_dir / "runtime_position_manager_config.yaml"
+        runtime_position_manager_path.write_text(
+            yaml.safe_dump(runtime_position_manager_cfg, sort_keys=False),
+            encoding="utf-8",
+        )
+        summary["artifacts"]["runtime_position_manager_config"] = str(
+            runtime_position_manager_path
+        )
 
     return (
         project_config,
@@ -153,6 +183,8 @@ def _initialize_model_agent_run(
         runtime_features_path,
         runtime_backtest_path,
         runtime_streaming_path,
+        runtime_risk_path,
+        runtime_position_manager_path,
     )
 
 
@@ -228,6 +260,8 @@ def run_model_agent_backtest(
             runtime_features_path,
             runtime_backtest_path,
             _runtime_streaming_path,
+            _runtime_risk_path,
+            _runtime_position_manager_path,
         ) = _initialize_model_agent_run(
             run_dir=run_dir,
             summary=summary,
@@ -411,7 +445,7 @@ def run_model_agent_backtest(
         raise
 
 
-def _paper_metrics(engine: LiveTradingEngine) -> dict[str, Any]:
+def _streaming_metrics(engine: LiveTradingEngine) -> dict[str, Any]:
     positions: dict[str, Any] = {}
     unrealized_pnl = 0.0
     for symbol, position in engine.portfolio.positions.items():
@@ -431,7 +465,7 @@ def _paper_metrics(engine: LiveTradingEngine) -> dict[str, Any]:
         }
 
     portfolio_value = engine.portfolio.portfolio_value
-    return {
+    payload = {
         "status": "available",
         "execution_count": len(engine.execution_log),
         "realized_pnl": _safe_float(engine.portfolio.realized_pnl, 0.0),
@@ -441,6 +475,42 @@ def _paper_metrics(engine: LiveTradingEngine) -> dict[str, Any]:
         "portfolio_value": portfolio_value,
         "open_positions": positions,
     }
+    risk_manager = getattr(engine, "risk_manager", None)
+    if risk_manager is not None:
+        try:
+            payload["risk_metrics"] = dict(risk_manager.get_risk_metrics() or {})
+        except Exception:  # pragma: no cover - defensive
+            payload["risk_metrics"] = {}
+        drawdown_guard = getattr(risk_manager, "drawdown_guard", None)
+        if drawdown_guard is not None:
+            try:
+                payload["risk_status"] = drawdown_guard.check_drawdown_limits()
+            except Exception:  # pragma: no cover - defensive
+                pass
+    return payload
+
+
+def _model_decision_records_from_engine(
+    engine: LiveTradingEngine,
+) -> list[dict[str, Any]]:
+    decision_log = getattr(engine, "decision_log", None)
+    if isinstance(decision_log, list) and decision_log:
+        return list(decision_log)
+
+    decisions: list[dict[str, Any]] = []
+    for execution in list(getattr(engine, "execution_log", [])):
+        signal_value = int(execution.get("signal", 0))
+        decisions.append(
+            {
+                "symbol": execution.get("symbol"),
+                "timestamp": execution.get("timestamp"),
+                "action": signal_to_action(signal_value),
+                "target_position": signal_value,
+                "signal": signal_value,
+                "source": "model",
+            }
+        )
+    return decisions
 
 
 def run_model_agent_paper(
@@ -450,7 +520,36 @@ def run_model_agent_paper(
 ) -> dict[str, Any]:
     """Run a model agent in paper mode using the live trading engine."""
 
-    run_dir, summary = _start_model_agent_run(agent_name=agent_name, mode="paper")
+    return _run_model_agent_streaming(
+        project_config_path=project_config_path,
+        agent_name=agent_name,
+        mode="paper",
+    )
+
+
+def run_model_agent_live(
+    *,
+    project_config_path: str = "config/project.yaml",
+    agent_name: str,
+) -> dict[str, Any]:
+    """Run a model agent in live mode using the live trading engine."""
+
+    return _run_model_agent_streaming(
+        project_config_path=project_config_path,
+        agent_name=agent_name,
+        mode="live",
+    )
+
+
+def _run_model_agent_streaming(
+    *,
+    project_config_path: str,
+    agent_name: str,
+    mode: str,
+) -> dict[str, Any]:
+    """Run a model agent in paper or live mode using the live trading engine."""
+
+    run_dir, summary = _start_model_agent_run(agent_name=agent_name, mode=mode)
 
     try:
         (
@@ -461,15 +560,19 @@ def run_model_agent_paper(
             runtime_features_path,
             _runtime_backtest_path,
             runtime_streaming_path,
+            runtime_risk_path,
+            runtime_position_manager_path,
         ) = _initialize_model_agent_run(
             run_dir=run_dir,
             summary=summary,
             project_config_path=project_config_path,
             agent_name=agent_name,
-            mode="paper",
+            mode=mode,
         )
         if runtime_streaming_path is None:
-            raise ValueError("Paper mode requires a compiled runtime streaming config.")
+            raise ValueError(
+                f"{mode.capitalize()} mode requires a compiled runtime streaming config."
+            )
 
         model_path = resolve_project_path(
             project_config_path,
@@ -487,8 +590,12 @@ def run_model_agent_paper(
             model_path=str(model_path),
             features_config=str(runtime_features_path),
             streaming_config=str(runtime_streaming_path),
-            risk_config=None,
-            position_manager_config=None,
+            risk_config=str(runtime_risk_path) if runtime_risk_path else None,
+            position_manager_config=(
+                str(runtime_position_manager_path)
+                if runtime_position_manager_path
+                else None
+            ),
             initial_capital=initial_capital,
             max_risk_per_trade=max_risk_per_trade,
             max_portfolio_risk=max_portfolio_risk,
@@ -496,8 +603,12 @@ def run_model_agent_paper(
         )
         asyncio.run(engine.start())
 
+        decision_records = _model_decision_records_from_engine(engine)
+        if decision_records:
+            _write_jsonl(run_dir / "decisions.jsonl", decision_records)
         _write_jsonl(run_dir / "executions.jsonl", list(engine.execution_log))
-        metrics_payload = _paper_metrics(engine)
+        metrics_payload = _streaming_metrics(engine)
+        metrics_payload["decision_count"] = len(decision_records)
         _write_json(run_dir / "metrics.json", metrics_payload)
 
         artifacts = {
@@ -505,6 +616,8 @@ def run_model_agent_paper(
             "metrics": str(run_dir / "metrics.json"),
             "executions": str(run_dir / "executions.jsonl"),
         }
+        if decision_records:
+            artifacts["decisions"] = str(run_dir / "decisions.jsonl")
         summary.update(
             {
                 "status": "success",
@@ -517,6 +630,7 @@ def run_model_agent_paper(
                         .get("symbols", [])
                     )
                 ),
+                "decision_count": len(decision_records),
                 "execution_count": len(engine.execution_log),
                 "artifacts": artifacts,
                 "metrics": metrics_payload,
@@ -527,7 +641,7 @@ def run_model_agent_paper(
             summary,
             run_dir=run_dir,
             run_type="agent",
-            mode="paper",
+            mode=mode,
             name=agent_name,
         )
         _write_json(run_dir / "summary.json", summary)
@@ -541,7 +655,7 @@ def run_model_agent_paper(
             summary,
             run_dir=run_dir,
             run_type="agent",
-            mode="paper",
+            mode=mode,
             name=agent_name,
         )
         _write_json(run_dir / "summary.json", summary)

@@ -1,4 +1,7 @@
 import json
+import asyncio
+import sys
+import types
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,7 +11,6 @@ import yaml
 from typer.testing import CliRunner
 
 from quanttradeai.cli import app
-from quanttradeai.streaming.stream_buffer import StreamBuffer
 
 
 runner = CliRunner()
@@ -85,6 +87,32 @@ def _completion_from_actions(actions: list[str]):
         }
 
     return _fake_completion
+
+
+def _stub_prometheus_client(monkeypatch) -> None:
+    return None
+
+
+def _stub_live_trading_module(monkeypatch) -> None:
+    live_trading_module = types.ModuleType("quanttradeai.streaming.live_trading")
+    live_trading_module.LiveTradingEngine = object
+    monkeypatch.setitem(
+        sys.modules,
+        "quanttradeai.streaming.live_trading",
+        live_trading_module,
+    )
+    sys.modules.pop("quanttradeai.agents.model_agent", None)
+
+
+def _stub_streaming_gateway_module(monkeypatch) -> None:
+    gateway_module = types.ModuleType("quanttradeai.streaming.gateway")
+    gateway_module.StreamingGateway = object
+    monkeypatch.setitem(
+        sys.modules,
+        "quanttradeai.streaming.gateway",
+        gateway_module,
+    )
+    sys.modules.pop("quanttradeai.agents.paper", None)
 
 
 def test_agent_run_backtest_writes_artifacts(tmp_path: Path, monkeypatch):
@@ -312,9 +340,64 @@ class FakePaperEngine:
         ]
 
 
+class FakeDrawdownGuard:
+    def check_drawdown_limits(self) -> dict[str, object]:
+        return {"status": "ok", "halted": False}
+
+
+class FakeRiskManager:
+    def __init__(self) -> None:
+        self.drawdown_guard = FakeDrawdownGuard()
+
+    def get_risk_metrics(self) -> dict[str, float]:
+        return {
+            "current_drawdown_pct": 0.01,
+            "current_drawdown_abs": 100.0,
+        }
+
+
+class FakeLiveEngine(FakePaperEngine):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.risk_manager = FakeRiskManager()
+        self.decision_log = []
+
+    async def start(self) -> None:
+        self.decision_log = [
+            {
+                "symbol": "AAPL",
+                "timestamp": pd.Timestamp("2024-01-01T00:00:00Z"),
+                "signal": 1,
+                "action": "buy",
+                "source": "model",
+            }
+        ]
+        self.execution_log = [
+            {
+                "action": "buy",
+                "symbol": "AAPL",
+                "qty": 10,
+                "price": 100.0,
+                "timestamp": pd.Timestamp("2024-01-01T00:00:00Z"),
+                "signal": 1,
+            }
+        ]
+
+
+class FakeStreamBuffer:
+    def __init__(self, maxsize: int) -> None:
+        self.queue = asyncio.Queue(maxsize)
+
+    async def put(self, item: dict) -> None:
+        await self.queue.put(item)
+
+    async def get(self) -> dict:
+        return await self.queue.get()
+
+
 class FakeStreamingGateway:
     def __init__(self, messages: list[dict]) -> None:
-        self.buffer = StreamBuffer(32)
+        self.buffer = FakeStreamBuffer(32)
         self.messages = messages
 
     async def _start(self) -> None:
@@ -493,6 +576,8 @@ def test_model_agent_backtest_writes_standardized_artifacts(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
+    _stub_prometheus_client(monkeypatch)
+    _stub_live_trading_module(monkeypatch)
 
     init_result = runner.invoke(
         app,
@@ -568,6 +653,8 @@ def test_model_agent_paper_run_writes_metrics_and_execution_log(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
+    _stub_prometheus_client(monkeypatch)
+    _stub_live_trading_module(monkeypatch)
 
     init_result = runner.invoke(
         app,
@@ -617,9 +704,77 @@ def test_model_agent_paper_run_writes_metrics_and_execution_log(
     assert metrics_payload["open_positions"]["AAPL"]["unrealized_pnl"] == 50.0
 
 
+def test_model_agent_live_run_writes_live_artifacts_and_risk_metrics(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _stub_prometheus_client(monkeypatch)
+    _stub_live_trading_module(monkeypatch)
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "model-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["agents"][0]["mode"] = "live"
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    observed: dict[str, str] = {}
+
+    def _engine_factory(**kwargs):
+        observed.update({key: str(value) for key, value in kwargs.items()})
+        return FakeLiveEngine(**kwargs)
+
+    with patch(
+        "quanttradeai.agents.model_agent.LiveTradingEngine",
+        side_effect=_engine_factory,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "paper_momentum",
+                "--config",
+                str(config_path),
+                "--mode",
+                "live",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    run_dir = Path(payload["run_dir"])
+    assert payload["status"] == "success"
+    assert payload["mode"] == "live"
+    assert payload["agent_kind"] == "model"
+    assert (run_dir / "runtime_streaming_config.yaml").is_file()
+    assert (run_dir / "runtime_risk_config.yaml").is_file()
+    assert (run_dir / "runtime_position_manager_config.yaml").is_file()
+    assert (run_dir / "decisions.jsonl").is_file()
+    assert (run_dir / "executions.jsonl").is_file()
+    assert (run_dir / "metrics.json").is_file()
+    assert Path(observed["risk_config"]).is_file()
+    assert Path(observed["position_manager_config"]).is_file()
+
+    metrics_payload = json.loads((run_dir / "metrics.json").read_text("utf-8"))
+    assert metrics_payload["decision_count"] == 1
+    assert metrics_payload["execution_count"] == 1
+    assert metrics_payload["risk_metrics"]["current_drawdown_pct"] == 0.01
+    assert metrics_payload["risk_status"]["status"] == "ok"
+
+
 def test_llm_agent_paper_run_writes_standardized_artifacts(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _stub_streaming_gateway_module(monkeypatch)
 
     init_result = runner.invoke(
         app,
@@ -727,6 +882,7 @@ def test_rule_agent_paper_run_writes_metrics_and_execution_log(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
+    _stub_streaming_gateway_module(monkeypatch)
 
     init_result = runner.invoke(
         app,
@@ -831,11 +987,120 @@ def test_rule_agent_paper_run_writes_metrics_and_execution_log(
     assert metrics_payload["execution_count"] == 2
 
 
+def test_rule_agent_live_run_writes_live_artifacts_and_risk_metrics(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _stub_streaming_gateway_module(monkeypatch)
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["start_date"] = "2024-01-01"
+    config_payload["data"]["end_date"] = "2024-02-09"
+    config_payload["data"]["test_start"] = "2024-02-01"
+    config_payload["data"]["test_end"] = "2024-02-09"
+    config_payload["agents"][0]["mode"] = "live"
+    config_payload["agents"][0]["rule"]["buy_below"] = 50.0
+    config_payload["agents"][0]["rule"]["sell_above"] = 60.0
+    config_payload["risk"]["drawdown_protection"]["max_drawdown_pct"] = 1.0
+    config_payload["risk"]["turnover_limits"]["daily_max"] = 1_000_000.0
+    config_payload["risk"]["turnover_limits"]["weekly_max"] = 1_000_000.0
+    config_payload["risk"]["turnover_limits"]["monthly_max"] = 1_000_000.0
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    gateway = FakeStreamingGateway(
+        [
+            {
+                "symbol": "AAPL",
+                "price": 121.0,
+                "volume": 10,
+                "timestamp": "2024-02-10T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 123.0,
+                "volume": 12,
+                "timestamp": "2024-02-11T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 124.0,
+                "volume": 14,
+                "timestamp": "2024-02-12T00:00:00Z",
+            },
+        ]
+    )
+
+    with (
+        patch(
+            "quanttradeai.agents.paper.StreamingGateway",
+            return_value=gateway,
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataLoader.fetch_data",
+            return_value={"AAPL": _mock_history()},
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataProcessor.generate_features",
+            _rule_paper_features,
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "rsi_reversion",
+                "--config",
+                str(config_path),
+                "--mode",
+                "live",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    run_dir = sorted((Path("runs") / "agent" / "live").iterdir())[-1]
+    payload = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    assert payload["status"] == "success"
+    assert payload["mode"] == "live"
+    assert payload["agent_kind"] == "rule"
+    assert (run_dir / "runtime_streaming_config.yaml").is_file()
+    assert (run_dir / "runtime_risk_config.yaml").is_file()
+    assert (run_dir / "runtime_position_manager_config.yaml").is_file()
+    assert (run_dir / "decisions.jsonl").is_file()
+    assert (run_dir / "executions.jsonl").is_file()
+    assert (run_dir / "metrics.json").is_file()
+
+    metrics_payload = json.loads((run_dir / "metrics.json").read_text("utf-8"))
+    assert metrics_payload["decision_count"] == 2
+    assert metrics_payload["execution_count"] == 2
+    assert "risk_metrics" in metrics_payload
+    assert metrics_payload["risk_status"]["status"] in {
+        "ok",
+        "normal",
+        "warning",
+        "soft_stop",
+        "hard_stop",
+        "emergency_stop",
+    }
+
+
 def test_hybrid_agent_paper_run_includes_model_signals_in_decisions(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _stub_streaming_gateway_module(monkeypatch)
 
     init_result = runner.invoke(
         app,
@@ -1009,3 +1274,70 @@ def test_agent_run_warns_when_cli_mode_differs_from_configured_mode(
         "configured with mode=paper but cli requested mode=backtest"
         in combined_output.lower()
     )
+
+
+def test_agent_run_live_rejects_skip_validation(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["agents"][0]["mode"] = "live"
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "agent",
+            "run",
+            "--agent",
+            "rsi_reversion",
+            "--config",
+            str(config_path),
+            "--mode",
+            "live",
+            "--skip-validation",
+        ],
+    )
+
+    assert result.exit_code == 1
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert "--skip-validation is not supported for live agent runs" in combined_output
+
+
+def test_agent_run_live_requires_agent_to_be_configured_live(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    result = runner.invoke(
+        app,
+        [
+            "agent",
+            "run",
+            "--agent",
+            "rsi_reversion",
+            "--config",
+            "config/project.yaml",
+            "--mode",
+            "live",
+        ],
+    )
+
+    assert result.exit_code == 1
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert "must be configured with mode=live before running" in combined_output

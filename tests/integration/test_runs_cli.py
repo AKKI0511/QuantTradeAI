@@ -131,3 +131,36 @@ def test_runs_list_filters_by_type_status_and_limit(tmp_path: Path, monkeypatch)
     assert payload[0]["symbols"] == ["TSLA"]
     assert payload[0]["warnings"] == ["legacy"]
     assert Path(payload[0]["run_dir"]).name == "20251231_230000_legacy_agent"
+
+
+def test_runs_list_surfaces_live_agent_runs_and_filters_by_live_mode(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    runs_root = Path("runs")
+    _seed_runs(runs_root)
+    _write_run_summary(
+        runs_root / "agent" / "live" / "20260101_020000_breakout_live" / "summary.json",
+        {
+            "run_type": "agent",
+            "mode": "live",
+            "name": "breakout_live",
+            "agent_name": "breakout_live",
+            "status": "success",
+            "symbols": ["AAPL"],
+            "timestamps": {"started_at": "2026-01-01T02:00:00+00:00"},
+            "artifacts": {},
+            "warnings": [],
+            "run_id": "agent/live/20260101_020000_breakout_live",
+            "run_dir": "runs/agent/live/20260101_020000_breakout_live",
+        },
+    )
+
+    result = runner.invoke(app, ["runs", "list", "--mode", "live", "--json"])
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert len(payload) == 1
+    assert payload[0]["run_id"] == "agent/live/20260101_020000_breakout_live"
+    assert payload[0]["mode"] == "live"
+    assert payload[0]["name"] == "breakout_live"

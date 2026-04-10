@@ -30,10 +30,10 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 | I want to... | Best path today | What I get |
 | --- | --- | --- |
 | Research a strategy end to end | `init` -> `validate` -> `research run` | Time-aware evaluation, backtests, metrics, run records |
-| Run a deterministic rule agent | `init --template rule-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` | A no-LLM baseline agent driven entirely by YAML thresholds |
-| Run a trained model as an agent | `init --template model-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` | One YAML-defined agent that can be backtested, promoted, and paper-run |
-| Run an LLM agent | `init --template llm-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` | Prompt-driven agent logic using project config |
-| Run a hybrid agent | `init --template hybrid` -> `research run` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` | Model signals plus LLM reasoning in one project |
+| Run a deterministic rule agent | `init --template rule-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | A YAML-only agent that can move through backtest, paper, and live with explicit promotion gates |
+| Run a trained model as an agent | `init --template model-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | One YAML-defined model agent that can be backtested, promoted, paper-run, and live-run |
+| Run an LLM agent | `init --template llm-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Prompt-driven agent logic using project config across all three modes |
+| Run a hybrid agent | `init --template hybrid` -> `research run` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Model signals plus LLM reasoning in one project, with the same YAML agent definition promoted through environments |
 | Generate a Docker Compose deployment bundle | `deploy --agent <name> --target docker-compose` | A paper-agent bundle with compose, Dockerfile, env placeholders, and resolved config |
 | Keep using the older live loop | `live-trade` with runtime YAML files | Legacy compatibility for existing setups |
 
@@ -49,6 +49,7 @@ flowchart LR
     C --> F["runs/research/..."]
     D --> G["runs/agent/backtest/..."]
     D --> H["runs/agent/paper/..."]
+    D --> I["runs/agent/live/..."]
 ```
 
 QuantTradeAI is one framework with two connected tracks:
@@ -63,16 +64,20 @@ QuantTradeAI is one framework with two connected tracks:
 | `research run` from `project.yaml` | Supported |
 | `agent run` for `rule` agents in `backtest` | Supported |
 | `agent run` for `rule` agents in `paper` | Supported |
+| `agent run` for `rule` agents in `live` | Supported |
 | `agent run` for `model` agents in `backtest` | Supported |
 | `agent run` for `model` agents in `paper` | Supported |
+| `agent run` for `model` agents in `live` | Supported |
 | `agent run` for `llm` and `hybrid` agents in `backtest` | Supported |
 | `agent run` for `llm` and `hybrid` agents in `paper` | Supported |
+| `agent run` for `llm` and `hybrid` agents in `live` | Supported |
 | Agent backtest-to-paper promotion | Supported |
+| Agent paper-to-live promotion with acknowledgement | Supported |
 | `deploy --target docker-compose` for paper agents | Supported |
-| Live promotion UX | Roadmap |
+| `live-trade` legacy runtime YAML workflow | Supported for compatibility |
 
 > [!NOTE]
-> `live-trade` still exists for legacy runtime YAML workflows. It does not read `config/project.yaml`.
+> `agent run --mode live` is the canonical live path for project-defined agents. `live-trade` still exists for legacy runtime YAML workflows and does not read `config/project.yaml`.
 
 ## Install In 2 Minutes
 
@@ -117,6 +122,8 @@ poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode paper
+poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live rsi_reversion
+poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode live
 ```
 
 The default template wires a simple RSI threshold rule through YAML only:
@@ -135,7 +142,7 @@ agents:
 
 ### Run A Model Agent
 
-Use this if you already have a trained model artifact and want one YAML-defined agent that can run in both backtest and paper mode.
+Use this if you already have a trained model artifact and want one YAML-defined agent that can run in backtest, paper, and live mode.
 
 ```bash
 poetry run quanttradeai init --template model-agent -o config/project.yaml
@@ -146,6 +153,8 @@ poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
+poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live paper_momentum
+poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode live
 ```
 
 > [!IMPORTANT]
@@ -153,7 +162,7 @@ poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml 
 
 ### Run An LLM Agent
 
-Use this if you want prompt-driven agent logic from YAML and want to move the same agent definition from backtest into paper mode.
+Use this if you want prompt-driven agent logic from YAML and want to move the same agent definition from backtest into paper and live mode.
 
 ```bash
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
@@ -161,11 +170,13 @@ poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
+poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live breakout_gpt
+poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode live
 ```
 
 ### Run A Hybrid Agent
 
-Use this if you want to combine trained model signals and LLM reasoning in one project and then run the agent in paper mode.
+Use this if you want to combine trained model signals and LLM reasoning in one project and then promote the same agent through paper and live mode.
 
 ```bash
 poetry run quanttradeai init --template hybrid -o config/project.yaml
@@ -173,6 +184,8 @@ poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
+poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live hybrid_swing_agent
+poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode live
 ```
 
 ### Deploy A Paper Agent
@@ -232,6 +245,7 @@ For the full shape, field reference, and supported agent modes, see [Project YAM
 | Research | `runs/research/<timestamp>_<project>/` | `resolved_project_config.yaml`, runtime YAML snapshots, `summary.json`, `metrics.json`, backtest artifacts |
 | Agent backtest | `runs/agent/backtest/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, backtest files |
 | Agent paper | `runs/agent/paper/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime YAML snapshots |
+| Agent live | `runs/agent/live/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime streaming/risk/position-manager YAML snapshots |
 
 This makes it easier to compare runs, audit what actually executed, and reuse winning configurations.
 
@@ -274,7 +288,8 @@ poetry run quanttradeai validate-config
 Important boundary:
 
 - `agent run --mode paper` for project-defined `model` agents compiles runtime config from `config/project.yaml`
-- `live-trade` still uses the runtime YAML files directly
+- `agent run --mode live` for project-defined `rule`, `model`, `llm`, and `hybrid` agents compiles runtime config from `config/project.yaml`
+- `live-trade` still uses the legacy runtime YAML files directly
 
 ## Development
 

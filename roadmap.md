@@ -1,6 +1,6 @@
 # QuantTradeAI Roadmap
 
-Last updated: 2026-04-01
+Last updated: 2026-04-10
 
 This document is the product source of truth for QuantTradeAI.
 It is written for both human contributors and coding agents.
@@ -317,21 +317,25 @@ Deliverables:
 - Make feature selection explicit and shared across research and agent flows.
 - Fix time-aware preprocessing and evaluation defaults.
 
-Status on 2026-03-29:
+Status on 2026-04-10:
 
 - Implemented for the research happy path: canonical `config/project.yaml`, `init`, `validate`, legacy config import via flags, resolved-config artifacts, standardized research run directories, automatic backtests from `research run`, and time-aware preprocessing/evaluation defaults.
 - `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest|paper` is implemented for `llm` and `hybrid` agents.
 - `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest|paper` is implemented for `model` agents.
 - `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest|paper` is implemented for `rule` agents.
+- `quanttradeai agent run --agent <name> -c config/project.yaml --mode live` is implemented for `rule`, `model`, `llm`, and `hybrid` agents.
 - Agent templates now write the referenced prompt markdown assets.
 - Agent backtest runs now persist resolved config, runtime YAML snapshots, metrics, equity curve, ledger, decisions, sampled prompt/response payloads where applicable, and standardized run metadata under `runs/agent/backtest/...`.
 - Model-agent paper runs now persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, and `executions.jsonl` under `runs/agent/paper/...`.
 - LLM and hybrid paper runs now persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, and sampled prompt payloads under `runs/agent/paper/...`.
 - Rule-agent paper runs now persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, `decisions.jsonl`, and `executions.jsonl` under `runs/agent/paper/...`.
+- Live agent runs now persist resolved config, runtime streaming/risk/position-manager YAML snapshots, `summary.json`, `metrics.json`, `executions.jsonl`, and `decisions.jsonl` under `runs/agent/live/...`, with `prompt_samples.json` for `llm` and `hybrid`.
 - `quanttradeai runs list` is implemented for local research and agent run discovery.
 - `quanttradeai promote --run <run_id>` is implemented for successful agent backtest-to-paper promotion.
+- `quanttradeai promote --run agent/paper/<run_id> --to live --acknowledge-live <agent_name>` is implemented for successful paper-to-live promotion with an explicit safety acknowledgement.
+- Top-level `risk` and `position_manager` are now the canonical live safety/runtime sections in `config/project.yaml`.
 - `quanttradeai deploy --agent <name> -c config/project.yaml --target docker-compose` now generates a paper-agent deployment bundle with compose, Dockerfile, env placeholders, resolved config, and a deployment manifest.
-- Remaining Stage 1 work includes project-agent live execution and live promotion safety gates.
+- `live-trade`, `config/risk_config.yaml`, `config/position_manager.yaml`, and `config/streaming.yaml` remain supported as legacy compatibility paths, but they are no longer the primary live workflow for project-defined agents.
 
 ### Stage 2: Multi-Agent Lab
 
@@ -426,11 +430,13 @@ quanttradeai init --template model-agent -o config/project.yaml
 quanttradeai validate -c config/project.yaml
 quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
 quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
+quanttradeai promote --run agent/paper/<run_id> --to live --acknowledge-live paper_momentum
+quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode live
 quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
 ```
 
 Current implementation note:
-`model`, `llm`, and `hybrid` agents support `--mode backtest` and `--mode paper` today. `deploy --target docker-compose` generates paper-agent bundles today. `live` remains roadmap work.
+`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. `deploy --target docker-compose` still generates paper-agent bundles only.
 
 ### Hybrid track
 
@@ -438,10 +444,12 @@ Current implementation note:
 quanttradeai init --template hybrid -o config/project.yaml
 quanttradeai research run -c config/project.yaml
 quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
+quanttradeai promote --run agent/paper/<run_id> --to live --acknowledge-live hybrid_swing_agent
+quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode live
 ```
 
 Current implementation note:
-Hybrid agents are currently runnable in `backtest` and `paper` mode. Promotion to `live` remains future roadmap work.
+Hybrid agents are runnable in `backtest`, `paper`, and `live` mode. Live deployment remains future roadmap work.
 
 ## Definition of Done for the Happy Path
 

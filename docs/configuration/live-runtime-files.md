@@ -5,7 +5,9 @@
 - research runs
 - project-defined agent backtests
 - project-defined agent paper runs
+- project-defined agent live runs
 - agent backtest-to-paper promotion
+- agent paper-to-live promotion
 - project-agent docker-compose deployment bundles
 
 The legacy runtime YAML files still matter for:
@@ -31,13 +33,19 @@ This page explains that boundary.
 
 ## Important Boundary
 
-### Canonical Paper Agent Path
+### Canonical Project-Agent Path
 
-`quanttradeai agent run --mode paper` for project-defined agents:
+`quanttradeai agent run --mode paper|live` for project-defined agents:
 
 - reads `config/project.yaml`
-- compiles runtime model, features, backtest, and streaming YAMLs into the run directory
+- compiles runtime model, features, and streaming YAMLs into the run directory
+- compiles top-level `risk` and `position_manager` into runtime YAML snapshots for live runs
 - passes the compiled feature config into the paper runtime
+
+`quanttradeai promote` now supports:
+
+- `agent/backtest/...` -> `paper`
+- `agent/paper/...` -> `live` with `--acknowledge-live <agent_name>`
 
 ### Legacy Live Path
 
@@ -131,6 +139,8 @@ Behavior difference:
 - `backtest-model` continues without the guard if the file is missing
 - `live-trade` fails fast if the configured risk file is missing
 
+For project-defined live agents, the canonical source is now the top-level `risk` block inside `config/project.yaml`. QuantTradeAI writes that block into `runtime_risk_config.yaml` under `runs/agent/live/...`.
+
 ## `config/streaming.yaml`
 
 Used by:
@@ -138,13 +148,18 @@ Used by:
 - `live-trade`
 - direct `StreamingGateway` usage
 
-The project-agent paper path generates an equivalent runtime YAML from `data.streaming` inside `project.yaml`, but that compiled file is written into the run directory and is not intended to replace your checked-in legacy `config/streaming.yaml`.
+The project-agent paper/live path generates an equivalent runtime YAML from `data.streaming` inside `project.yaml`, but that compiled file is written into the run directory and is not intended to replace your checked-in legacy `config/streaming.yaml`.
 
 ## `config/position_manager.yaml`
 
 Used only by the legacy `live-trade` path.
 
-The current project-defined `model` paper-agent workflow runs without a separate position-manager YAML and relies on the engine's portfolio state plus run artifacts for the happy path.
+For project-defined live agents, the canonical source is now the top-level `position_manager` block inside `config/project.yaml`. QuantTradeAI writes that block into `runtime_position_manager_config.yaml` under `runs/agent/live/...`.
+
+Compatibility note:
+
+- `position_manager.risk_management` is still accepted as legacy input during validation
+- the top-level `risk` block is the canonical source for project-defined live guardrails
 
 ## Validation
 

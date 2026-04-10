@@ -96,6 +96,12 @@ def _validate_agent_project_sections(
     }
     feature_names = set(feature_definitions)
     data_streaming_cfg = dict((resolved.get("data") or {}).get("streaming") or {})
+    position_manager_cfg = dict(resolved.get("position_manager") or {})
+
+    if "risk_management" in position_manager_cfg:
+        warnings.append(
+            "position_manager.risk_management is legacy compatibility only; use the top-level risk section as the canonical live risk config."
+        )
 
     for agent in resolved.get("agents") or []:
         agent_name = agent.get("name", "<unknown>")

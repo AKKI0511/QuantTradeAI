@@ -8,6 +8,11 @@ from typing import Any
 
 import yaml
 
+from quanttradeai.utils.config_schemas import (
+    PositionManagerConfig,
+    RiskManagementConfig,
+)
+
 
 LEGACY_CONFIG_FILES = {
     "model_config": "model_config.yaml",
@@ -32,6 +37,38 @@ class LoadedProjectConfig:
     source: str
     source_path: str
     warnings: list[str]
+
+
+def extract_canonical_live_risk_config(
+    project_config: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    """Return canonical live risk config, accepting nested legacy fallback."""
+
+    top_level_risk = dict(project_config.get("risk") or {})
+    position_manager_cfg = dict(project_config.get("position_manager") or {})
+    nested_risk = dict(position_manager_cfg.get("risk_management") or {})
+
+    if top_level_risk:
+        return top_level_risk, False
+    if nested_risk:
+        return nested_risk, True
+    return {}, False
+
+
+def normalize_live_risk_compatibility(
+    project_config: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    """Normalize legacy nested live-risk settings into canonical top-level risk."""
+
+    normalized = dict(project_config)
+    warnings: list[str] = []
+    risk_cfg, used_nested_fallback = extract_canonical_live_risk_config(normalized)
+    if used_nested_fallback:
+        normalized["risk"] = risk_cfg
+        warnings.append(
+            "position_manager.risk_management is legacy compatibility only; it was treated as the canonical top-level risk section during validation."
+        )
+    return normalized, warnings
 
 
 def _load_yaml_mapping(path: Path) -> dict[str, Any]:
@@ -97,6 +134,16 @@ def _resolve_custom_feature_key(name: str, params: dict[str, Any]) -> str:
         f"{name}' must map to one of: price_momentum, volume_momentum, "
         "mean_reversion, volatility_breakout. Set params.kind to disambiguate."
     )
+
+
+def _strip_position_manager_risk_management(
+    position_manager_cfg: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(position_manager_cfg, dict):
+        return {}
+    sanitized = dict(position_manager_cfg)
+    sanitized.pop("risk_management", None)
+    return sanitized
 
 
 def import_legacy_project_config(
@@ -264,13 +311,31 @@ def import_legacy_project_config(
         project_cfg["models"] = model_cfg["models"]
     if backtest_cfg.get("execution") or {}:
         project_cfg["execution"] = backtest_cfg["execution"]
-    if risk_cfg:
-        project_cfg["risk"] = risk_cfg.get("risk_management", risk_cfg)
+    imported_risk_cfg = (
+        risk_cfg.get("risk_management", risk_cfg) if risk_cfg else {}
+    ) or {}
+    imported_position_manager_cfg = (
+        position_manager_cfg.get("position_manager", position_manager_cfg)
+        if position_manager_cfg
+        else {}
+    ) or {}
+
+    nested_position_risk_cfg = dict(
+        imported_position_manager_cfg.get("risk_management") or {}
+    )
+    if imported_risk_cfg:
+        project_cfg["risk"] = imported_risk_cfg
+    elif nested_position_risk_cfg:
+        project_cfg["risk"] = nested_position_risk_cfg
+        warnings.append(
+            "Legacy position_manager.risk_management was migrated into the canonical top-level risk section."
+        )
+
     if streaming_cfg:
         project_cfg["data"]["streaming"] = streaming_cfg.get("streaming", streaming_cfg)
-    if position_manager_cfg:
-        project_cfg["position_manager"] = position_manager_cfg.get(
-            "position_manager", position_manager_cfg
+    if imported_position_manager_cfg:
+        project_cfg["position_manager"] = _strip_position_manager_risk_management(
+            imported_position_manager_cfg
         )
 
     return project_cfg, warnings
@@ -292,8 +357,12 @@ def load_project_config(
 
     path = Path(config_path)
     raw = _load_yaml_mapping(path)
+    normalized_raw, _warnings = normalize_live_risk_compatibility(raw)
     return LoadedProjectConfig(
-        raw=raw, source="canonical", source_path=str(path), warnings=[]
+        raw=normalized_raw,
+        source="canonical",
+        source_path=str(path),
+        warnings=[],
     )
 
 
@@ -552,8 +621,10 @@ def compile_research_runtime_configs(
     return model_cfg, runtime_features_cfg, runtime_backtest_cfg
 
 
-def compile_paper_streaming_runtime_config(
+def compile_streaming_runtime_config(
     project_config: dict[str, Any],
+    *,
+    mode: str = "paper",
 ) -> dict[str, Any]:
     """Compile canonical project streaming settings into gateway runtime YAML."""
 
@@ -561,7 +632,7 @@ def compile_paper_streaming_runtime_config(
     streaming_cfg = dict(data_cfg.get("streaming") or {})
     if not streaming_cfg.get("enabled", False):
         raise ValueError(
-            "data.streaming.enabled must be true for `quanttradeai agent run --mode paper`."
+            f"data.streaming.enabled must be true for `quanttradeai agent run --mode {mode}`."
         )
 
     symbols = list(streaming_cfg.get("symbols") or data_cfg.get("symbols") or [])
@@ -601,3 +672,48 @@ def compile_paper_streaming_runtime_config(
         runtime_cfg["streaming_health"] = health_sections
 
     return runtime_cfg
+
+
+def compile_paper_streaming_runtime_config(
+    project_config: dict[str, Any],
+) -> dict[str, Any]:
+    return compile_streaming_runtime_config(project_config, mode="paper")
+
+
+def compile_live_streaming_runtime_config(
+    project_config: dict[str, Any],
+) -> dict[str, Any]:
+    return compile_streaming_runtime_config(project_config, mode="live")
+
+
+def compile_live_risk_runtime_config(
+    project_config: dict[str, Any],
+) -> dict[str, Any]:
+    """Compile canonical top-level live risk settings into runtime YAML."""
+
+    risk_cfg, _used_nested_fallback = extract_canonical_live_risk_config(project_config)
+    if not risk_cfg:
+        raise ValueError("risk is required for `quanttradeai agent run --mode live`.")
+    RiskManagementConfig(**risk_cfg)
+    return {"risk_management": risk_cfg}
+
+
+def compile_live_position_manager_runtime_config(
+    project_config: dict[str, Any],
+) -> dict[str, Any]:
+    """Compile canonical live position-manager settings into runtime YAML."""
+
+    position_manager_cfg = dict(project_config.get("position_manager") or {})
+    risk_cfg, _used_nested_fallback = extract_canonical_live_risk_config(project_config)
+    if not position_manager_cfg:
+        raise ValueError(
+            "position_manager is required for `quanttradeai agent run --mode live`."
+        )
+    if not risk_cfg:
+        raise ValueError("risk is required for `quanttradeai agent run --mode live`.")
+
+    runtime_cfg = _strip_position_manager_risk_management(position_manager_cfg)
+    runtime_cfg["risk_management"] = risk_cfg
+    runtime_cfg["mode"] = "live"
+    PositionManagerConfig(**runtime_cfg)
+    return {"position_manager": runtime_cfg}
