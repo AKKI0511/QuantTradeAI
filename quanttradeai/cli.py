@@ -31,6 +31,12 @@ from .utils.run_records import (
     discover_runs,
     filter_runs,
 )
+from .utils.run_scoreboard import (
+    SCOREBOARD_SORT_FIELDS,
+    attach_scoreboard,
+    render_scoreboard_table,
+    sort_run_records,
+)
 
 
 app = typer.Typer(add_completion=False, help="QuantTradeAI command line interface")
@@ -1203,12 +1209,31 @@ def cmd_runs_list(
         "all", "--status", help="Run status filter: all, success, or failed"
     ),
     limit: int = typer.Option(20, "--limit", min=1, help="Maximum runs to show"),
+    scoreboard: bool = typer.Option(
+        False,
+        "--scoreboard",
+        help="Render a metrics-aware run scoreboard using metrics.json artifacts",
+    ),
+    sort_by: str = typer.Option(
+        "started_at",
+        "--sort-by",
+        help=(
+            "Sort field: started_at, name, status, accuracy, f1, net_sharpe, "
+            "net_pnl, total_pnl, execution_count, or decision_count"
+        ),
+    ),
+    ascending: bool = typer.Option(
+        False,
+        "--ascending",
+        help="Sort ascending instead of using the default direction for the field",
+    ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit normalized run records as JSON"
     ),
 ):
     """List normalized research and agent runs from the local runs directory."""
 
+    discovered = discover_runs()
     filters = RunFilters(
         run_type=_normalize_choice(
             run_type, allowed={"all", "research", "agent"}, field_name="type"
@@ -1223,9 +1248,31 @@ def cmd_runs_list(
             allowed={"all", "success", "failed"},
             field_name="status",
         ),
-        limit=limit,
+        limit=max(len(discovered), 1),
     )
-    records = filter_runs(discover_runs(), filters)
+    normalized_sort_by = _normalize_choice(
+        sort_by,
+        allowed=SCOREBOARD_SORT_FIELDS,
+        field_name="sort-by",
+    )
+    records = filter_runs(discovered, filters)
+    needs_scoreboard = scoreboard or normalized_sort_by not in {
+        "started_at",
+        "name",
+        "status",
+    }
+    if needs_scoreboard:
+        records = attach_scoreboard(records)
+    records = sort_run_records(
+        records,
+        sort_by=normalized_sort_by,
+        ascending=ascending,
+    )[:limit]
+    if needs_scoreboard and not scoreboard:
+        records = [
+            {key: value for key, value in record.items() if key != "scoreboard"}
+            for record in records
+        ]
 
     if json_output:
         typer.echo(json.dumps(records, indent=2))
@@ -1233,6 +1280,10 @@ def cmd_runs_list(
 
     if not records:
         typer.echo("No runs found.")
+        return
+
+    if scoreboard:
+        typer.echo(render_scoreboard_table(records))
         return
 
     typer.echo(_render_runs_table(records))

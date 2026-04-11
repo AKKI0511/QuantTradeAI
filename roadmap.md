@@ -349,6 +349,11 @@ Status on 2026-04-10:
 Goal:
 Make running many agents and many experiments on one machine easy and trustworthy.
 
+Status on 2026-04-11:
+
+- `quanttradeai runs list --scoreboard` is implemented for local research and agent runs, with metric-aware sorting via `--sort-by` and additive JSON scoreboard payloads.
+- Multi-agent orchestration, parameter sweeps, and richer comparison workflows remain future Stage 2 work.
+
 Deliverables:
 
 - Run many agents from one `project.yaml`.
