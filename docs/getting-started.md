@@ -26,6 +26,12 @@ This path gives you:
 - a full research run with metrics and artifacts
 - standardized run records under `runs/research/...`
 
+To promote a successful research run into the stable model path used by the `model-agent` and `hybrid` templates:
+
+```bash
+poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
+```
+
 ## Workflow 2: Model Agent From `project.yaml`
 
 ```bash
@@ -36,11 +42,11 @@ poetry run quanttradeai validate -c config/project.yaml
 The model-agent template creates:
 
 - a canonical `config/project.yaml`
-- a placeholder model artifact directory at `models/trained/aapl_daily_classifier/`
+- a placeholder model artifact directory at `models/promoted/aapl_daily_classifier/`
 - a minimal `data.streaming` block
 - top-level `risk` and `position_manager` defaults for later live promotion
 
-Replace the placeholder model directory with a real trained model artifact before running the agent.
+Replace the placeholder model directory with a promoted research model artifact or another compatible saved model before running the agent.
 
 ### Backtest The Agent
 
@@ -95,13 +101,17 @@ Hybrid projects use the same pattern:
 
 ```bash
 poetry run quanttradeai init --template hybrid -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
 poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live hybrid_swing_agent
 poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode live
 ```
+
+The hybrid template already points `model_signal_sources` at `models/promoted/aapl_daily_classifier`, so the happy path does not require editing timestamped experiment directories by hand.
 
 Deployment bundles for project-defined paper agents are written under `reports/deployments/<agent>/<timestamp>/`.
 

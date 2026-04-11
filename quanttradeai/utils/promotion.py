@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import copy
 import json
+import posixpath
+import shutil
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +16,7 @@ from pydantic import ValidationError
 
 from quanttradeai.utils.config_schemas import ProjectConfigSchema
 from quanttradeai.utils.project_config import extract_canonical_live_risk_config
+from quanttradeai.utils.project_paths import infer_project_root, resolve_project_path
 from quanttradeai.utils.run_records import RUNS_ROOT, discover_runs
 
 
@@ -72,7 +77,7 @@ def _summary_path_for_record(record: dict[str, Any], runs_root: Path | str) -> P
     )
 
 
-def _validate_promotable_run(
+def _validate_agent_promotable_run(
     record: dict[str, Any],
     summary: dict[str, Any],
     *,
@@ -100,6 +105,39 @@ def _validate_promotable_run(
         raise ValueError("Promotable agent run is missing an agent name.")
 
     return agent_name, required_source_mode
+
+
+def _validate_research_promotable_run(
+    record: dict[str, Any],
+    summary: dict[str, Any],
+    *,
+    target_mode: str,
+    acknowledge_live: str | None,
+) -> tuple[str, str]:
+    run_type = str(summary.get("run_type") or record.get("run_type") or "")
+    mode = str(summary.get("mode") or record.get("mode") or "")
+    status = str(summary.get("status") or record.get("status") or "")
+
+    if run_type != "research" or mode != "research" or status != "success":
+        raise ValueError(
+            "Only successful research runs can promote models into stable project paths."
+        )
+    if target_mode != "paper":
+        raise ValueError(
+            "Research run promotion does not support --to. Omit --to and use the default promote behavior."
+        )
+    if acknowledge_live is not None:
+        raise ValueError(
+            "--acknowledge-live is only supported when promoting agent paper runs to live."
+        )
+
+    project_name = str(
+        summary.get("project_name") or summary.get("name") or record.get("name") or ""
+    ).strip()
+    if not project_name:
+        raise ValueError("Promotable research run is missing a project name.")
+
+    return project_name, "research"
 
 
 def _apply_paper_promotion(
@@ -196,37 +234,262 @@ def _apply_live_promotion(
     return proposed, changed
 
 
-def promote_agent_run(
+def _resolve_research_promotion_targets(
+    project_config: dict[str, Any],
+) -> list[dict[str, str]]:
+    try:
+        resolved_config = ProjectConfigSchema(**project_config)
+    except ValidationError as exc:
+        raise ValueError(f"Project config is invalid: {exc}") from exc
+
+    targets = [
+        {
+            "name": target.name,
+            "symbol": target.symbol,
+            "path": target.path,
+        }
+        for target in resolved_config.research.promotion.targets
+    ]
+    if not targets:
+        raise ValueError(
+            "research.promotion.targets must define at least one target before promoting a research run."
+        )
+
+    available_symbols = set(resolved_config.data.symbols)
+    seen_names: set[str] = set()
+    seen_paths: set[str] = set()
+    for target in targets:
+        if target["symbol"] not in available_symbols:
+            raise ValueError(
+                "research promotion target symbol must reference one of data.symbols. "
+                f"Received: {target['symbol']}"
+            )
+
+        if target["name"] in seen_names:
+            raise ValueError(
+                f"research promotion target names must be unique. Duplicate: {target['name']}"
+            )
+        seen_names.add(target["name"])
+
+        normalized_path = posixpath.normpath(Path(target["path"]).as_posix())
+        if normalized_path in seen_paths:
+            raise ValueError(
+                "research promotion target paths must be unique. "
+                f"Duplicate: {normalized_path}"
+            )
+        seen_paths.add(normalized_path)
+
+    return targets
+
+
+def _research_experiment_dir(
     *,
-    run_id: str | Path,
-    config_path: str | Path = "config/project.yaml",
-    target_mode: str = "paper",
-    dry_run: bool = False,
-    acknowledge_live: str | None = None,
-    runs_root: Path | str = RUNS_ROOT,
+    summary: dict[str, Any],
+    config_path: Path,
+) -> Path:
+    artifacts = dict(summary.get("artifacts") or {})
+    experiment_dir_raw = str(artifacts.get("experiment_dir") or "").strip()
+    if not experiment_dir_raw:
+        raise ValueError(
+            "Research run summary is missing artifacts.experiment_dir; cannot locate trained models to promote."
+        )
+
+    experiment_dir = resolve_project_path(config_path, experiment_dir_raw)
+    if not experiment_dir.is_dir():
+        raise ValueError(
+            f"Research run experiment directory does not exist: {experiment_dir}"
+        )
+    return experiment_dir
+
+
+def _resolve_promoted_model_destination(
+    *,
+    config_path: Path,
+    relative_path: str,
+) -> Path:
+    raw_path = str(relative_path or "").strip()
+    path = Path(raw_path)
+    if not raw_path:
+        raise ValueError("research promotion destination path must not be blank.")
+    if path.is_absolute():
+        raise ValueError(
+            "research promotion destination path must be project-relative and under models/."
+        )
+
+    project_root = infer_project_root(config_path)
+    resolved_path = resolve_project_path(config_path, raw_path)
+    try:
+        relative = resolved_path.resolve().relative_to(project_root.resolve())
+    except ValueError as exc:
+        raise ValueError(
+            "research promotion destination path must resolve inside the project root under models/."
+        ) from exc
+
+    if not relative.parts or relative.parts[0] != "models":
+        raise ValueError(
+            "research promotion destination path must resolve under models/."
+        )
+    return resolved_path
+
+
+def _stage_promoted_directory(
+    *,
+    source_dir: Path,
+    destination_dir: Path,
+    manifest: dict[str, Any],
+) -> tuple[Path, Path]:
+    destination_dir.parent.mkdir(parents=True, exist_ok=True)
+    temp_root = Path(
+        tempfile.mkdtemp(
+            prefix=f".quanttradeai-promote-{destination_dir.name}-",
+            dir=destination_dir.parent,
+        )
+    )
+    staged_dir = temp_root / destination_dir.name
+    shutil.copytree(source_dir, staged_dir)
+    (staged_dir / "promotion_manifest.json").write_text(
+        json.dumps(manifest, indent=2),
+        encoding="utf-8",
+    )
+    return temp_root, staged_dir
+
+
+def _commit_promoted_directory(
+    *,
+    staged_dir: Path,
+    temp_root: Path,
+    destination_dir: Path,
+) -> None:
+    if destination_dir.exists() and not destination_dir.is_dir():
+        raise ValueError(
+            f"Promotion destination already exists and is not a directory: {destination_dir}"
+        )
+
+    backup_dir: Path | None = None
+    try:
+        if destination_dir.exists():
+            backup_dir = destination_dir.parent / (
+                f".quanttradeai-backup-{destination_dir.name}-"
+                f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
+            )
+            destination_dir.rename(backup_dir)
+
+        staged_dir.rename(destination_dir)
+        if backup_dir is not None and backup_dir.exists():
+            shutil.rmtree(backup_dir)
+    except Exception:
+        if (
+            backup_dir is not None
+            and backup_dir.exists()
+            and not destination_dir.exists()
+        ):
+            backup_dir.rename(destination_dir)
+        raise
+    finally:
+        if temp_root.exists():
+            shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def _promote_research_run(
+    *,
+    record: dict[str, Any],
+    summary: dict[str, Any],
+    config_path: Path,
+    dry_run: bool,
 ) -> dict[str, Any]:
-    """Promote a successful project-defined agent run to paper or live."""
+    project_config = _load_yaml_mapping(config_path)
+    targets = _resolve_research_promotion_targets(project_config)
+    experiment_dir = _research_experiment_dir(summary=summary, config_path=config_path)
 
-    target_mode = target_mode.strip().lower()
-    if target_mode not in {"paper", "live"}:
-        raise ValueError("Only promotion to paper or live is supported.")
+    promoted_targets: list[dict[str, Any]] = []
+    staged_targets: list[tuple[Path, Path, Path]] = []
+    promoted_at = datetime.now(timezone.utc).isoformat()
 
-    record = _find_run_record(run_id, runs_root=runs_root)
-    summary_path = _summary_path_for_record(record, runs_root)
-    summary = _load_json(summary_path)
-    agent_name, source_mode = _validate_promotable_run(
+    for target in targets:
+        source_dir = experiment_dir / target["symbol"]
+        if not source_dir.is_dir():
+            raise ValueError(
+                f"Research run is missing a trained model artifact for symbol '{target['symbol']}' at {source_dir}"
+            )
+
+        destination_dir = _resolve_promoted_model_destination(
+            config_path=config_path,
+            relative_path=target["path"],
+        )
+        manifest = {
+            "source_run_id": str(record.get("run_id") or summary.get("run_id") or ""),
+            "project_name": summary.get("project_name"),
+            "target_name": target["name"],
+            "symbol": target["symbol"],
+            "source_path": source_dir.as_posix(),
+            "destination_path": destination_dir.as_posix(),
+            "promoted_at": promoted_at,
+        }
+        temp_root, staged_dir = _stage_promoted_directory(
+            source_dir=source_dir,
+            destination_dir=destination_dir,
+            manifest=manifest,
+        )
+        staged_targets.append((temp_root, staged_dir, destination_dir))
+        promoted_targets.append(
+            {
+                "name": target["name"],
+                "symbol": target["symbol"],
+                "source_path": source_dir.as_posix(),
+                "destination_path": destination_dir.as_posix(),
+                "manifest_path": (
+                    destination_dir / "promotion_manifest.json"
+                ).as_posix(),
+            }
+        )
+
+    try:
+        if not dry_run:
+            for temp_root, staged_dir, destination_dir in staged_targets:
+                _commit_promoted_directory(
+                    staged_dir=staged_dir,
+                    temp_root=temp_root,
+                    destination_dir=destination_dir,
+                )
+    finally:
+        if dry_run:
+            for temp_root, _staged_dir, _destination_dir in staged_targets:
+                if temp_root.exists():
+                    shutil.rmtree(temp_root, ignore_errors=True)
+
+    return {
+        "status": "success",
+        "source_run_id": str(
+            record.get("run_id") or _normalize_run_id(summary.get("run_id") or "")
+        ),
+        "run_type": "research",
+        "project_name": summary.get("project_name"),
+        "config_path": config_path.as_posix(),
+        "dry_run": dry_run,
+        "changed": bool(promoted_targets),
+        "experiment_dir": experiment_dir.as_posix(),
+        "promoted_targets": promoted_targets,
+    }
+
+
+def _promote_agent_run(
+    *,
+    record: dict[str, Any],
+    summary: dict[str, Any],
+    config_path: Path,
+    target_mode: str,
+    dry_run: bool,
+    acknowledge_live: str | None,
+) -> dict[str, Any]:
+    agent_name, source_mode = _validate_agent_promotable_run(
         record,
         summary,
         target_mode=target_mode,
     )
-    if target_mode == "live":
-        if acknowledge_live != agent_name:
-            raise ValueError(
-                f"Promoting to live requires --acknowledge-live {agent_name}"
-            )
+    if target_mode == "live" and acknowledge_live != agent_name:
+        raise ValueError(f"Promoting to live requires --acknowledge-live {agent_name}")
 
-    project_config_path = Path(config_path)
-    project_config = _load_yaml_mapping(project_config_path)
+    project_config = _load_yaml_mapping(config_path)
     if target_mode == "paper":
         promoted_config, changed = _apply_paper_promotion(
             project_config,
@@ -239,19 +502,22 @@ def promote_agent_run(
         )
 
     if changed and not dry_run:
-        project_config_path.write_text(
+        config_path.write_text(
             yaml.safe_dump(promoted_config, sort_keys=False),
             encoding="utf-8",
         )
 
-    config_path_display = project_config_path.as_posix()
+    config_path_display = config_path.as_posix()
     next_command = (
         f"quanttradeai agent run --agent {agent_name} "
         f"-c {config_path_display} --mode {target_mode}"
     )
     return {
         "status": "success",
-        "source_run_id": str(record.get("run_id") or _normalize_run_id(run_id)),
+        "source_run_id": str(
+            record.get("run_id") or _normalize_run_id(summary.get("run_id") or "")
+        ),
+        "run_type": "agent",
         "agent_name": agent_name,
         "from_mode": source_mode,
         "to_mode": target_mode,
@@ -260,3 +526,69 @@ def promote_agent_run(
         "dry_run": dry_run,
         "next_command": next_command,
     }
+
+
+def promote_run(
+    *,
+    run_id: str | Path,
+    config_path: str | Path = "config/project.yaml",
+    target_mode: str = "paper",
+    dry_run: bool = False,
+    acknowledge_live: str | None = None,
+    runs_root: Path | str = RUNS_ROOT,
+) -> dict[str, Any]:
+    """Promote a successful research or agent run through the canonical workflow."""
+
+    target_mode = target_mode.strip().lower()
+    if target_mode not in {"paper", "live"}:
+        raise ValueError("Only promotion to paper or live is supported.")
+
+    record = _find_run_record(run_id, runs_root=runs_root)
+    summary_path = _summary_path_for_record(record, runs_root)
+    summary = _load_json(summary_path)
+    run_type = str(summary.get("run_type") or record.get("run_type") or "")
+    project_config_path = Path(config_path)
+
+    if run_type == "research":
+        _validate_research_promotable_run(
+            record,
+            summary,
+            target_mode=target_mode,
+            acknowledge_live=acknowledge_live,
+        )
+        return _promote_research_run(
+            record=record,
+            summary=summary,
+            config_path=project_config_path,
+            dry_run=dry_run,
+        )
+
+    return _promote_agent_run(
+        record=record,
+        summary=summary,
+        config_path=project_config_path,
+        target_mode=target_mode,
+        dry_run=dry_run,
+        acknowledge_live=acknowledge_live,
+    )
+
+
+def promote_agent_run(
+    *,
+    run_id: str | Path,
+    config_path: str | Path = "config/project.yaml",
+    target_mode: str = "paper",
+    dry_run: bool = False,
+    acknowledge_live: str | None = None,
+    runs_root: Path | str = RUNS_ROOT,
+) -> dict[str, Any]:
+    """Backward-compatible wrapper around the generalized promotion entrypoint."""
+
+    return promote_run(
+        run_id=run_id,
+        config_path=config_path,
+        target_mode=target_mode,
+        dry_run=dry_run,
+        acknowledge_live=acknowledge_live,
+        runs_root=runs_root,
+    )

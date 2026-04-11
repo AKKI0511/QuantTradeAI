@@ -38,6 +38,15 @@ def _write_project_config(
     return payload
 
 
+def _write_research_project_config(path: Path) -> dict:
+    payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False)
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    return payload
+
+
 def _write_run_summary(
     *,
     run_id: str = "agent/backtest/20260101_010000_breakout_gpt",
@@ -45,6 +54,8 @@ def _write_run_summary(
     mode: str = "backtest",
     status: str = "success",
     agent_name: str | None = "breakout_gpt",
+    artifacts: dict | None = None,
+    project_name: str | None = None,
 ) -> Path:
     run_dir = Path("runs").joinpath(*run_id.split("/"))
     summary = {
@@ -57,7 +68,7 @@ def _write_run_summary(
             "started_at": "2026-01-01T01:00:00+00:00",
             "completed_at": "2026-01-01T01:05:00+00:00",
         },
-        "artifacts": {},
+        "artifacts": dict(artifacts or {}),
         "warnings": [],
         "run_id": run_id,
         "run_dir": str(run_dir),
@@ -65,7 +76,7 @@ def _write_run_summary(
     if agent_name is not None:
         summary["agent_name"] = agent_name
     if run_type == "research":
-        summary["project_name"] = "research_lab"
+        summary["project_name"] = project_name or "research_lab"
 
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "summary.json").write_text(
@@ -189,6 +200,7 @@ def test_promote_failure_cases_do_not_mutate_project_yaml(
         run_id="research/20260101_000000_research_lab",
         run_type="research",
         mode="research",
+        status="failed",
         agent_name=None,
     )
     _write_run_summary(
@@ -230,7 +242,7 @@ def test_promote_failure_cases_do_not_mutate_project_yaml(
                 "--config",
                 str(config_path),
             ],
-            "Only successful agent backtest runs",
+            "Only successful research runs can promote models into stable project paths",
         ),
         (
             [
@@ -278,6 +290,262 @@ def test_promote_failure_cases_do_not_mutate_project_yaml(
         combined_output = f"{result.stdout}\n{result.stderr}"
         assert expected in combined_output
         assert config_path.read_text(encoding="utf-8") == original
+
+
+def test_promote_research_run_copies_models_to_promoted_paths(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = Path("config/project.yaml")
+    _write_research_project_config(config_path)
+
+    experiment_dir = Path("models/experiments/20260101_010000")
+    source_dir = experiment_dir / "AAPL"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "model.pkl").write_text("binary-placeholder", encoding="utf-8")
+    nested_dir = source_dir / "metadata"
+    nested_dir.mkdir(parents=True, exist_ok=True)
+    (nested_dir / "features.json").write_text(
+        json.dumps({"features": ["rsi_14"]}),
+        encoding="utf-8",
+    )
+
+    destination_dir = Path("models/promoted/aapl_daily_classifier")
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    (destination_dir / "stale.txt").write_text("old-model", encoding="utf-8")
+
+    run_id = "research/20260101_010000_research_lab"
+    _write_run_summary(
+        run_id=run_id,
+        run_type="research",
+        mode="research",
+        agent_name=None,
+        artifacts={"experiment_dir": experiment_dir.as_posix()},
+    )
+
+    result = runner.invoke(
+        app,
+        ["promote", "--run", run_id, "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    manifest_path = destination_dir / "promotion_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert payload["status"] == "success"
+    assert payload["run_type"] == "research"
+    assert payload["source_run_id"] == run_id
+    assert payload["changed"] is True
+    assert payload["dry_run"] is False
+    assert payload["promoted_targets"] == [
+        {
+            "name": "aapl_daily_classifier",
+            "symbol": "AAPL",
+            "source_path": source_dir.resolve().as_posix(),
+            "destination_path": destination_dir.resolve().as_posix(),
+            "manifest_path": manifest_path.resolve().as_posix(),
+        }
+    ]
+    assert (destination_dir / "model.pkl").read_text(encoding="utf-8") == (
+        "binary-placeholder"
+    )
+    assert json.loads(
+        (destination_dir / "metadata" / "features.json").read_text(encoding="utf-8")
+    ) == {"features": ["rsi_14"]}
+    assert not (destination_dir / "stale.txt").exists()
+    assert manifest["source_run_id"] == run_id
+    assert manifest["symbol"] == "AAPL"
+    assert manifest["target_name"] == "aapl_daily_classifier"
+    assert manifest["source_path"] == source_dir.resolve().as_posix()
+
+
+def test_promote_research_run_dry_run_is_non_mutating(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = Path("config/project.yaml")
+    _write_research_project_config(config_path)
+
+    experiment_dir = Path("models/experiments/20260101_010000")
+    source_dir = experiment_dir / "AAPL"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "model.pkl").write_text("binary-placeholder", encoding="utf-8")
+
+    destination_dir = Path("models/promoted/aapl_daily_classifier")
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    original = destination_dir / "keep.txt"
+    original.write_text("stable-model", encoding="utf-8")
+
+    run_id = "research/20260101_010000_research_lab"
+    _write_run_summary(
+        run_id=run_id,
+        run_type="research",
+        mode="research",
+        agent_name=None,
+        artifacts={"experiment_dir": experiment_dir.as_posix()},
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "promote",
+            "--run",
+            run_id,
+            "--config",
+            str(config_path),
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["changed"] is True
+    assert payload["dry_run"] is True
+    assert original.read_text(encoding="utf-8") == "stable-model"
+    assert not (destination_dir / "promotion_manifest.json").exists()
+    assert not any(
+        path.name.startswith(".quanttradeai-promote-")
+        for path in destination_dir.parent.iterdir()
+    )
+
+
+def test_promote_research_run_rejects_incompatible_flags_and_missing_artifacts(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = Path("config/project.yaml")
+    _write_research_project_config(config_path)
+
+    destination_dir = Path("models/promoted/aapl_daily_classifier")
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    preserved = destination_dir / "keep.txt"
+    preserved.write_text("stable-model", encoding="utf-8")
+
+    failed_run_id = "research/20260101_000000_failed_research_lab"
+    _write_run_summary(
+        run_id=failed_run_id,
+        run_type="research",
+        mode="research",
+        status="failed",
+        agent_name=None,
+        artifacts={"experiment_dir": "models/experiments/20260101_000000"},
+    )
+
+    missing_artifact_run_id = "research/20260101_010000_research_lab"
+    experiment_dir = Path("models/experiments/20260101_010000")
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    _write_run_summary(
+        run_id=missing_artifact_run_id,
+        run_type="research",
+        mode="research",
+        agent_name=None,
+        artifacts={"experiment_dir": experiment_dir.as_posix()},
+    )
+
+    cases = [
+        (
+            [
+                "promote",
+                "--run",
+                "research/missing",
+                "--config",
+                str(config_path),
+            ],
+            "Run not found",
+        ),
+        (
+            [
+                "promote",
+                "--run",
+                failed_run_id,
+                "--config",
+                str(config_path),
+            ],
+            "Only successful research runs can promote models into stable project paths",
+        ),
+        (
+            [
+                "promote",
+                "--run",
+                missing_artifact_run_id,
+                "--config",
+                str(config_path),
+            ],
+            "Research run is missing a trained model artifact for symbol 'AAPL'",
+        ),
+        (
+            [
+                "promote",
+                "--run",
+                missing_artifact_run_id,
+                "--config",
+                str(config_path),
+                "--to",
+                "live",
+            ],
+            "Research run promotion does not support --to",
+        ),
+        (
+            [
+                "promote",
+                "--run",
+                missing_artifact_run_id,
+                "--config",
+                str(config_path),
+                "--acknowledge-live",
+                "research_lab",
+            ],
+            "--acknowledge-live is only supported when promoting agent paper runs to live",
+        ),
+    ]
+
+    for command, expected in cases:
+        result = runner.invoke(app, command)
+        assert result.exit_code == 1
+        combined_output = f"{result.stdout}\n{result.stderr}"
+        assert expected in combined_output
+        assert preserved.read_text(encoding="utf-8") == "stable-model"
+        assert not (destination_dir / "promotion_manifest.json").exists()
+
+
+def test_promote_research_run_rejects_canonical_duplicate_target_paths(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = Path("config/project.yaml")
+    payload = _write_research_project_config(config_path)
+    payload["research"]["promotion"]["targets"].append(
+        {
+            "name": "aapl_daily_classifier_alias",
+            "symbol": "AAPL",
+            "path": "models/promoted/../promoted/aapl_daily_classifier",
+        }
+    )
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+    run_id = "research/20260101_010000_research_lab"
+    _write_run_summary(
+        run_id=run_id,
+        run_type="research",
+        mode="research",
+        agent_name=None,
+        artifacts={"experiment_dir": "models/experiments/20260101_010000"},
+    )
+
+    result = runner.invoke(
+        app,
+        ["promote", "--run", run_id, "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 1
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert "research promotion target paths must be unique" in combined_output
+    assert "models/promoted/aapl_daily_classifier" in combined_output
 
 
 def test_promote_requires_streaming_before_writing_paper_config(

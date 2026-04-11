@@ -29,7 +29,7 @@ from quanttradeai.utils.config_schemas import (
     RiskManagementConfig,
 )
 from quanttradeai.utils.impact_loader import ImpactConfigError, load_impact_config
-from quanttradeai.utils.project_paths import resolve_project_path
+from quanttradeai.utils.project_paths import infer_project_root, resolve_project_path
 from quanttradeai.utils.project_config import load_project_config
 
 
@@ -79,6 +79,93 @@ def _rule_feature_is_rsi_resolvable(feature_definition: dict[str, Any]) -> bool:
         {"rsi", "macd", "macd_signal", "macd_hist"},
     )
     return len(resolved_columns) == 1 and resolved_columns[0] == "rsi"
+
+
+def _validate_models_relative_path(
+    *,
+    config_path: Path,
+    raw_path: str,
+    field_name: str,
+) -> Path:
+    candidate = str(raw_path or "").strip()
+    if not candidate:
+        raise ValueError(f"{field_name} must not be blank.")
+
+    path = Path(candidate)
+    if path.is_absolute():
+        raise ValueError(f"{field_name} must be project-relative and under models/.")
+
+    project_root = infer_project_root(config_path)
+    resolved_path = resolve_project_path(config_path, candidate)
+    try:
+        relative = resolved_path.resolve().relative_to(project_root.resolve())
+    except ValueError as exc:
+        raise ValueError(
+            f"{field_name} must resolve inside the project root under models/."
+        ) from exc
+
+    if not relative.parts or relative.parts[0] != "models":
+        raise ValueError(f"{field_name} must resolve under models/.")
+
+    return resolved_path
+
+
+def _validate_research_project_sections(
+    *,
+    resolved: dict[str, Any],
+    config_path: Path,
+) -> None:
+    errors: list[str] = []
+    symbols = {
+        str(symbol) for symbol in (resolved.get("data") or {}).get("symbols", [])
+    }
+    promotion_targets = list(
+        ((resolved.get("research") or {}).get("promotion") or {}).get("targets") or []
+    )
+
+    seen_names: set[str] = set()
+    seen_paths: set[str] = set()
+    for index, target in enumerate(promotion_targets):
+        target_name = str(target.get("name") or "").strip()
+        target_symbol = str(target.get("symbol") or "").strip()
+        target_path = str(target.get("path") or "").strip()
+        target_label = f"research.promotion.targets[{index}]"
+
+        if not target_name:
+            errors.append(f"{target_label}.name must not be blank.")
+        elif target_name in seen_names:
+            errors.append(
+                f"{target_label}.name duplicates research promotion target name '{target_name}'."
+            )
+        else:
+            seen_names.add(target_name)
+
+        if target_symbol not in symbols:
+            errors.append(
+                f"{target_label}.symbol must reference one of data.symbols. Received: {target_symbol or '<blank>'}"
+            )
+
+        try:
+            resolved_path = _validate_models_relative_path(
+                config_path=config_path,
+                raw_path=target_path,
+                field_name=f"{target_label}.path",
+            )
+        except ValueError as exc:
+            errors.append(str(exc))
+        else:
+            normalized_path = resolved_path.relative_to(
+                infer_project_root(config_path)
+            ).as_posix()
+            if normalized_path in seen_paths:
+                errors.append(
+                    f"{target_label}.path duplicates research promotion target path '{normalized_path}'."
+                )
+            else:
+                seen_paths.add(normalized_path)
+
+    if errors:
+        raise ValueError("\n".join(errors))
 
 
 def _validate_agent_project_sections(
@@ -304,6 +391,10 @@ def validate_project_config(
 
     cfg = ProjectConfigSchema(**raw)
     resolved = _merge_preserving_unknown(raw, cfg.model_dump(mode="json"))
+    _validate_research_project_sections(
+        resolved=resolved,
+        config_path=path,
+    )
 
     unused_legacy_sections = sorted(LEGACY_PROJECT_SECTIONS.intersection(raw.keys()))
     warnings = list(loaded.warnings)

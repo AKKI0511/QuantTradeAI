@@ -203,11 +203,16 @@ def test_validate_writes_resolved_artifacts(tmp_path: Path, monkeypatch):
 def test_init_writes_prompt_assets_for_agent_templates(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
-    for template_name, prompt_file in (
-        ("llm-agent", "prompts/breakout.md"),
-        ("hybrid", "prompts/hybrid_swing.md"),
-        ("model-agent", "models/trained/aapl_daily_classifier/README.md"),
-    ):
+    expected_assets = {
+        "llm-agent": ["prompts/breakout.md"],
+        "hybrid": [
+            "prompts/hybrid_swing.md",
+            "models/promoted/aapl_daily_classifier/README.md",
+        ],
+        "model-agent": ["models/promoted/aapl_daily_classifier/README.md"],
+    }
+
+    for template_name, prompt_files in expected_assets.items():
         cfg_path = Path("config") / template_name / "project.yaml"
         result = runner.invoke(
             app,
@@ -215,7 +220,8 @@ def test_init_writes_prompt_assets_for_agent_templates(tmp_path: Path, monkeypat
         )
 
         assert result.exit_code == 0, result.stdout
-        assert (tmp_path / "config" / template_name / prompt_file).is_file()
+        for prompt_file in prompt_files:
+            assert (tmp_path / "config" / template_name / prompt_file).is_file()
 
 
 def test_model_agent_template_includes_canonical_streaming_block(
@@ -233,6 +239,9 @@ def test_model_agent_template_includes_canonical_streaming_block(
     payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     assert payload["agents"][0]["kind"] == "model"
     assert payload["agents"][0]["mode"] == "paper"
+    assert (
+        payload["agents"][0]["model"]["path"] == "models/promoted/aapl_daily_classifier"
+    )
     assert payload["data"]["streaming"]["enabled"] is True
     assert payload["data"]["streaming"]["provider"] == "alpaca"
     assert payload["data"]["streaming"]["channels"] == ["trades", "quotes"]
@@ -267,7 +276,7 @@ def test_llm_and_hybrid_templates_include_canonical_streaming_block(
 
     for template_name, expected_symbols in (
         ("llm-agent", ["AAPL"]),
-        ("hybrid", ["AAPL", "TSLA"]),
+        ("hybrid", ["AAPL"]),
     ):
         cfg_path = Path("config/project.yaml")
         result = runner.invoke(
@@ -282,6 +291,52 @@ def test_llm_and_hybrid_templates_include_canonical_streaming_block(
         assert payload["data"]["streaming"]["provider"] == "alpaca"
         assert payload["data"]["streaming"]["symbols"] == expected_symbols
         cfg_path.unlink()
+
+
+def test_research_and_hybrid_templates_include_research_promotion_targets(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    for template_name in ("research", "hybrid"):
+        cfg_path = Path("config/project.yaml")
+        result = runner.invoke(
+            app,
+            ["init", "--template", template_name, "--output", str(cfg_path)],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+        assert payload["research"]["promotion"]["targets"] == [
+            {
+                "name": "aapl_daily_classifier",
+                "symbol": "AAPL",
+                "path": "models/promoted/aapl_daily_classifier",
+            }
+        ]
+        cfg_path.unlink()
+
+
+def test_hybrid_template_is_prewired_to_promoted_model_signal(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    result = runner.invoke(
+        app,
+        ["init", "--template", "hybrid", "--output", str(cfg_path)],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    assert payload["agents"][0]["model_signal_sources"] == [
+        {
+            "name": "aapl_daily_classifier",
+            "path": "models/promoted/aapl_daily_classifier",
+        }
+    ]
+    assert payload["agents"][0]["context"]["model_signals"] == ["aapl_daily_classifier"]
 
 
 def test_agent_templates_include_live_risk_and_position_manager_defaults(
@@ -317,7 +372,7 @@ def test_validate_fails_when_model_agent_path_missing(tmp_path: Path, monkeypatc
     )
     assert init_result.exit_code == 0, init_result.stdout
 
-    model_dir = Path("models/trained/aapl_daily_classifier")
+    model_dir = Path("models/promoted/aapl_daily_classifier")
     for child in list(model_dir.iterdir()):
         child.unlink()
     model_dir.rmdir()
@@ -496,7 +551,7 @@ def test_validate_fails_when_model_agent_paper_streaming_is_incomplete(
         yaml.safe_dump(config_payload, sort_keys=False),
         encoding="utf-8",
     )
-    model_dir = Path("models/trained/aapl_daily_classifier")
+    model_dir = Path("models/promoted/aapl_daily_classifier")
     model_dir.mkdir(parents=True, exist_ok=True)
 
     result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
@@ -731,6 +786,98 @@ def test_validate_warns_for_deprecated_model_signal_source_strings(
 
     assert result.exit_code == 0, result.stdout
     assert "deprecated string model_signal_sources entry" in result.stderr.lower()
+
+
+def test_validate_research_promotion_targets_accepts_promoted_model_paths(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False)
+    )
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 0, result.stdout
+
+
+def test_validate_fails_when_research_promotion_symbol_is_unknown(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False)
+    )
+    config_payload["research"]["promotion"]["targets"][0]["symbol"] = "NVDA"
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "must reference one of data.symbols" in result.stderr
+
+
+def test_validate_fails_when_research_promotion_path_is_outside_models(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False)
+    )
+    config_payload["research"]["promotion"]["targets"][0][
+        "path"
+    ] = "reports/promoted/aapl_daily_classifier"
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "must resolve under models/" in result.stderr
+
+
+def test_validate_fails_when_research_promotion_target_names_or_paths_duplicate(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False)
+    )
+    config_payload["data"]["symbols"] = ["AAPL", "MSFT"]
+    config_payload["research"]["promotion"]["targets"].append(
+        {
+            "name": "aapl_daily_classifier",
+            "symbol": "MSFT",
+            "path": "models/promoted/aapl_daily_classifier",
+        }
+    )
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "duplicates research promotion target name" in result.stderr
+    assert "duplicates research promotion target path" in result.stderr
 
 
 def test_validate_preserves_unknown_fields_in_resolved_artifact(

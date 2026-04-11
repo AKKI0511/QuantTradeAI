@@ -577,6 +577,26 @@ class ProjectResearchBacktestConfig(BaseModel):
     )
 
 
+class ProjectResearchPromotionTargetConfig(BaseModel):
+    name: str
+    symbol: str
+    path: str
+
+    @model_validator(mode="after")
+    def validate_required_strings(self) -> "ProjectResearchPromotionTargetConfig":
+        if not self.name.strip():
+            raise ValueError("research.promotion.targets[].name must not be blank.")
+        if not self.symbol.strip():
+            raise ValueError("research.promotion.targets[].symbol must not be blank.")
+        if not self.path.strip():
+            raise ValueError("research.promotion.targets[].path must not be blank.")
+        return self
+
+
+class ProjectResearchPromotionConfig(BaseModel):
+    targets: List[ProjectResearchPromotionTargetConfig] = Field(default_factory=list)
+
+
 class ProjectResearchSection(BaseModel):
     enabled: bool = True
     labels: ProjectResearchLabelsConfig = Field(
@@ -590,6 +610,9 @@ class ProjectResearchSection(BaseModel):
     )
     backtest: ProjectResearchBacktestConfig = Field(
         default_factory=ProjectResearchBacktestConfig
+    )
+    promotion: ProjectResearchPromotionConfig = Field(
+        default_factory=ProjectResearchPromotionConfig
     )
 
 

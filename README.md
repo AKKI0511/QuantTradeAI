@@ -29,11 +29,11 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 
 | I want to... | Best path today | What I get |
 | --- | --- | --- |
-| Research a strategy end to end | `init` -> `validate` -> `research run` | Time-aware evaluation, backtests, metrics, run records |
+| Research a strategy end to end | `init` -> `validate` -> `research run` -> `promote --run research/<run_id>` | Time-aware evaluation, backtests, metrics, run records, and a stable promoted model path |
 | Run a deterministic rule agent | `init --template rule-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | A YAML-only agent that can move through backtest, paper, and live with explicit promotion gates |
-| Run a trained model as an agent | `init --template model-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | One YAML-defined model agent that can be backtested, promoted, paper-run, and live-run |
+| Run a trained model as an agent | `init --template model-agent` -> `validate` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | One YAML-defined model agent wired to a stable `models/promoted/...` path that can be backtested, promoted, paper-run, and live-run |
 | Run an LLM agent | `init --template llm-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Prompt-driven agent logic using project config across all three modes |
-| Run a hybrid agent | `init --template hybrid` -> `research run` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Model signals plus LLM reasoning in one project, with the same YAML agent definition promoted through environments |
+| Run a hybrid agent | `init --template hybrid` -> `research run` -> `promote --run research/<run_id>` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Model signals plus LLM reasoning in one project, with research outputs promoted into a stable path before the agent is promoted through environments |
 | Generate a Docker Compose deployment bundle | `deploy --agent <name> --target docker-compose` | A paper-agent bundle with compose, Dockerfile, env placeholders, and resolved config |
 | Keep using the older live loop | `live-trade` with runtime YAML files | Legacy compatibility for existing setups |
 
@@ -44,12 +44,14 @@ flowchart LR
     A["config/project.yaml"] --> B["validate"]
     A --> C["research run"]
     A --> D["agent run"]
-    C --> E["trained model artifact"]
-    E --> D
-    C --> F["runs/research/..."]
-    D --> G["runs/agent/backtest/..."]
-    D --> H["runs/agent/paper/..."]
-    D --> I["runs/agent/live/..."]
+    C --> E["models/experiments/..."]
+    E --> F["promote --run research/..."]
+    F --> G["models/promoted/..."]
+    G --> D
+    C --> K["runs/research/..."]
+    D --> H["runs/agent/backtest/..."]
+    D --> I["runs/agent/paper/..."]
+    D --> J["runs/agent/live/..."]
 ```
 
 QuantTradeAI is one framework with two connected tracks:
@@ -71,6 +73,7 @@ QuantTradeAI is one framework with two connected tracks:
 | `agent run` for `llm` and `hybrid` agents in `backtest` | Supported |
 | `agent run` for `llm` and `hybrid` agents in `paper` | Supported |
 | `agent run` for `llm` and `hybrid` agents in `live` | Supported |
+| Research-run promotion to stable model paths | Supported |
 | Agent backtest-to-paper promotion | Supported |
 | Agent paper-to-live promotion with acknowledgement | Supported |
 | `deploy --target docker-compose` for paper agents | Supported |
@@ -112,6 +115,12 @@ This path gives you:
 - a research run with metrics and artifacts
 - standardized outputs under `runs/research/...`
 
+To make a winning research artifact available to model or hybrid agents through a stable path:
+
+```bash
+poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
+```
+
 ### Run A Rule Agent
 
 Use this if you want the smallest deterministic agent workflow with no LLM dependency.
@@ -148,7 +157,7 @@ Use this if you already have a trained model artifact and want one YAML-defined 
 poetry run quanttradeai init --template model-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 
-# Replace models/trained/aapl_daily_classifier/ with a real trained model artifact
+# Replace models/promoted/aapl_daily_classifier/ with a real trained model artifact
 
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
@@ -158,7 +167,7 @@ poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml 
 ```
 
 > [!IMPORTANT]
-> The `model-agent` template creates a placeholder model directory so the project structure is obvious. Replace it with a real trained model artifact before running the agent.
+> The `model-agent` template creates a placeholder directory at `models/promoted/aapl_daily_classifier/`. Replace it with a promoted research model artifact or another compatible saved model before running the agent.
 
 ### Run An LLM Agent
 
@@ -180,13 +189,17 @@ Use this if you want to combine trained model signals and LLM reasoning in one p
 
 ```bash
 poetry run quanttradeai init --template hybrid -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
 poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live hybrid_swing_agent
 poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode live
 ```
+
+The default hybrid template is prewired to `models/promoted/aapl_daily_classifier`, so you do not need to hand-edit timestamped experiment paths after the research run.
 
 ### Deploy A Paper Agent
 
@@ -233,7 +246,7 @@ agents:
     kind: "model"
     mode: "paper"
     model:
-      path: "models/trained/aapl_daily_classifier"
+      path: "models/promoted/aapl_daily_classifier"
 ```
 
 For the full shape, field reference, and supported agent modes, see [Project YAML](docs/configuration/project-yaml.md).
