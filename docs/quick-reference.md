@@ -14,6 +14,7 @@ poetry run quanttradeai validate -c config/project.yaml
 
 # Run canonical research workflow
 poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
 poetry run quanttradeai runs list
 
 # Run a YAML-defined llm or hybrid agent
@@ -41,10 +42,6 @@ poetry run quanttradeai train --skip-validation  # bypass data-quality gate
 
 # Evaluate model
 poetry run quanttradeai evaluate -m models/experiments/<timestamp>/<SYMBOL>
-
-# Run backtest
-poetry run quanttradeai backtest --config config/backtest_config.yaml
-poetry run quanttradeai backtest --cost-bps 5 --slippage-bps 10
 
 # Backtest a saved model (end-to-end)
 poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> \
@@ -161,7 +158,7 @@ X, y = classifier.prepare_data(df_labeled)
 classifier.train(X, y)
 
 # Save model
-classifier.save_model("models/trained/AAPL")
+classifier.save_model("models/promoted/aapl_daily_classifier")
 ```
 
 ### Backtesting

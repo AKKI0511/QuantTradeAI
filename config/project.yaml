@@ -47,6 +47,11 @@ research:
     costs:
       enabled: true
       bps: 5
+  promotion:
+    targets:
+      - name: aapl_daily_classifier
+        symbol: AAPL
+        path: models/promoted/aapl_daily_classifier
 
 agents: []
 

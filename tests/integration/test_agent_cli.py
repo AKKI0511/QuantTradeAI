@@ -415,7 +415,7 @@ def test_hybrid_agent_run_includes_model_signals(tmp_path: Path, monkeypatch):
     )
     assert init_result.exit_code == 0, init_result.stdout
 
-    model_dir = Path("models/trained/aapl_daily_classifier")
+    model_dir = Path("models/promoted/aapl_daily_classifier")
     model_dir.mkdir(parents=True, exist_ok=True)
 
     config_path = Path("config/project.yaml")
@@ -424,13 +424,6 @@ def test_hybrid_agent_run_includes_model_signals(tmp_path: Path, monkeypatch):
     config_payload["data"]["end_date"] = "2024-02-09"
     config_payload["data"]["test_start"] = "2024-01-26"
     config_payload["data"]["test_end"] = "2024-01-31"
-    config_payload["agents"][0]["model_signal_sources"] = [
-        {
-            "name": "aapl_daily_classifier",
-            "path": "models/trained/aapl_daily_classifier",
-        }
-    ]
-    config_payload["agents"][0]["context"]["model_signals"] = ["aapl_daily_classifier"]
     config_path.write_text(
         yaml.safe_dump(config_payload, sort_keys=False),
         encoding="utf-8",
@@ -1108,7 +1101,7 @@ def test_hybrid_agent_paper_run_includes_model_signals_in_decisions(
     )
     assert init_result.exit_code == 0, init_result.stdout
 
-    model_dir = Path("models/trained/aapl_daily_classifier")
+    model_dir = Path("models/promoted/aapl_daily_classifier")
     model_dir.mkdir(parents=True, exist_ok=True)
 
     config_path = Path("config/project.yaml")
@@ -1118,13 +1111,6 @@ def test_hybrid_agent_paper_run_includes_model_signals_in_decisions(
     config_payload["data"]["test_start"] = "2024-02-01"
     config_payload["data"]["test_end"] = "2024-02-09"
     config_payload["agents"][0]["mode"] = "paper"
-    config_payload["agents"][0]["model_signal_sources"] = [
-        {
-            "name": "aapl_daily_classifier",
-            "path": "models/trained/aapl_daily_classifier",
-        }
-    ]
-    config_payload["agents"][0]["context"]["model_signals"] = ["aapl_daily_classifier"]
     config_path.write_text(
         yaml.safe_dump(config_payload, sort_keys=False),
         encoding="utf-8",

@@ -141,6 +141,11 @@ research:
     use_configured_test_window: true
   backtest:
     costs: { enabled: true, bps: 5 }
+  promotion:
+    targets:
+      - name: "aapl_daily_classifier"
+        symbol: "AAPL"
+        path: "models/promoted/aapl_daily_classifier"
 
 agents:
   - name: "breakout_gpt"
@@ -170,7 +175,7 @@ agents:
     mode: "paper"
     model_signal_sources:
       - name: "aapl_daily_classifier"
-        path: "models/experiments/aapl_daily_classifier"
+        path: "models/promoted/aapl_daily_classifier"
     llm:
       provider: "openai"
       model: "gpt-5.3"
@@ -331,7 +336,9 @@ Status on 2026-04-10:
 - Rule-agent paper runs now persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, `decisions.jsonl`, and `executions.jsonl` under `runs/agent/paper/...`.
 - Live agent runs now persist resolved config, runtime streaming/risk/position-manager YAML snapshots, `summary.json`, `metrics.json`, `executions.jsonl`, and `decisions.jsonl` under `runs/agent/live/...`, with `prompt_samples.json` for `llm` and `hybrid`.
 - `quanttradeai runs list` is implemented for local research and agent run discovery.
-- `quanttradeai promote --run <run_id>` is implemented for successful agent backtest-to-paper promotion.
+- `quanttradeai promote --run research/<run_id> -c config/project.yaml` is implemented for successful research-model promotion into stable `models/...` paths, with `promotion_manifest.json` written in each promoted destination.
+- The `research` and `hybrid` templates now include `research.promotion.targets`, and the `hybrid` and `model-agent` templates are wired to stable `models/promoted/...` paths for the happy path.
+- `quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml` is implemented for successful agent backtest-to-paper promotion.
 - `quanttradeai promote --run agent/paper/<run_id> --to live --acknowledge-live <agent_name>` is implemented for successful paper-to-live promotion with an explicit safety acknowledgement.
 - Top-level `risk` and `position_manager` are now the canonical live safety/runtime sections in `config/project.yaml`.
 - `quanttradeai deploy --agent <name> -c config/project.yaml --target docker-compose` now generates a paper-agent deployment bundle with compose, Dockerfile, env placeholders, resolved config, and a deployment manifest.
@@ -402,10 +409,10 @@ The roadmap is only successful if these workflows feel excellent.
 ### Workflow C: Build a hybrid agent from research outputs
 
 1. Train a model in the research track.
-2. Reference that model's signals from an agent in the same project.
-3. Combine engineered features, model signals, and prompt context in one agent config.
-4. Run in paper mode.
-5. Promote to live with explicit operator acknowledgement.
+2. Promote the winning research artifact into a stable `models/promoted/...` path.
+3. Reference that model's signals from an agent in the same project.
+4. Combine engineered features, model signals, and prompt context in one agent config.
+5. Run in paper mode, then promote to live with explicit operator acknowledgement.
 
 ## Happy-Path CLI
 
@@ -420,7 +427,7 @@ quanttradeai init --template research -o config/project.yaml
 quanttradeai validate -c config/project.yaml
 quanttradeai research run -c config/project.yaml
 quanttradeai runs list
-quanttradeai promote --run <run_id>
+quanttradeai promote --run research/<run_id> -c config/project.yaml
 ```
 
 ### Agent track
@@ -429,6 +436,7 @@ quanttradeai promote --run <run_id>
 quanttradeai init --template model-agent -o config/project.yaml
 quanttradeai validate -c config/project.yaml
 quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
+quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
 quanttradeai promote --run agent/paper/<run_id> --to live --acknowledge-live paper_momentum
 quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode live
@@ -442,7 +450,11 @@ Current implementation note:
 
 ```bash
 quanttradeai init --template hybrid -o config/project.yaml
+quanttradeai validate -c config/project.yaml
 quanttradeai research run -c config/project.yaml
+quanttradeai promote --run research/<run_id> -c config/project.yaml
+quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode backtest
+quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
 quanttradeai promote --run agent/paper/<run_id> --to live --acknowledge-live hybrid_swing_agent
 quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode live

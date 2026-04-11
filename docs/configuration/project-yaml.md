@@ -8,7 +8,7 @@ It drives:
 - `quanttradeai validate`
 - `quanttradeai research run`
 - `quanttradeai agent run` for project-defined agents in `backtest`, `paper`, and `live`
-- `quanttradeai promote` for agent backtest-to-paper and paper-to-live promotion
+- `quanttradeai promote` for research-model promotion plus agent backtest-to-paper and paper-to-live promotion
 - `quanttradeai deploy` for docker-compose paper-agent bundles
 
 `live-trade` still uses the legacy runtime YAML files documented in [Runtime and Live Trading Configs](live-runtime-files.md).
@@ -21,6 +21,7 @@ It drives:
 poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
 ```
 
 ### Model Agents
@@ -35,7 +36,7 @@ poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yam
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode live
 ```
 
-The `model-agent` template also creates a placeholder model artifact at `models/trained/aapl_daily_classifier/README.md`. Replace that directory with a real saved model before you run the agent.
+The `model-agent` template also creates a placeholder model artifact at `models/promoted/aapl_daily_classifier/README.md`. Replace that directory with a promoted research model artifact or another compatible saved model before you run the agent.
 
 ### Rule Agents
 
@@ -63,6 +64,22 @@ poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --
 
 The `llm-agent` and `hybrid` templates also create starter prompt files under `prompts/` so validation can pass immediately.
 
+Hybrid projects add the research promotion handoff before agent runs:
+
+```bash
+poetry run quanttradeai init --template hybrid -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
+poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode backtest
+poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
+poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
+poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live hybrid_swing_agent
+poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode live
+```
+
+The default hybrid template already points `model_signal_sources` at `models/promoted/aapl_daily_classifier`, so the happy path does not require editing timestamped experiment directories.
+
 Current support:
 
 | Agent kind | Backtest | Paper | Live |
@@ -71,6 +88,14 @@ Current support:
 | `llm` | Yes | Yes | Yes |
 | `hybrid` | Yes | Yes | Yes |
 | `rule` | Yes | Yes | Yes |
+
+Successful research runs can promote trained model artifacts into stable project paths with:
+
+```bash
+poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
+```
+
+Research promotion copies the configured symbol artifact directories from the run's `artifacts.experiment_dir` into each `research.promotion.targets[].path` and writes a `promotion_manifest.json` file in each promoted destination.
 
 Successful agent backtest runs can be promoted to paper mode with:
 
@@ -84,6 +109,7 @@ Successful agent paper runs can be promoted to live mode with:
 poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live <agent_name>
 ```
 
+Research promotion updates model directories only and does not change `deployment.mode`.
 Paper promotion updates the matching agent's `mode` and `deployment.mode` to `paper`.
 Live promotion updates only the matching agent's `mode` to `live`. `deployment.mode` stays unchanged because live deployment is still out of scope for the canonical workflow.
 
@@ -150,13 +176,18 @@ research:
     use_configured_test_window: true
   backtest:
     costs: { enabled: true, bps: 5 }
+  promotion:
+    targets:
+      - name: "aapl_daily_classifier"
+        symbol: "AAPL"
+        path: "models/promoted/aapl_daily_classifier"
 
 agents:
   - name: "paper_momentum"
     kind: "model"
     mode: "paper"
     model:
-      path: "models/trained/aapl_daily_classifier"
+      path: "models/promoted/aapl_daily_classifier"
     context:
       features: ["rsi_14"]
       positions: true
@@ -315,6 +346,7 @@ The canonical research compiler reads:
 - `model`
 - `evaluation.use_configured_test_window`
 - `backtest.costs`
+- `promotion.targets`
 
 Practical notes:
 
@@ -322,6 +354,11 @@ Practical notes:
 - setting it to `false` clears those fields and lets the downstream research runtime fall back to its chronological split behavior
 - `model.tuning.enabled` and `model.tuning.trials` flow directly into the training run
 - `backtest.costs.bps` becomes the transaction cost setting in the compiled runtime backtest config
+- `promotion.targets` maps promoted symbol artifacts into stable project-relative destinations under `models/`
+- each promotion target requires `name`, `symbol`, and `path`
+- `promotion.targets[].symbol` must exist in `data.symbols`
+- `promotion.targets[].path` must be project-relative and resolve under `models/`
+- promotion target names and paths must be unique
 
 Even when `research.enabled` is `false`, the agent runtime still reuses these defaults to compile consistent runtime configs.
 
@@ -448,7 +485,8 @@ deployment:
 
 Behavior:
 
-- `quanttradeai promote --run <run_id>` updates `deployment.mode` to `paper` when promoting a successful agent backtest run
+- `quanttradeai promote --run research/<run_id> -c config/project.yaml` copies trained model artifacts into stable `models/...` destinations and writes `promotion_manifest.json`
+- `quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml` updates `deployment.mode` to `paper` when promoting a successful agent backtest run
 - `quanttradeai deploy --agent <name> -c config/project.yaml --target docker-compose` generates a bundle under `reports/deployments/<agent>/<timestamp>/`
 - generated bundles include `docker-compose.yml`, `Dockerfile`, `.env.example`, `README.md`, `resolved_project_config.yaml`, and `deployment_manifest.json`
 - generated compose services run `quanttradeai agent run --agent <name> -c config/project.yaml --mode paper`
@@ -506,6 +544,14 @@ Alongside `summary.json` and `metrics.json`, QuantTradeAI writes:
 - `runtime_features_config.yaml`
 - `runtime_backtest_config.yaml`
 - `backtest_summary.json` when automatic post-train backtests produce output
+
+Successful research runs also record `artifacts.experiment_dir` in `summary.json`, which is the source used by `quanttradeai promote --run research/<run_id>`.
+
+### `quanttradeai promote`
+
+Research promotion does not create a new run directory. It copies the configured symbol model directories into stable destinations under `models/` and writes `promotion_manifest.json` in each promoted destination.
+
+Agent promotion updates `config/project.yaml` in place. Backtest-to-paper promotion also updates `deployment.mode` to `paper`; paper-to-live promotion changes only the matching agent's mode.
 
 ### `quanttradeai agent run --mode backtest`
 

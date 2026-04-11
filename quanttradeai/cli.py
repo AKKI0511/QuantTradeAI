@@ -120,6 +120,15 @@ PROJECT_TEMPLATES = {
             },
             "evaluation": {"split": "time_aware", "use_configured_test_window": True},
             "backtest": {"costs": {"enabled": True, "bps": 5}},
+            "promotion": {
+                "targets": [
+                    {
+                        "name": "aapl_daily_classifier",
+                        "symbol": "AAPL",
+                        "path": "models/promoted/aapl_daily_classifier",
+                    }
+                ]
+            },
         },
         "agents": [],
         "deployment": {"target": "docker-compose", "mode": "paper"},
@@ -219,7 +228,7 @@ PROJECT_TEMPLATES = {
             "live": {"mode": "live"},
         },
         "data": {
-            "symbols": ["AAPL", "TSLA"],
+            "symbols": ["AAPL"],
             "start_date": "2018-01-01",
             "end_date": "2024-12-31",
             "timeframe": "1d",
@@ -230,7 +239,7 @@ PROJECT_TEMPLATES = {
                 "provider": "alpaca",
                 "websocket_url": "wss://stream.data.alpaca.markets/v2/iex",
                 "auth_method": "api_key",
-                "symbols": ["AAPL", "TSLA"],
+                "symbols": ["AAPL"],
                 "channels": ["trades", "quotes"],
                 "buffer_size": 1000,
                 "reconnect_attempts": 5,
@@ -260,6 +269,15 @@ PROJECT_TEMPLATES = {
             },
             "evaluation": {"split": "time_aware", "use_configured_test_window": True},
             "backtest": {"costs": {"enabled": True, "bps": 5}},
+            "promotion": {
+                "targets": [
+                    {
+                        "name": "aapl_daily_classifier",
+                        "symbol": "AAPL",
+                        "path": "models/promoted/aapl_daily_classifier",
+                    }
+                ]
+            },
         },
         "risk": {
             "drawdown_protection": {
@@ -292,7 +310,12 @@ PROJECT_TEMPLATES = {
                 "name": "hybrid_swing_agent",
                 "kind": "hybrid",
                 "mode": "paper",
-                "model_signal_sources": [],
+                "model_signal_sources": [
+                    {
+                        "name": "aapl_daily_classifier",
+                        "path": "models/promoted/aapl_daily_classifier",
+                    }
+                ],
                 "llm": {
                     "provider": "openai",
                     "model": "gpt-5.3",
@@ -300,7 +323,7 @@ PROJECT_TEMPLATES = {
                 },
                 "context": {
                     "features": ["rsi_14"],
-                    "model_signals": [],
+                    "model_signals": ["aapl_daily_classifier"],
                     "positions": True,
                 },
                 "tools": ["get_quote", "place_order"],
@@ -389,7 +412,7 @@ PROJECT_TEMPLATES = {
                 "name": "paper_momentum",
                 "kind": "model",
                 "mode": "paper",
-                "model": {"path": "models/trained/aapl_daily_classifier"},
+                "model": {"path": "models/promoted/aapl_daily_classifier"},
                 "context": {
                     "features": ["rsi_14"],
                     "positions": True,
@@ -507,9 +530,13 @@ Review the provided market data, engineered features, current position state, ri
 Treat model signals as one input, not an automatic order.
 Use the available tools only as reference context; do not invent tool output.
 """,
+        "models/promoted/aapl_daily_classifier/README.md": """# Placeholder Model Artifact
+
+Replace this directory with a promoted research model artifact before running the hybrid agent.
+""",
     },
     "model-agent": {
-        "models/trained/aapl_daily_classifier/README.md": """# Placeholder Model Artifact
+        "models/promoted/aapl_daily_classifier/README.md": """# Placeholder Model Artifact
 
 Replace this directory with a trained model artifact before running the model agent.
 """
@@ -1214,7 +1241,9 @@ def cmd_runs_list(
 @app.command("promote")
 def cmd_promote(
     run: str = typer.Option(
-        ..., "--run", help="Run id to promote, for example agent/backtest/<run>"
+        ...,
+        "--run",
+        help="Run id to promote, for example research/<run> or agent/backtest/<run>",
     ),
     config: str = typer.Option(
         "config/project.yaml", "-c", "--config", help="Path to project config YAML"
@@ -1235,12 +1264,12 @@ def cmd_promote(
         help="Required for --to live. Must exactly match the agent name being promoted.",
     ),
 ):
-    """Promote a successful agent run to the next supported mode."""
+    """Promote a successful research or agent run in the canonical workflow."""
 
-    from .utils.promotion import promote_agent_run
+    from .utils.promotion import promote_run
 
     try:
-        result = promote_agent_run(
+        result = promote_run(
             run_id=run,
             config_path=config,
             target_mode=target,
