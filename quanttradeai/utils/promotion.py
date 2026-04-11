@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import posixpath
 import shutil
 import tempfile
 from datetime import datetime, timezone
@@ -270,7 +271,7 @@ def _resolve_research_promotion_targets(
             )
         seen_names.add(target["name"])
 
-        normalized_path = Path(target["path"]).as_posix()
+        normalized_path = posixpath.normpath(Path(target["path"]).as_posix())
         if normalized_path in seen_paths:
             raise ValueError(
                 "research promotion target paths must be unique. "

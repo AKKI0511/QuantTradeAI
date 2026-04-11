@@ -512,6 +512,42 @@ def test_promote_research_run_rejects_incompatible_flags_and_missing_artifacts(
         assert not (destination_dir / "promotion_manifest.json").exists()
 
 
+def test_promote_research_run_rejects_canonical_duplicate_target_paths(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = Path("config/project.yaml")
+    payload = _write_research_project_config(config_path)
+    payload["research"]["promotion"]["targets"].append(
+        {
+            "name": "aapl_daily_classifier_alias",
+            "symbol": "AAPL",
+            "path": "models/promoted/../promoted/aapl_daily_classifier",
+        }
+    )
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+    run_id = "research/20260101_010000_research_lab"
+    _write_run_summary(
+        run_id=run_id,
+        run_type="research",
+        mode="research",
+        agent_name=None,
+        artifacts={"experiment_dir": "models/experiments/20260101_010000"},
+    )
+
+    result = runner.invoke(
+        app,
+        ["promote", "--run", run_id, "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 1
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert "research promotion target paths must be unique" in combined_output
+    assert "models/promoted/aapl_daily_classifier" in combined_output
+
+
 def test_promote_requires_streaming_before_writing_paper_config(
     tmp_path: Path,
     monkeypatch,
