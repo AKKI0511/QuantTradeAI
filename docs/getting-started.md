@@ -115,6 +115,31 @@ The hybrid template already points `model_signal_sources` at `models/promoted/aa
 
 Deployment bundles for project-defined paper agents are written under `reports/deployments/<agent>/<timestamp>/`.
 
+## Workflow 4: Multi-Agent Backtest Batch
+
+Use this when one `config/project.yaml` already defines several agents and you want one local batch run across all of them.
+
+```bash
+poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest --max-concurrency 4
+```
+
+This workflow:
+
+- validates the project before enumeration
+- runs every configured agent through the existing backtest path
+- preserves the normal child runs under `runs/agent/backtest/...`
+- adds batch-level artifacts under `runs/agent/batches/<timestamp>_<project>_backtest/`
+
+Batch artifacts include:
+
+- `batch_manifest.json`
+- `results.json`
+- `scoreboard.json`
+- `scoreboard.txt`
+
+The batch workflow is backtest-only in this release. Paper and live still run one agent at a time.
+
 ## Legacy Runtime Workflows
 
 These remain supported:

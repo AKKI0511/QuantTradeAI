@@ -352,7 +352,8 @@ Make running many agents and many experiments on one machine easy and trustworth
 Status on 2026-04-11:
 
 - `quanttradeai runs list --scoreboard` is implemented for local research and agent runs, with metric-aware sorting via `--sort-by` and additive JSON scoreboard payloads.
-- Multi-agent orchestration, parameter sweeps, and richer comparison workflows remain future Stage 2 work.
+- `quanttradeai agent run --all -c config/project.yaml --mode backtest` is implemented for local multi-agent backtest batches, with bounded concurrency, preserved child runs, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
+- Parameter sweeps, paper/live multi-agent orchestration, and richer comparison workflows remain future Stage 2 work.
 
 Deliverables:
 

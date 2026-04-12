@@ -193,9 +193,12 @@ def _initialize_model_agent_run(
 
 
 def _start_model_agent_run(
-    *, agent_name: str, mode: str
+    *,
+    agent_name: str,
+    mode: str,
+    run_timestamp: str | None = None,
 ) -> tuple[Path, dict[str, Any]]:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = run_timestamp or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     run_dir, run_id = create_run_dir(
         run_type="agent",
         mode=mode,
@@ -250,10 +253,15 @@ def run_model_agent_backtest(
     project_config_path: str = "config/project.yaml",
     agent_name: str,
     skip_validation: bool = False,
+    run_timestamp: str | None = None,
 ) -> dict[str, Any]:
     """Run a model agent over the configured backtest window."""
 
-    run_dir, summary = _start_model_agent_run(agent_name=agent_name, mode="backtest")
+    run_dir, summary = _start_model_agent_run(
+        agent_name=agent_name,
+        mode="backtest",
+        run_timestamp=run_timestamp,
+    )
 
     try:
         (
@@ -521,6 +529,7 @@ def run_model_agent_paper(
     *,
     project_config_path: str = "config/project.yaml",
     agent_name: str,
+    run_timestamp: str | None = None,
 ) -> dict[str, Any]:
     """Run a model agent in paper mode using the live trading engine."""
 
@@ -528,6 +537,7 @@ def run_model_agent_paper(
         project_config_path=project_config_path,
         agent_name=agent_name,
         mode="paper",
+        run_timestamp=run_timestamp,
     )
 
 
@@ -535,6 +545,7 @@ def run_model_agent_live(
     *,
     project_config_path: str = "config/project.yaml",
     agent_name: str,
+    run_timestamp: str | None = None,
 ) -> dict[str, Any]:
     """Run a model agent in live mode using the live trading engine."""
 
@@ -542,6 +553,7 @@ def run_model_agent_live(
         project_config_path=project_config_path,
         agent_name=agent_name,
         mode="live",
+        run_timestamp=run_timestamp,
     )
 
 
@@ -550,10 +562,15 @@ def _run_model_agent_streaming(
     project_config_path: str,
     agent_name: str,
     mode: str,
+    run_timestamp: str | None = None,
 ) -> dict[str, Any]:
     """Run a model agent in paper or live mode using the live trading engine."""
 
-    run_dir, summary = _start_model_agent_run(agent_name=agent_name, mode=mode)
+    run_dir, summary = _start_model_agent_run(
+        agent_name=agent_name,
+        mode=mode,
+        run_timestamp=run_timestamp,
+    )
 
     try:
         (

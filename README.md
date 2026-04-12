@@ -34,6 +34,7 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 | Run a trained model as an agent | `init --template model-agent` -> `validate` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | One YAML-defined model agent wired to a stable `models/promoted/...` path that can be backtested, promoted, paper-run, and live-run |
 | Run an LLM agent | `init --template llm-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Prompt-driven agent logic using project config across all three modes |
 | Run a hybrid agent | `init --template hybrid` -> `research run` -> `promote --run research/<run_id>` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Model signals plus LLM reasoning in one project, with research outputs promoted into a stable path before the agent is promoted through environments |
+| Backtest every project agent together | `agent run --all --mode backtest --max-concurrency 4` | A local multi-agent backtest batch with preserved child runs plus batch-level manifests and scoreboards |
 | Generate a Docker Compose deployment bundle | `deploy --agent <name> --target docker-compose` | A paper-agent bundle with compose, Dockerfile, env placeholders, and resolved config |
 | Keep using the older live loop | `live-trade` with runtime YAML files | Legacy compatibility for existing setups |
 
@@ -202,6 +203,24 @@ poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.y
 ```
 
 The default hybrid template is prewired to `models/promoted/aapl_daily_classifier`, so you do not need to hand-edit timestamped experiment paths after the research run.
+
+### Backtest Every Project Agent
+
+Use this when one `config/project.yaml` defines several agents and you want one local batch run that keeps the normal child backtest runs intact.
+
+```bash
+poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest --max-concurrency 4
+```
+
+This writes batch artifacts under `runs/agent/batches/<timestamp>_<project>_backtest/`:
+
+- `batch_manifest.json`
+- `results.json`
+- `scoreboard.json`
+- `scoreboard.txt`
+
+Each child agent still writes its normal run under `runs/agent/backtest/...`, so `quanttradeai runs list --scoreboard` continues to work without a separate comparison path.
 
 ### Deploy A Paper Agent
 
