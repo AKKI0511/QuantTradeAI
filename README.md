@@ -106,6 +106,7 @@ poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai runs list
+poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
 ```
 
 This path gives you:
@@ -114,6 +115,7 @@ This path gives you:
 - resolved-config validation output
 - a research run with metrics and artifacts
 - standardized outputs under `runs/research/...`
+- a quick scoreboard view for ranking local runs by the metrics that matter
 
 To make a winning research artifact available to model or hybrid agents through a stable path:
 
@@ -261,6 +263,14 @@ For the full shape, field reference, and supported agent modes, see [Project YAM
 | Agent live | `runs/agent/live/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime streaming/risk/position-manager YAML snapshots |
 
 This makes it easier to compare runs, audit what actually executed, and reuse winning configurations.
+
+To compare local runs directly from the CLI, use the metrics-aware scoreboard:
+
+```bash
+poetry run quanttradeai runs list --scoreboard
+poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
+poetry run quanttradeai runs list --type agent --mode live --scoreboard --sort-by total_pnl
+```
 
 ## Documentation Map
 

@@ -16,7 +16,8 @@ Thanks for your interest in contributing! This guide covers setup, workflow, and
    - Test: `make test`
 4. Optional: quick sanity run
    - CLI help: `poetry run quanttradeai --help`
-   - Pipeline: `poetry run quanttradeai train -c config/model_config.yaml`
+   - Canonical research workflow: `poetry run quanttradeai validate -c config/project.yaml`
+   - Run comparison: `poetry run quanttradeai runs list --scoreboard`
 
 ## Style & Conventions
 - Formatting: Black (line length 88); lint: Flake8 (see `.flake8`).
@@ -30,7 +31,7 @@ Thanks for your interest in contributing! This guide covers setup, workflow, and
 
 ## Configuration & Secrets
 - Keep credentials in env vars (e.g., `OPENAI_API_KEY`); do not commit `.env`.
-- Use YAML in `config/` to change behavior; validate with `verify_config_loading.py` if modified.
+- Use YAML in `config/` to change behavior; validate canonical project changes with `poetry run quanttradeai validate -c config/project.yaml`.
 
 ## Getting Help
 - Check `README.md` and `docs/` for usage details.

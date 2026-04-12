@@ -16,6 +16,7 @@ poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
 poetry run quanttradeai runs list
+poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
 
 # Run a YAML-defined llm or hybrid agent
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
@@ -270,6 +271,7 @@ Use these pages instead of copying large config blocks out of the quick referenc
 Quick decision rule:
 
 - Use `config/project.yaml` for `validate`, `research run`, and `agent run`
+- Use `quanttradeai runs list --scoreboard` to compare local research and agent runs by metrics
 - Use the runtime YAML files for `live-trade`, `backtest-model`, and operational streaming setup
 
 ## Time-Aware Splitting
