@@ -188,3 +188,24 @@ def test_load_scoreboard_record_handles_malformed_metrics_file(tmp_path: Path):
     assert scoreboard["status"] == "invalid"
     assert "Invalid JSON artifact" in scoreboard["error"]
     assert scoreboard["primary_metric"] is None
+
+
+def test_load_scoreboard_record_resolves_relative_metrics_artifact_from_run_dir(
+    tmp_path: Path,
+):
+    record = _write_run_bundle(
+        tmp_path / "runs",
+        run_type="research",
+        mode="research",
+        metrics_payload={
+            "status": "available",
+            "research_metrics_by_symbol": {"AAPL": {"accuracy": 0.9}},
+        },
+    )
+    record["artifacts"] = {"metrics": "metrics.json"}
+
+    scoreboard = load_scoreboard_record(record)
+
+    assert scoreboard["status"] == "available"
+    assert scoreboard["accuracy"] == 0.9
+    assert scoreboard["metrics_path"] == str(Path(record["run_dir"]) / "metrics.json")

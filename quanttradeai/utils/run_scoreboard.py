@@ -93,11 +93,15 @@ def _normalize_risk_status(value: Any) -> str | None:
 
 
 def _resolve_metrics_path(record: dict[str, Any]) -> Path:
+    run_dir = Path(str(record.get("run_dir") or ""))
     artifacts = dict(record.get("artifacts") or {})
     metrics_path = artifacts.get("metrics")
     if metrics_path:
-        return Path(str(metrics_path))
-    return Path(str(record.get("run_dir") or "")) / "metrics.json"
+        candidate = Path(str(metrics_path))
+        if candidate.is_absolute():
+            return candidate
+        return run_dir / candidate
+    return run_dir / "metrics.json"
 
 
 def _resolve_summary_path(record: dict[str, Any]) -> Path:
