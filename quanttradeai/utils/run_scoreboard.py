@@ -92,6 +92,13 @@ def _normalize_risk_status(value: Any) -> str | None:
     return str(value)
 
 
+def _first_non_none(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
 def _resolve_metrics_path(record: dict[str, Any]) -> Path:
     run_dir = Path(str(record.get("run_dir") or ""))
     artifacts = dict(record.get("artifacts") or {})
@@ -170,9 +177,10 @@ def load_scoreboard_record(record: dict[str, Any]) -> dict[str, Any]:
         scoreboard["net_sharpe"] = _coerce_float(metrics_payload.get("net_sharpe"))
         scoreboard["net_pnl"] = _coerce_float(metrics_payload.get("net_pnl"))
         scoreboard["net_mdd"] = _coerce_float(metrics_payload.get("net_mdd"))
-        scoreboard["decision_count"] = _coerce_int(
-            summary_payload.get("decision_count")
-        ) or _coerce_int(metrics_payload.get("decision_count"))
+        scoreboard["decision_count"] = _first_non_none(
+            _coerce_int(summary_payload.get("decision_count")),
+            _coerce_int(metrics_payload.get("decision_count")),
+        )
         if scoreboard["net_sharpe"] is not None:
             scoreboard["primary_metric_name"] = "net_sharpe"
             scoreboard["primary_metric"] = scoreboard["net_sharpe"]
@@ -183,12 +191,14 @@ def load_scoreboard_record(record: dict[str, Any]) -> dict[str, Any]:
         scoreboard["portfolio_value"] = _coerce_float(
             metrics_payload.get("portfolio_value")
         )
-        scoreboard["execution_count"] = _coerce_int(
-            metrics_payload.get("execution_count")
-        ) or _coerce_int(summary_payload.get("execution_count"))
-        scoreboard["decision_count"] = _coerce_int(
-            metrics_payload.get("decision_count")
-        ) or _coerce_int(summary_payload.get("decision_count"))
+        scoreboard["execution_count"] = _first_non_none(
+            _coerce_int(metrics_payload.get("execution_count")),
+            _coerce_int(summary_payload.get("execution_count")),
+        )
+        scoreboard["decision_count"] = _first_non_none(
+            _coerce_int(metrics_payload.get("decision_count")),
+            _coerce_int(summary_payload.get("decision_count")),
+        )
         scoreboard["risk_status"] = _normalize_risk_status(
             metrics_payload.get("risk_status")
         )

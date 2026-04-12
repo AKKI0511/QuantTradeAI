@@ -130,6 +130,25 @@ def test_load_scoreboard_record_for_agent_backtest_uses_aggregate_metrics(
     assert scoreboard["primary_metric"] == 1.25
 
 
+def test_load_scoreboard_record_for_agent_backtest_preserves_zero_decision_count(
+    tmp_path: Path,
+):
+    record = _write_run_bundle(
+        tmp_path / "runs",
+        run_type="agent",
+        mode="backtest",
+        metrics_payload={
+            "net_sharpe": 0.5,
+            "decision_count": None,
+        },
+        summary_payload={"decision_count": 0},
+    )
+
+    scoreboard = load_scoreboard_record(record)
+
+    assert scoreboard["decision_count"] == 0
+
+
 def test_load_scoreboard_record_for_agent_paper_or_live_exposes_streaming_metrics(
     tmp_path: Path,
 ):
