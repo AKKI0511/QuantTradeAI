@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import re
 from unittest.mock import patch
 
 import yaml
@@ -9,6 +10,12 @@ from quanttradeai.cli import PROJECT_TEMPLATES, app
 
 
 runner = CliRunner()
+
+
+def _normalize_cli_output(stdout: str, stderr: str) -> str:
+    combined = f"{stdout}\n{stderr}"
+    combined = re.sub(r"\x1b\[[0-9;]*m", "", combined)
+    return " ".join(combined.lower().split())
 
 
 def _write_project_with_all_agent_kinds(config_path: Path) -> None:
@@ -55,8 +62,8 @@ def test_agent_run_requires_exactly_one_of_agent_or_all(tmp_path: Path, monkeypa
 
     neither = runner.invoke(app, ["agent", "run", "--config", str(config_path)])
     assert neither.exit_code == 2
-    neither_output = f"{neither.stdout}\n{neither.stderr}".lower()
-    assert "exactly one of --agent or --all" in neither_output
+    neither_output = _normalize_cli_output(neither.stdout, neither.stderr)
+    assert "choose exactly one of --agent or --all" in neither_output
 
     both = runner.invoke(
         app,
@@ -71,8 +78,8 @@ def test_agent_run_requires_exactly_one_of_agent_or_all(tmp_path: Path, monkeypa
         ],
     )
     assert both.exit_code == 2
-    both_output = f"{both.stdout}\n{both.stderr}".lower()
-    assert "exactly one of --agent or --all" in both_output
+    both_output = _normalize_cli_output(both.stdout, both.stderr)
+    assert "choose exactly one of --agent or --all" in both_output
 
 
 def test_agent_run_all_rejects_non_backtest_modes(tmp_path: Path, monkeypatch):
