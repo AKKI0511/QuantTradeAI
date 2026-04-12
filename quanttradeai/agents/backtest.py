@@ -163,6 +163,7 @@ def run_agent_backtest(
     agent_name: str,
     mode: str = "backtest",
     skip_validation: bool = False,
+    run_timestamp: str | None = None,
 ) -> dict[str, Any]:
     """Run a rule, LLM, or hybrid agent over the configured backtest window."""
 
@@ -171,7 +172,7 @@ def run_agent_backtest(
             "Only --mode backtest is implemented for agent runs at this stage."
         )
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = run_timestamp or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     run_dir, run_id = create_run_dir(
         run_type="agent",
         mode=mode,

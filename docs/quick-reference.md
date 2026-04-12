@@ -26,6 +26,10 @@ poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
 
+# Backtest every configured project agent together
+poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest --max-concurrency 4
+
 # Generate a Docker Compose bundle for the paper agent
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
 
@@ -95,6 +99,12 @@ Canonical deployment bundle artifacts:
 - `reports/deployments/<agent>/<timestamp>/README.md`
 - `reports/deployments/<agent>/<timestamp>/resolved_project_config.yaml`
 - `reports/deployments/<agent>/<timestamp>/deployment_manifest.json`
+
+Canonical multi-agent batch artifacts:
+- `runs/agent/batches/<timestamp>_<project>_backtest/batch_manifest.json`
+- `runs/agent/batches/<timestamp>_<project>_backtest/results.json`
+- `runs/agent/batches/<timestamp>_<project>_backtest/scoreboard.json`
+- `runs/agent/batches/<timestamp>_<project>_backtest/scoreboard.txt`
 
 ## Python API Patterns
 

@@ -107,6 +107,8 @@ def _resolve_metrics_path(record: dict[str, Any]) -> Path:
         candidate = Path(str(metrics_path))
         if candidate.is_absolute():
             return candidate
+        if run_dir.parts and candidate.parts[: len(run_dir.parts)] == run_dir.parts:
+            return candidate
         return run_dir / candidate
     return run_dir / "metrics.json"
 

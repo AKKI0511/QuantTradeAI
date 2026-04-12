@@ -539,3 +539,24 @@ def test_runs_list_scoreboard_json_includes_additive_scoreboard_payload(
     assert payload[0]["scoreboard"]["net_sharpe"] == 1.25
     assert "scoreboard" in payload[1]
     assert payload[1]["scoreboard"]["accuracy"] == 0.8
+
+
+def test_runs_list_ignores_batch_artifacts_without_child_run_summaries(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    runs_root = Path("runs")
+    _seed_runs(runs_root)
+
+    batch_root = runs_root / "agent" / "batches" / "20260101_000000_multi_agent_backtest"
+    batch_root.mkdir(parents=True, exist_ok=True)
+    (batch_root / "batch_manifest.json").write_text("{}", encoding="utf-8")
+    (batch_root / "results.json").write_text("{}", encoding="utf-8")
+    (batch_root / "scoreboard.json").write_text("{}", encoding="utf-8")
+    (batch_root / "scoreboard.txt").write_text("placeholder", encoding="utf-8")
+
+    result = runner.invoke(app, ["runs", "list", "--json"])
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert all("batches" not in record["run_dir"] for record in payload)

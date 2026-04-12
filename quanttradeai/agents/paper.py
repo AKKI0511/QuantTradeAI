@@ -855,6 +855,7 @@ def run_agent_paper(
     *,
     project_config_path: str = "config/project.yaml",
     agent_name: str,
+    run_timestamp: str | None = None,
 ) -> dict[str, Any]:
     """Run a rule, LLM, or hybrid agent in paper mode using streaming input."""
 
@@ -862,6 +863,7 @@ def run_agent_paper(
         project_config_path=project_config_path,
         agent_name=agent_name,
         mode="paper",
+        run_timestamp=run_timestamp,
     )
 
 
@@ -869,6 +871,7 @@ def run_agent_live(
     *,
     project_config_path: str = "config/project.yaml",
     agent_name: str,
+    run_timestamp: str | None = None,
 ) -> dict[str, Any]:
     """Run a rule, LLM, or hybrid agent in live mode using streaming input."""
 
@@ -876,6 +879,7 @@ def run_agent_live(
         project_config_path=project_config_path,
         agent_name=agent_name,
         mode="live",
+        run_timestamp=run_timestamp,
     )
 
 
@@ -884,10 +888,11 @@ def _run_agent_streaming(
     project_config_path: str,
     agent_name: str,
     mode: str,
+    run_timestamp: str | None = None,
 ) -> dict[str, Any]:
     """Run a rule, LLM, or hybrid agent in paper or live mode using streaming input."""
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = run_timestamp or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     run_dir, run_id = create_run_dir(
         run_type="agent",
         mode=mode,

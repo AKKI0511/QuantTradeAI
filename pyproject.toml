@@ -1,7 +1,7 @@
 [project]
 name = "quanttradeai"
 version = "0.1.0"
-description = "A machine learning framework for quantitative trading strategies"
+description = "Quant research workflows and trading agents from one YAML project"
 authors = [
     {name = "Akshat Joshi",email = "joshiakshat0511@gmail.com"}
 ]

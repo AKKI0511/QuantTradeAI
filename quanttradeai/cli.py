@@ -1384,7 +1384,16 @@ def cmd_deploy(
 
 @agent_app.command("run")
 def cmd_agent_run(
-    agent: str = typer.Option(..., "--agent", help="Agent name from project config"),
+    agent: Optional[str] = typer.Option(
+        None,
+        "--agent",
+        help="Agent name from project config",
+    ),
+    run_all: bool = typer.Option(
+        False,
+        "--all",
+        help="Run every project-defined agent. Backtest mode only in this release.",
+    ),
     config: str = typer.Option(
         "config/project.yaml", "-c", "--config", help="Path to project config YAML"
     ),
@@ -1398,102 +1407,47 @@ def cmd_agent_run(
         "--skip-validation",
         help="Skip data-quality validation before backtesting",
     ),
+    max_concurrency: int = typer.Option(
+        1,
+        "--max-concurrency",
+        min=1,
+        help="Maximum concurrent child runs when using --all.",
+    ),
 ):
     """Run a first-class project agent in backtest, paper, or live mode."""
 
-    from .agents.backtest import run_agent_backtest
-    from .agents.model_agent import (
-        run_model_agent_backtest,
-        run_model_agent_live,
-        run_model_agent_paper,
-    )
-    from .agents.paper import run_agent_live, run_agent_paper
+    from .agents.batch import run_agent_backtest_batch
+    from .agents.runner import run_project_agent
+
+    if bool(agent) == bool(run_all):
+        raise typer.BadParameter("Choose exactly one of --agent or --all.")
 
     try:
-        loaded_project = load_project_config(config_path=config)
-        agent_config = next(
-            (
-                dict(item)
-                for item in loaded_project.raw.get("agents") or []
-                if item.get("name") == agent
-            ),
-            None,
-        )
-        if agent_config is None:
-            raise ValueError(f"Agent '{agent}' not found in project config.")
-
-        configured_mode = str(agent_config.get("mode") or "").strip().lower()
-        if mode == "live":
-            if skip_validation:
-                raise ValueError(
-                    "--skip-validation is not supported for live agent runs."
-                )
-            if configured_mode != "live":
-                raise ValueError(
-                    f"Agent '{agent}' must be configured with mode=live before running `quanttradeai agent run --mode live`."
-                )
-        elif configured_mode and configured_mode != mode:
-            typer.echo(
-                f"Warning: agent '{agent}' is configured with mode={configured_mode} but CLI requested mode={mode}; continuing with CLI mode.",
-                err=True,
+        if run_all:
+            if mode != "backtest":
+                raise ValueError("--all currently supports only --mode backtest.")
+            batch_result = run_agent_backtest_batch(
+                project_config_path=config,
+                skip_validation=skip_validation,
+                max_concurrency=max_concurrency,
             )
+            typer.echo(f"Agent batch completed: {batch_result['run_dir']}")
+            typer.echo(json.dumps(batch_result, indent=2))
+            if batch_result["status"] != "success":
+                raise typer.Exit(code=1)
+            return
 
-        agent_kind = agent_config.get("kind")
-        if agent_kind == "model":
-            if mode == "backtest":
-                summary = run_model_agent_backtest(
-                    project_config_path=config,
-                    agent_name=agent,
-                    skip_validation=skip_validation,
-                )
-            elif mode == "paper":
-                if skip_validation:
-                    typer.echo(
-                        "Warning: --skip-validation is ignored for model agent paper runs.",
-                        err=True,
-                    )
-                summary = run_model_agent_paper(
-                    project_config_path=config,
-                    agent_name=agent,
-                )
-            elif mode == "live":
-                summary = run_model_agent_live(
-                    project_config_path=config,
-                    agent_name=agent,
-                )
-            else:
-                raise ValueError(
-                    "Model agents currently support only --mode backtest, --mode paper, or --mode live."
-                )
-        elif agent_kind in {"llm", "hybrid", "rule"}:
-            if mode == "backtest":
-                summary = run_agent_backtest(
-                    project_config_path=config,
-                    agent_name=agent,
-                    mode=mode,
-                    skip_validation=skip_validation,
-                )
-            elif mode == "paper":
-                if skip_validation:
-                    typer.echo(
-                        "Warning: --skip-validation is ignored for rule/llm/hybrid agent paper runs.",
-                        err=True,
-                    )
-                summary = run_agent_paper(
-                    project_config_path=config,
-                    agent_name=agent,
-                )
-            elif mode == "live":
-                summary = run_agent_live(
-                    project_config_path=config,
-                    agent_name=agent,
-                )
-            else:
-                raise ValueError(
-                    "Rule, LLM, and hybrid agents currently support only --mode backtest, --mode paper, or --mode live."
-                )
-        else:
-            raise ValueError(f"Unsupported agent kind: {agent_kind}")
+        assert agent is not None
+        summary, warnings = run_project_agent(
+            project_config_path=config,
+            agent_name=agent,
+            mode=mode,
+            skip_validation=skip_validation,
+        )
+        for warning in warnings:
+            typer.echo(warning, err=True)
+    except typer.Exit:
+        raise
     except Exception as exc:
         typer.echo(f"Agent run failed: {exc}", err=True)
         raise typer.Exit(code=1)
