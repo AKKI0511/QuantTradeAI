@@ -160,6 +160,7 @@ def test_agent_run_all_writes_batch_artifacts_and_sorts_scoreboard(
     ):
         assert mode == "backtest"
         assert run_timestamp is not None
+        assert Path(project_config_path).resolve() == config_path.resolve()
         run_dir = (
             Path("runs")
             / "agent"

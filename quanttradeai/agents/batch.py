@@ -83,9 +83,10 @@ def run_agent_backtest_batch(
         raise ValueError("--max-concurrency must be at least 1.")
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    loaded_project = load_project_config(config_path=project_config_path)
+    original_project_path = Path(project_config_path).resolve()
+    loaded_project = load_project_config(config_path=original_project_path)
     project_name = (loaded_project.raw.get("project") or {}).get("name") or Path(
-        project_config_path
+        original_project_path
     ).stem
     batch_dir = (
         Path("runs")
@@ -96,7 +97,7 @@ def run_agent_backtest_batch(
     batch_dir.mkdir(parents=True, exist_ok=True)
 
     validation = validate_project_config(
-        config_path=project_config_path,
+        config_path=original_project_path,
         output_dir=batch_dir / "validation",
         timestamp_subdir=False,
     )
@@ -131,7 +132,7 @@ def run_agent_backtest_batch(
 
         try:
             summary, warnings = run_project_agent(
-                project_config_path=str(resolved_project_path),
+                project_config_path=str(original_project_path),
                 agent_name=agent_name,
                 mode="backtest",
                 skip_validation=skip_validation,
@@ -244,7 +245,7 @@ def run_agent_backtest_batch(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "status": batch_status,
         "project_name": project_name,
-        "project_config_path": str(project_config_path),
+        "project_config_path": str(original_project_path),
         "resolved_project_config": str(resolved_project_path),
         "mode": "backtest",
         "max_concurrency": max_concurrency,
