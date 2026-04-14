@@ -36,7 +36,7 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 | Run a hybrid agent | `init --template hybrid` -> `research run` -> `promote --run research/<run_id>` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Model signals plus LLM reasoning in one project, with research outputs promoted into a stable path before the agent is promoted through environments |
 | Backtest every project agent together | `agent run --all --mode backtest --max-concurrency 4` | A local multi-agent backtest batch with preserved child runs plus batch-level manifests and scoreboards |
 | Sweep one agent across parameter variants | `agent run --sweep rsi_threshold_grid --mode backtest --max-concurrency 4` | A local sweep batch that expands one agent into many backtest variants, preserves normal child runs, and ranks them with the same scoreboard flow |
-| Generate a Docker Compose deployment bundle | `deploy --agent <name> --target docker-compose` | A paper-agent bundle with compose, Dockerfile, env placeholders, and resolved config |
+| Generate a Docker Compose deployment bundle | `deploy --agent <name> --target docker-compose` | A real-time paper-agent bundle with compose, Dockerfile, env placeholders, and resolved config |
 | Keep using the older live loop | `live-trade` with runtime YAML files | Legacy compatibility for existing setups |
 
 ## How It Fits Together
@@ -99,6 +99,8 @@ poetry run quanttradeai --help
 If you prefer a package install, `pip install .` also works.
 
 ## Fastest Working Paths
+
+Local `agent run --mode paper` now defaults to deterministic historical replay through `data.streaming.replay`. If you do not set explicit replay dates, QuantTradeAI uses `data.test_start` and `data.test_end`, then falls back to `data.start_date` and `data.end_date`.
 
 ### Research In 4 Commands
 
@@ -268,6 +270,8 @@ This writes a deployment bundle under `reports/deployments/<agent>/<timestamp>/`
 - `resolved_project_config.yaml`
 - `deployment_manifest.json`
 
+Generated deployment bundles always disable replay in the emitted resolved project config and expect real-time streaming credentials. Local replay-backed paper runs stay unchanged in your source `config/project.yaml`.
+
 ## What A Project Looks Like
 
 The happy path is centered on `config/project.yaml`.
@@ -284,6 +288,16 @@ data:
   timeframe: "1d"
   test_start: "2024-09-01"
   test_end: "2024-12-31"
+  streaming:
+    enabled: true
+    provider: "alpaca"
+    websocket_url: "wss://stream.data.alpaca.markets/v2/iex"
+    auth_method: "api_key"
+    symbols: ["AAPL"]
+    channels: ["trades", "quotes"]
+    replay:
+      enabled: true
+      pace_delay_ms: 0
 
 features:
   definitions:
@@ -307,7 +321,7 @@ For the full shape, field reference, and supported agent modes, see [Project YAM
 | --- | --- | --- |
 | Research | `runs/research/<timestamp>_<project>/` | `resolved_project_config.yaml`, runtime YAML snapshots, `summary.json`, `metrics.json`, backtest artifacts |
 | Agent backtest | `runs/agent/backtest/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, backtest files |
-| Agent paper | `runs/agent/paper/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime YAML snapshots |
+| Agent paper | `runs/agent/paper/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime YAML snapshots, and `replay_manifest.json` when replay is enabled |
 | Agent live | `runs/agent/live/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime streaming/risk/position-manager YAML snapshots |
 
 Sweep batch artifacts:
@@ -365,8 +379,9 @@ poetry run quanttradeai validate-config
 
 Important boundary:
 
-- `agent run --mode paper` for project-defined `model` agents compiles runtime config from `config/project.yaml`
+- `agent run --mode paper` for project-defined agents uses replay from `config/project.yaml` when `data.streaming.replay.enabled: true`
 - `agent run --mode live` for project-defined `rule`, `model`, `llm`, and `hybrid` agents compiles runtime config from `config/project.yaml`
+- `deploy --target docker-compose` generates a real-time paper bundle and disables replay in the emitted deployment config
 - `live-trade` still uses the legacy runtime YAML files directly
 
 ## Development

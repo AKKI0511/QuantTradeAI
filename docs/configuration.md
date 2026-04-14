@@ -1,6 +1,6 @@
 # Configuration
 
-QuantTradeAI has one **canonical project config** for research and agent backtests, plus a set of **runtime YAML files** that still power live trading and some compatibility workflows.
+QuantTradeAI has one **canonical project config** for research and project-defined agents, plus a set of **runtime YAML files** that still power `live-trade` and some compatibility workflows.
 
 > Start with `config/project.yaml` if you are building a new research or agent workflow.
 > Use the runtime YAMLs when you are running `live-trade`, saved-model backtests, or migrating older setups.
@@ -24,6 +24,20 @@ QuantTradeAI has one **canonical project config** for research and agent backtes
 - [Legacy Config Compatibility](configuration/legacy-configs.md)
 
 ## Typical Workflows
+
+### Local Paper Mode
+
+```bash
+poetry run quanttradeai init --template rule-agent -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode paper
+```
+
+By default, project-defined paper runs use `data.streaming.replay` for deterministic OHLCV replay. Replay dates resolve in this order:
+
+- `data.streaming.replay.start_date` / `data.streaming.replay.end_date`
+- `data.test_start` / `data.test_end`
+- `data.start_date` / `data.end_date`
 
 ### Research
 
@@ -49,6 +63,8 @@ poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
 ```
 
+Deployment bundles are still real-time paper bundles. QuantTradeAI disables replay in the emitted deployment config and expects provider/websocket settings to be valid.
+
 ### Live Trading
 
 ```bash
@@ -63,6 +79,8 @@ poetry run quanttradeai live-trade \
 ## Important Boundaries
 
 - `config/project.yaml` is the center of gravity for **research**, **agent runs**, **promotion**, and **deployment generation**
+- local `agent run --mode paper` defaults to replay from `config/project.yaml`
+- generated deployment bundles keep paper mode but switch the emitted config back to real-time streaming
 - `quanttradeai live-trade` does **not** read `config/project.yaml` today
 - `config/streaming.yaml`, `config/risk_config.yaml`, and `config/position_manager.yaml` are still first-class runtime files
 - `quanttradeai validate-config` is the fastest way to catch malformed runtime YAMLs before running live or backtest commands

@@ -19,9 +19,12 @@ from typing import Callable, Dict, Optional
 import pandas as pd
 import yaml
 
+from quanttradeai.data.loader import DataLoader
 from quanttradeai.data.processor import DataProcessor
 from quanttradeai.models.classifier import MomentumClassifier
 from quanttradeai.streaming.gateway import StreamingGateway
+from quanttradeai.streaming.replay import ReplayGateway
+from quanttradeai.streaming.history import ensure_utc_datetime_index
 from quanttradeai.streaming.logging import logger
 from quanttradeai.trading.drawdown_guard import DrawdownGuard
 from quanttradeai.trading.portfolio import PortfolioManager
@@ -104,9 +107,10 @@ class LiveTradingEngine:
     stop_loss_pct: float = 0.01
     shutdown_drain_timeout: float = 0.5
     execution_hook: ExecutionHook | None = None
-    gateway: StreamingGateway | None = None
+    gateway: StreamingGateway | ReplayGateway | None = None
     data_processor: DataProcessor | None = None
     model: MomentumClassifier | None = None
+    bootstrap_history_frames: Dict[str, pd.DataFrame] | None = None
     _history: Dict[str, pd.DataFrame] = field(default_factory=dict, init=False)
     _consumer: asyncio.Task | None = field(default=None, init=False)
     execution_log: list[dict] = field(default_factory=list, init=False)
@@ -115,7 +119,7 @@ class LiveTradingEngine:
 
     def __post_init__(self) -> None:
         self.gateway = self.gateway or StreamingGateway(self.streaming_config)
-        if self.enable_health_api is not None:
+        if self.enable_health_api is not None and hasattr(self.gateway, "_api_enabled"):
             self.gateway._api_enabled = self.enable_health_api  # type: ignore[attr-defined]
         self.data_processor = self.data_processor or DataProcessor(self.features_config)
         self.model = self.model or MomentumClassifier(self.model_config)
@@ -134,7 +138,7 @@ class LiveTradingEngine:
         self.position_manager = _load_position_manager(
             self.position_manager_config, cash=self.initial_capital
         )
-        if self.position_manager:
+        if self.position_manager and isinstance(self.gateway, StreamingGateway):
             try:
                 symbols = _load_streaming_symbols(self.streaming_config)
                 if symbols:
@@ -144,7 +148,7 @@ class LiveTradingEngine:
 
     @property
     def health_monitor(self):
-        return self.gateway.health_monitor
+        return getattr(self.gateway, "health_monitor", None)
 
     def _extract_timestamp(self, message: dict) -> pd.Timestamp:
         ts = (
@@ -286,6 +290,28 @@ class LiveTradingEngine:
         history = history.sort_index()
         history = history[~history.index.duplicated(keep="last")]
         self._history[symbol] = history.tail(self.history_window)
+
+    def _seed_history(self, frames: Dict[str, pd.DataFrame]) -> None:
+        for symbol, frame in frames.items():
+            history = ensure_utc_datetime_index(frame)
+            history = history[
+                [
+                    column
+                    for column in ("Open", "High", "Low", "Close", "Volume")
+                    if column in history.columns
+                ]
+            ].copy()
+            if history.empty:
+                continue
+            self._history[symbol] = history.tail(self.history_window)
+
+    def bootstrap_history(self) -> None:
+        frames = (
+            self.bootstrap_history_frames
+            if self.bootstrap_history_frames is not None
+            else DataLoader(self.model_config).fetch_data()
+        )
+        self._seed_history(frames)
 
     def _prepare_features(self, symbol: str) -> Optional[pd.DataFrame]:
         history = self._history.get(symbol)
@@ -444,25 +470,28 @@ class LiveTradingEngine:
                 self._mark_to_market(symbol, price, timestamp)
             except Exception as exc:  # pragma: no cover - runtime guard
                 logger.error("live_pipeline_error", error=str(exc))
-                self.health_monitor.trigger_alerts(
-                    "error", f"live_pipeline_error: {exc}"
-                )
+                if self.health_monitor is not None:
+                    self.health_monitor.trigger_alerts(
+                        "error", f"live_pipeline_error: {exc}"
+                    )
             finally:
                 elapsed_ms = (time.perf_counter() - start) * 1000.0
-                try:
-                    self.health_monitor.metrics_collector.record_latency(
-                        "inference", elapsed_ms
-                    )
-                    depth = self.gateway.buffer.queue.qsize()
-                    self.health_monitor.metrics_collector.record_queue_depth(
-                        "stream", depth
-                    )
-                except Exception:  # pragma: no cover - metrics best effort
-                    pass
+                if self.health_monitor is not None:
+                    try:
+                        self.health_monitor.metrics_collector.record_latency(
+                            "inference", elapsed_ms
+                        )
+                        depth = self.gateway.buffer.queue.qsize()
+                        self.health_monitor.metrics_collector.record_queue_depth(
+                            "stream", depth
+                        )
+                    except Exception:  # pragma: no cover - metrics best effort
+                        pass
 
     async def start(self) -> None:
         """Start streaming and inference concurrently."""
 
+        self.bootstrap_history()
         self._consumer = asyncio.create_task(self._consume_buffer())
         try:
             await self.gateway._start()

@@ -12,6 +12,7 @@ from quanttradeai.utils.config_schemas import (
     PositionManagerConfig,
     RiskManagementConfig,
 )
+from quanttradeai.streaming.history import ReplayWindow, parse_iso_date
 
 
 LEGACY_CONFIG_FILES = {
@@ -29,6 +30,61 @@ DEFAULT_PROFILES = {
     "paper": {"mode": "paper"},
     "live": {"mode": "live"},
 }
+
+
+def paper_replay_enabled(project_config: dict[str, Any]) -> bool:
+    streaming_cfg = dict((project_config.get("data") or {}).get("streaming") or {})
+    replay_cfg = dict(streaming_cfg.get("replay") or {})
+    return bool(replay_cfg.get("enabled", False))
+
+
+def resolve_paper_replay_window(project_config: dict[str, Any]) -> ReplayWindow | None:
+    if not paper_replay_enabled(project_config):
+        return None
+
+    data_cfg = dict(project_config.get("data") or {})
+    streaming_cfg = dict(data_cfg.get("streaming") or {})
+    replay_cfg = dict(streaming_cfg.get("replay") or {})
+
+    start_date = (
+        replay_cfg.get("start_date")
+        or data_cfg.get("test_start")
+        or data_cfg.get("start_date")
+    )
+    end_date = (
+        replay_cfg.get("end_date")
+        or data_cfg.get("test_end")
+        or data_cfg.get("end_date")
+    )
+    if not start_date or not end_date:
+        raise ValueError(
+            "Replay-enabled paper mode requires replay dates or a data/test window in config/project.yaml."
+        )
+
+    replay_start = parse_iso_date(
+        str(start_date), field_name="data.streaming.replay.start_date"
+    )
+    replay_end = parse_iso_date(
+        str(end_date), field_name="data.streaming.replay.end_date"
+    )
+    data_start = parse_iso_date(
+        str(data_cfg.get("start_date")), field_name="data.start_date"
+    )
+    data_end = parse_iso_date(str(data_cfg.get("end_date")), field_name="data.end_date")
+    if replay_start < data_start or replay_end > data_end:
+        raise ValueError(
+            "data.streaming.replay window must stay within data.start_date and data.end_date."
+        )
+    if replay_start > replay_end:
+        raise ValueError(
+            "data.streaming.replay.start_date must be on or before data.streaming.replay.end_date."
+        )
+
+    return ReplayWindow(
+        start_date=replay_start.isoformat(),
+        end_date=replay_end.isoformat(),
+        pace_delay_ms=int(replay_cfg.get("pace_delay_ms", 0) or 0),
+    )
 
 
 @dataclass
@@ -625,6 +681,7 @@ def compile_streaming_runtime_config(
     project_config: dict[str, Any],
     *,
     mode: str = "paper",
+    require_realtime: bool = False,
 ) -> dict[str, Any]:
     """Compile canonical project streaming settings into gateway runtime YAML."""
 
@@ -637,28 +694,54 @@ def compile_streaming_runtime_config(
 
     symbols = list(streaming_cfg.get("symbols") or data_cfg.get("symbols") or [])
     channels = list(streaming_cfg.get("channels") or [])
-    provider_cfg: dict[str, Any] = {
-        "name": streaming_cfg.get("provider"),
-        "websocket_url": streaming_cfg.get("websocket_url"),
-        "auth_method": streaming_cfg.get("auth_method", "api_key"),
-        "subscriptions": channels,
-        "symbols": symbols,
-    }
-    if streaming_cfg.get("rate_limit"):
-        provider_cfg["rate_limit"] = dict(streaming_cfg.get("rate_limit") or {})
-    if streaming_cfg.get("circuit_breaker"):
-        provider_cfg["circuit_breaker"] = dict(
-            streaming_cfg.get("circuit_breaker") or {}
-        )
-
     runtime_cfg: dict[str, Any] = {
         "streaming": {
             "symbols": symbols,
-            "providers": [provider_cfg],
             "buffer_size": int(streaming_cfg.get("buffer_size", 1000)),
             "reconnect_attempts": int(streaming_cfg.get("reconnect_attempts", 5)),
         }
     }
+    replay_window = (
+        resolve_paper_replay_window(project_config) if mode == "paper" else None
+    )
+    realtime_required = require_realtime or mode == "live" or replay_window is None
+    if realtime_required:
+        provider = str(streaming_cfg.get("provider") or "").strip()
+        websocket_url = str(streaming_cfg.get("websocket_url") or "").strip()
+        if not provider:
+            raise ValueError(
+                f"data.streaming.provider must be configured for `quanttradeai agent run --mode {mode}`."
+            )
+        if not websocket_url:
+            raise ValueError(
+                f"data.streaming.websocket_url must be configured for `quanttradeai agent run --mode {mode}`."
+            )
+        if not channels:
+            raise ValueError(
+                f"data.streaming.channels must be configured for `quanttradeai agent run --mode {mode}`."
+            )
+
+        provider_cfg: dict[str, Any] = {
+            "name": provider,
+            "websocket_url": websocket_url,
+            "auth_method": streaming_cfg.get("auth_method", "api_key"),
+            "subscriptions": channels,
+            "symbols": symbols,
+        }
+        if streaming_cfg.get("rate_limit"):
+            provider_cfg["rate_limit"] = dict(streaming_cfg.get("rate_limit") or {})
+        if streaming_cfg.get("circuit_breaker"):
+            provider_cfg["circuit_breaker"] = dict(
+                streaming_cfg.get("circuit_breaker") or {}
+            )
+        runtime_cfg["streaming"]["providers"] = [provider_cfg]
+    if replay_window is not None and mode == "paper":
+        runtime_cfg["streaming"]["replay"] = {
+            "enabled": True,
+            "start_date": replay_window.start_date,
+            "end_date": replay_window.end_date,
+            "pace_delay_ms": replay_window.pace_delay_ms,
+        }
     health_check_interval = streaming_cfg.get("health_check_interval")
     if health_check_interval is not None:
         runtime_cfg["streaming"]["health_check_interval"] = int(health_check_interval)
@@ -676,14 +759,24 @@ def compile_streaming_runtime_config(
 
 def compile_paper_streaming_runtime_config(
     project_config: dict[str, Any],
+    *,
+    require_realtime: bool = False,
 ) -> dict[str, Any]:
-    return compile_streaming_runtime_config(project_config, mode="paper")
+    return compile_streaming_runtime_config(
+        project_config,
+        mode="paper",
+        require_realtime=require_realtime,
+    )
 
 
 def compile_live_streaming_runtime_config(
     project_config: dict[str, Any],
 ) -> dict[str, Any]:
-    return compile_streaming_runtime_config(project_config, mode="live")
+    return compile_streaming_runtime_config(
+        project_config,
+        mode="live",
+        require_realtime=True,
+    )
 
 
 def compile_live_risk_runtime_config(

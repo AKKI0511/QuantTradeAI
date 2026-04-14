@@ -33,6 +33,7 @@ from quanttradeai.utils.project_paths import infer_project_root, resolve_project
 from quanttradeai.utils.project_config import (
     load_project_config,
     normalize_live_risk_compatibility,
+    resolve_paper_replay_window,
 )
 from quanttradeai.utils.sweeps import expand_agent_backtest_sweep
 
@@ -347,6 +348,12 @@ def _render_project_summary(resolved: dict, warnings: list[str]) -> dict:
     data = resolved.get("data") or {}
     project = resolved.get("project") or {}
     deployment = resolved.get("deployment") or {}
+    replay_window = resolve_paper_replay_window(resolved)
+    paper_source = (
+        "replay"
+        if replay_window is not None
+        else "realtime" if (data.get("streaming") or {}).get("enabled") else None
+    )
     return {
         "project": {
             "name": project.get("name"),
@@ -371,6 +378,16 @@ def _render_project_summary(resolved: dict, warnings: list[str]) -> dict:
         "sweeps": len(resolved.get("sweeps") or []),
         "research_enabled": bool(
             (resolved.get("research") or {}).get("enabled", False)
+        ),
+        "paper_source": paper_source,
+        "paper_replay_window": (
+            {
+                "start": replay_window.start_date,
+                "end": replay_window.end_date,
+                "pace_delay_ms": replay_window.pace_delay_ms,
+            }
+            if replay_window is not None
+            else None
         ),
         "agents": [
             {

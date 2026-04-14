@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
@@ -207,6 +208,19 @@ def _copy_resolved_project_config(
     return resolved_project, warnings
 
 
+def _disable_replay_for_deployment(project_config: dict[str, Any]) -> dict[str, Any]:
+    deployment_project = copy.deepcopy(project_config)
+    streaming_cfg = dict((deployment_project.get("data") or {}).get("streaming") or {})
+    if not streaming_cfg:
+        return deployment_project
+    replay_cfg = dict(streaming_cfg.get("replay") or {})
+    if replay_cfg:
+        replay_cfg["enabled"] = False
+        streaming_cfg["replay"] = replay_cfg
+        deployment_project.setdefault("data", {})["streaming"] = streaming_cfg
+    return deployment_project
+
+
 def _resolve_agent_config(
     *,
     project_config: dict[str, Any],
@@ -360,8 +374,16 @@ def deploy_project_agent(
             config_path=config_path,
             destination=temp_resolved_project_path,
         )
+    deployment_project = _disable_replay_for_deployment(resolved_project)
+    if (
+        ((resolved_project.get("data") or {}).get("streaming") or {}).get("replay")
+        or {}
+    ).get("enabled") is True:
+        warnings.append(
+            "Paper deployment bundles always use real-time streaming; replay was disabled in the generated bundle."
+        )
 
-    deployment_cfg = dict(resolved_project.get("deployment") or {})
+    deployment_cfg = dict(deployment_project.get("deployment") or {})
     resolved_target = str(target or deployment_cfg.get("target") or "docker-compose")
     resolved_target = resolved_target.strip().lower()
     if resolved_target not in SUPPORTED_DEPLOY_TARGETS:
@@ -377,10 +399,13 @@ def deploy_project_agent(
             "Only deploy --mode paper is supported in this release. "
             "Live deployment and promotion remain future work."
         )
-    compile_paper_streaming_runtime_config(resolved_project)
+    compile_paper_streaming_runtime_config(
+        deployment_project,
+        require_realtime=True,
+    )
 
     agent_config = _resolve_agent_config(
-        project_config=resolved_project,
+        project_config=deployment_project,
         agent_name=agent_name,
     )
     configured_mode = str(agent_config.get("mode") or "").strip().lower()
@@ -392,7 +417,7 @@ def deploy_project_agent(
     service_name = _slugify(f"{agent_name}-{resolved_mode}")
     env_vars = _required_env_vars(
         agent_config=agent_config,
-        project_config=resolved_project,
+        project_config=deployment_project,
     )
     mounts = _required_mounts(
         project_root=project_root,
@@ -442,7 +467,7 @@ def deploy_project_agent(
 
     resolved_project_path = output_path / "resolved_project_config.yaml"
     resolved_project_path.write_text(
-        yaml.safe_dump(resolved_project, sort_keys=False),
+        yaml.safe_dump(deployment_project, sort_keys=False),
         encoding="utf-8",
     )
 

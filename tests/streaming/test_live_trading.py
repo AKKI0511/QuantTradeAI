@@ -1,6 +1,7 @@
 import asyncio
 from unittest.mock import MagicMock
 
+import pandas as pd
 import pytest
 
 from quanttradeai.streaming.live_trading import LiveTradingEngine
@@ -16,6 +17,16 @@ class FakeGateway:
 
     async def _start(self) -> None:
         return None
+
+
+class ScriptedGateway(FakeGateway):
+    def __init__(self, messages: list[dict]) -> None:
+        super().__init__()
+        self.messages = messages
+
+    async def _start(self) -> None:
+        for message in self.messages:
+            await self.buffer.put(message)
 
 
 class DummyProcessor:
@@ -462,3 +473,55 @@ async def test_live_trading_engine_skips_when_saved_preprocessor_columns_missing
 
     assert engine.execution_log == []
     alert_spy.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_live_trading_engine_bootstrap_history_allows_first_bar_inference():
+    gateway = ScriptedGateway(
+        [
+            {
+                "symbol": "AAPL",
+                "price": 11.0,
+                "Open": 11.0,
+                "High": 11.0,
+                "Low": 11.0,
+                "Close": 11.0,
+                "Volume": 100,
+                "timestamp": "2024-01-01T00:01:00Z",
+            }
+        ]
+    )
+    bootstrap_history = {
+        "AAPL": pd.DataFrame(
+            [
+                {
+                    "Open": 10.0,
+                    "High": 10.0,
+                    "Low": 10.0,
+                    "Close": 10.0,
+                    "Volume": 100,
+                }
+            ],
+            index=pd.to_datetime(["2024-01-01T00:00:00Z"], utc=True),
+        )
+    }
+    engine = LiveTradingEngine(
+        model_config="config/model_config.yaml",
+        model_path="unused",
+        gateway=gateway,
+        data_processor=DummyProcessor(),
+        model=DummyModel(outputs=[1]),
+        min_history_for_features=2,
+        history_window=8,
+        risk_config=None,
+        position_manager_config=None,
+        bootstrap_history_frames=bootstrap_history,
+    )
+
+    await engine.start()
+
+    assert len(engine.decision_log) == 1
+    assert engine.decision_log[0]["action"] == "buy"
+    assert len(engine.execution_log) == 1
+    assert engine.execution_log[0]["action"] == "buy"
+    assert len(engine._history["AAPL"]) == 2

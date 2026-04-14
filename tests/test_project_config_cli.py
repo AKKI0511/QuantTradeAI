@@ -460,6 +460,8 @@ def test_model_agent_template_includes_canonical_streaming_block(
     assert payload["data"]["streaming"]["enabled"] is True
     assert payload["data"]["streaming"]["provider"] == "alpaca"
     assert payload["data"]["streaming"]["channels"] == ["trades", "quotes"]
+    assert payload["data"]["streaming"]["replay"]["enabled"] is True
+    assert payload["data"]["streaming"]["replay"]["pace_delay_ms"] == 0
 
 
 def test_rule_agent_template_includes_canonical_streaming_block(
@@ -481,6 +483,7 @@ def test_rule_agent_template_includes_canonical_streaming_block(
     assert payload["agents"][0]["rule"]["feature"] == "rsi_14"
     assert payload["data"]["streaming"]["enabled"] is True
     assert payload["data"]["streaming"]["provider"] == "alpaca"
+    assert payload["data"]["streaming"]["replay"]["enabled"] is True
     assert payload["research"]["enabled"] is False
 
 
@@ -505,6 +508,7 @@ def test_llm_and_hybrid_templates_include_canonical_streaming_block(
         assert payload["data"]["streaming"]["enabled"] is True
         assert payload["data"]["streaming"]["provider"] == "alpaca"
         assert payload["data"]["streaming"]["symbols"] == expected_symbols
+        assert payload["data"]["streaming"]["replay"]["enabled"] is True
         cfg_path.unlink()
 
 
@@ -760,6 +764,7 @@ def test_validate_fails_when_model_agent_paper_streaming_is_incomplete(
     config_payload = yaml.safe_load(
         yaml.safe_dump(PROJECT_TEMPLATES["model-agent"], sort_keys=False)
     )
+    config_payload["data"]["streaming"]["replay"]["enabled"] = False
     config_payload["data"]["streaming"].pop("websocket_url")
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     cfg_path.write_text(
@@ -773,6 +778,53 @@ def test_validate_fails_when_model_agent_paper_streaming_is_incomplete(
 
     assert result.exit_code == 1
     assert "data.streaming requires websocket_url" in result.stderr.lower()
+
+
+def test_validate_passes_when_model_agent_replay_omits_realtime_websocket(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["model-agent"], sort_keys=False)
+    )
+    config_payload["data"]["streaming"].pop("websocket_url")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+    model_dir = Path("models/promoted/aapl_daily_classifier")
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 0, result.stdout
+    assert "- paper: source=replay" in result.stdout
+
+
+def test_validate_fails_when_live_agent_is_missing_realtime_websocket(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["agents"][0]["mode"] = "live"
+    config_payload["data"]["streaming"].pop("websocket_url")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "data.streaming.websocket_url is required" in result.stderr.lower()
 
 
 def test_validate_fails_when_llm_agent_paper_streaming_is_missing(

@@ -22,6 +22,12 @@ from quanttradeai.main import (
     time_aware_split,
 )
 from quanttradeai.models.classifier import MomentumClassifier
+from quanttradeai.streaming.replay import ReplayGateway
+from quanttradeai.streaming.history import (
+    ReplayWindow,
+    build_streaming_runtime_model_config,
+    split_replay_frames,
+)
 from quanttradeai.streaming.live_trading import LiveTradingEngine
 from quanttradeai.trading.portfolio import PortfolioManager
 from quanttradeai.utils.config_validator import validate_project_config
@@ -31,6 +37,7 @@ from quanttradeai.utils.project_config import (
     compile_live_streaming_runtime_config,
     compile_paper_streaming_runtime_config,
     compile_research_runtime_configs,
+    resolve_paper_replay_window,
 )
 from quanttradeai.utils.project_paths import resolve_project_path
 from quanttradeai.utils.run_records import apply_required_run_fields, create_run_dir
@@ -88,6 +95,7 @@ def _initialize_model_agent_run(
     dict[str, Any],
     dict[str, Any],
     dict[str, Any],
+    ReplayWindow | None,
     Path,
     Path,
     Path,
@@ -127,11 +135,26 @@ def _initialize_model_agent_run(
         project_config,
         require_research=False,
     )
+    replay_window = (
+        resolve_paper_replay_window(project_config) if mode == "paper" else None
+    )
+    runtime_model_cfg = (
+        build_streaming_runtime_model_config(
+            model_cfg,
+            bootstrap_bars=220,
+            end_date=replay_window.end_date if replay_window is not None else None,
+            replay_start_date=(
+                replay_window.start_date if replay_window is not None else None
+            ),
+        )
+        if mode in {"paper", "live"}
+        else model_cfg
+    )
     runtime_model_path = run_dir / "runtime_model_config.yaml"
     runtime_features_path = run_dir / "runtime_features_config.yaml"
     runtime_backtest_path = run_dir / "runtime_backtest_config.yaml"
     runtime_model_path.write_text(
-        yaml.safe_dump(model_cfg, sort_keys=False),
+        yaml.safe_dump(runtime_model_cfg, sort_keys=False),
         encoding="utf-8",
     )
     runtime_features_path.write_text(
@@ -185,6 +208,7 @@ def _initialize_model_agent_run(
         project_config,
         agent_config,
         model_cfg,
+        replay_window,
         runtime_model_path,
         runtime_features_path,
         runtime_backtest_path,
@@ -271,6 +295,7 @@ def run_model_agent_backtest(
             _project_config,
             agent_config,
             model_cfg,
+            _replay_window,
             runtime_model_path,
             runtime_features_path,
             runtime_backtest_path,
@@ -581,6 +606,7 @@ def _run_model_agent_streaming(
             _project_config,
             agent_config,
             model_cfg,
+            replay_window,
             runtime_model_path,
             runtime_features_path,
             _runtime_backtest_path,
@@ -610,6 +636,30 @@ def _run_model_agent_streaming(
             max_risk_per_trade,
             max_portfolio_risk,
         ) = _resolve_risk_settings(agent_config, model_cfg)
+        gateway: ReplayGateway | None = None
+        bootstrap_history_frames: dict[str, pd.DataFrame] | None = None
+        paper_source = "realtime"
+        artifacts = dict(summary["artifacts"])
+        if mode == "paper" and replay_window is not None:
+            loader = DataLoader(str(runtime_model_path))
+            bootstrap_frames, replay_frames, replay_manifest = split_replay_frames(
+                loader.fetch_data(),
+                replay_window=replay_window,
+                history_window=512,
+            )
+            if not replay_frames:
+                raise ValueError(
+                    "Replay-enabled paper mode did not produce any bars for the configured replay window."
+                )
+            gateway = ReplayGateway(
+                replay_frames,
+                pace_delay_ms=replay_window.pace_delay_ms,
+            )
+            bootstrap_history_frames = bootstrap_frames
+            replay_manifest_path = run_dir / "replay_manifest.json"
+            _write_json(replay_manifest_path, replay_manifest)
+            artifacts["replay_manifest"] = str(replay_manifest_path)
+            paper_source = "replay"
 
         engine = LiveTradingEngine(
             model_config=str(runtime_model_path),
@@ -626,6 +676,8 @@ def _run_model_agent_streaming(
             max_risk_per_trade=max_risk_per_trade,
             max_portfolio_risk=max_portfolio_risk,
             stop_loss_pct=stop_loss_pct,
+            gateway=gateway,
+            bootstrap_history_frames=bootstrap_history_frames,
         )
         asyncio.run(engine.start())
 
@@ -638,7 +690,7 @@ def _run_model_agent_streaming(
         _write_json(run_dir / "metrics.json", metrics_payload)
 
         artifacts = {
-            **summary["artifacts"],
+            **artifacts,
             "metrics": str(run_dir / "metrics.json"),
             "executions": str(run_dir / "executions.jsonl"),
         }
@@ -662,6 +714,8 @@ def _run_model_agent_streaming(
                 "metrics": metrics_payload,
             }
         )
+        if mode == "paper":
+            summary["paper_source"] = paper_source
         summary["timestamps"]["completed_at"] = datetime.now(timezone.utc).isoformat()
         apply_required_run_fields(
             summary,

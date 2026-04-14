@@ -6,9 +6,8 @@ import asyncio
 import contextlib
 import json
 import logging
-import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +17,14 @@ import yaml
 from quanttradeai.data.loader import DataLoader
 from quanttradeai.data.processor import DataProcessor
 from quanttradeai.streaming.gateway import StreamingGateway
+from quanttradeai.streaming.replay import ReplayGateway
+from quanttradeai.streaming.history import (
+    ReplayWindow,
+    bucket_for_timestamp,
+    build_streaming_runtime_model_config,
+    ensure_utc_datetime_index,
+    split_replay_frames,
+)
 from quanttradeai.trading.portfolio import PortfolioManager
 from quanttradeai.trading.position_manager import (
     PositionManager as RealtimePositionManager,
@@ -35,6 +42,7 @@ from quanttradeai.utils.project_config import (
     compile_live_streaming_runtime_config,
     compile_paper_streaming_runtime_config,
     compile_research_runtime_configs,
+    resolve_paper_replay_window,
 )
 from quanttradeai.utils.run_records import apply_required_run_fields, create_run_dir
 
@@ -119,70 +127,6 @@ def _copy_artifact(source: str | Path, destination: Path) -> str:
     return str(destination)
 
 
-def _parse_timeframe(timeframe: str) -> tuple[int, str] | None:
-    normalized = str(timeframe or "").strip().lower()
-    match = re.match(r"^(\d+)(mo|wk|m|h|d)$", normalized)
-    if not match:
-        return None
-    return int(match.group(1)), match.group(2)
-
-
-def _timeframe_to_pandas_freq(timeframe: str) -> str:
-    parsed = _parse_timeframe(timeframe)
-    if parsed is None:
-        return "1D"
-    amount, unit = parsed
-    unit_map = {
-        "m": "min",
-        "h": "h",
-        "d": "D",
-        "wk": "W",
-        "mo": "ME",
-    }
-    return f"{amount}{unit_map[unit]}"
-
-
-def _bootstrap_window_delta(timeframe: str, bars: int) -> timedelta:
-    parsed = _parse_timeframe(timeframe)
-    multiplier = max(1, bars) * 3
-    if parsed is None:
-        return timedelta(days=multiplier)
-
-    amount, unit = parsed
-    steps = amount * multiplier
-    if unit == "m":
-        return timedelta(minutes=steps)
-    if unit == "h":
-        return timedelta(hours=steps)
-    if unit == "d":
-        return timedelta(days=steps)
-    if unit == "wk":
-        return timedelta(weeks=steps)
-    return timedelta(days=steps * 30)
-
-
-def _bucket_for_timestamp(timestamp: pd.Timestamp, timeframe: str) -> pd.Timestamp:
-    freq = _timeframe_to_pandas_freq(timeframe)
-    if freq.endswith("W") or freq.endswith("ME"):
-        bucket = timestamp.tz_convert(None) if timestamp.tzinfo else timestamp
-        bucket = bucket.to_period(freq).to_timestamp()
-        if timestamp.tzinfo:
-            return bucket.tz_localize(timestamp.tzinfo)
-        return bucket
-    return timestamp.floor(freq)
-
-
-def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
-    out = df if isinstance(df.index, pd.DatetimeIndex) else df.copy()
-    if not isinstance(out.index, pd.DatetimeIndex):
-        out.index = pd.to_datetime(out.index)
-    if out.index.tz is None:
-        out.index = out.index.tz_localize(timezone.utc)
-    else:
-        out.index = out.index.tz_convert(timezone.utc)
-    return out
-
-
 def _required_bootstrap_bars(agent_config: dict[str, Any]) -> int:
     market_data_cfg = dict((agent_config.get("context") or {}).get("market_data") or {})
     lookback_bars = int(market_data_cfg.get("lookback_bars", 20))
@@ -192,27 +136,17 @@ def _required_bootstrap_bars(agent_config: dict[str, Any]) -> int:
 def _build_paper_runtime_model_config(
     model_cfg: dict[str, Any],
     agent_config: dict[str, Any],
+    *,
+    replay_window: ReplayWindow | None = None,
 ) -> dict[str, Any]:
-    runtime_model_cfg = json.loads(json.dumps(model_cfg))
-    data_cfg = dict(runtime_model_cfg.get("data") or {})
-    now = datetime.now(timezone.utc)
-    timeframe = str(data_cfg.get("timeframe") or "1d")
-    recent_start = (
-        now - _bootstrap_window_delta(timeframe, _required_bootstrap_bars(agent_config))
-    ).date()
-
-    start_raw = data_cfg.get("start_date")
-    try:
-        start_dt = datetime.fromisoformat(str(start_raw)).date()
-    except (TypeError, ValueError):
-        start_dt = recent_start
-
-    data_cfg["start_date"] = min(start_dt, recent_start).isoformat()
-    data_cfg["end_date"] = now.date().isoformat()
-    data_cfg["test_start"] = None
-    data_cfg["test_end"] = None
-    runtime_model_cfg["data"] = data_cfg
-    return runtime_model_cfg
+    return build_streaming_runtime_model_config(
+        model_cfg,
+        bootstrap_bars=_required_bootstrap_bars(agent_config),
+        end_date=replay_window.end_date if replay_window is not None else None,
+        replay_start_date=(
+            replay_window.start_date if replay_window is not None else None
+        ),
+    )
 
 
 def _streaming_metrics(
@@ -334,9 +268,10 @@ class PaperAgentEngine:
     runtime_risk_config: str | None = None
     runtime_position_manager_config: str | None = None
     model_signal_runtimes: list[ModelSignalRuntime] = field(default_factory=list)
-    gateway: StreamingGateway | None = None
+    gateway: StreamingGateway | ReplayGateway | None = None
     data_loader: DataLoader | None = None
     data_processor: DataProcessor | None = None
+    bootstrap_history_frames: dict[str, pd.DataFrame] | None = None
     initial_capital: float = 100_000.0
     max_risk_per_trade: float = 0.02
     max_portfolio_risk: float = 0.10
@@ -525,13 +460,17 @@ class PaperAgentEngine:
         self._history[symbol] = history.tail(self.history_window)
 
     def bootstrap_history(self) -> None:
-        bootstrap_frames = self.data_loader.fetch_data()
-        now_bucket = _bucket_for_timestamp(
+        bootstrap_frames = (
+            self.bootstrap_history_frames
+            if self.bootstrap_history_frames is not None
+            else self.data_loader.fetch_data()
+        )
+        now_bucket = bucket_for_timestamp(
             pd.Timestamp(datetime.now(timezone.utc)),
             self.timeframe,
         )
         for symbol, frame in bootstrap_frames.items():
-            history = _ensure_datetime_index(frame).sort_index()
+            history = ensure_utc_datetime_index(frame)
             history = history[
                 [
                     column
@@ -542,7 +481,11 @@ class PaperAgentEngine:
             if history.empty:
                 continue
 
-            latest_bucket = _bucket_for_timestamp(
+            if self.bootstrap_history_frames is not None:
+                self._history[symbol] = history.tail(self.history_window)
+                continue
+
+            latest_bucket = bucket_for_timestamp(
                 pd.Timestamp(history.index.max()),
                 self.timeframe,
             )
@@ -563,6 +506,31 @@ class PaperAgentEngine:
                 continue
             self._history[symbol] = history.tail(self.history_window)
 
+    def _finalize_open_bars(self) -> None:
+        for symbol, current_bar in list(self._open_bars.items()):
+            latest_history = self._history.get(symbol)
+            if latest_history is not None and not latest_history.empty:
+                latest_bucket = bucket_for_timestamp(
+                    pd.Timestamp(latest_history.index.max()),
+                    self.timeframe,
+                )
+                if current_bar.bucket <= latest_bucket:
+                    continue
+
+            frame = current_bar.to_frame()
+            completed_timestamp = current_bar.bucket
+            self._append_history(symbol, frame)
+            self._mark_to_market(
+                symbol,
+                _safe_float(frame["Close"].iloc[-1], 0.0),
+                timestamp=completed_timestamp,
+            )
+            self._process_completed_bar(
+                symbol=symbol,
+                completed_timestamp=completed_timestamp,
+            )
+            del self._open_bars[symbol]
+
     def _update_open_bar(
         self,
         *,
@@ -574,13 +542,13 @@ class PaperAgentEngine:
         close: float,
         volume: float,
     ) -> tuple[pd.Timestamp, pd.DataFrame] | None:
-        bucket = _bucket_for_timestamp(timestamp, self.timeframe)
+        bucket = bucket_for_timestamp(timestamp, self.timeframe)
         current_bar = self._open_bars.get(symbol)
 
         if current_bar is None:
             latest_history = self._history.get(symbol)
             if latest_history is not None and not latest_history.empty:
-                latest_bucket = _bucket_for_timestamp(
+                latest_bucket = bucket_for_timestamp(
                     pd.Timestamp(latest_history.index.max()),
                     self.timeframe,
                 )
@@ -846,6 +814,9 @@ class PaperAgentEngine:
                         and asyncio.get_running_loop().time() < deadline
                     ):
                         await asyncio.sleep(0.01)
+                if getattr(self.gateway, "flush_on_stop", False):
+                    await asyncio.sleep(0)
+                    self._finalize_open_bars()
                 self._consumer.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await self._consumer
@@ -933,6 +904,9 @@ def _run_agent_streaming(
         project_config = (
             yaml.safe_load(root_resolved_path.read_text(encoding="utf-8")) or {}
         )
+        replay_window = (
+            resolve_paper_replay_window(project_config) if mode == "paper" else None
+        )
 
         agent_config = next(
             (
@@ -960,7 +934,11 @@ def _run_agent_streaming(
             project_config,
             require_research=False,
         )
-        runtime_model_cfg = _build_paper_runtime_model_config(model_cfg, agent_config)
+        runtime_model_cfg = _build_paper_runtime_model_config(
+            model_cfg,
+            agent_config,
+            replay_window=replay_window,
+        )
         runtime_model_path = run_dir / "runtime_model_config.yaml"
         runtime_features_path = run_dir / "runtime_features_config.yaml"
         runtime_streaming_path = run_dir / "runtime_streaming_config.yaml"
@@ -1042,6 +1020,35 @@ def _run_agent_streaming(
             )
             + 32,
         )
+        gateway: StreamingGateway | ReplayGateway | None = None
+        data_loader: DataLoader | None = None
+        bootstrap_history_frames: dict[str, pd.DataFrame] | None = None
+        paper_source = "realtime"
+        artifacts = dict(summary["artifacts"])
+        if replay_window is not None:
+            data_loader = DataLoader(str(runtime_model_path))
+            bootstrap_frames, replay_frames, replay_manifest = split_replay_frames(
+                data_loader.fetch_data(),
+                replay_window=replay_window,
+                history_window=history_window,
+            )
+            if not replay_frames:
+                raise ValueError(
+                    "Replay-enabled paper mode did not produce any bars for the configured replay window."
+                )
+            gateway = ReplayGateway(
+                replay_frames,
+                pace_delay_ms=replay_window.pace_delay_ms,
+                buffer_size=int(
+                    ((runtime_streaming_cfg.get("streaming") or {}).get("buffer_size"))
+                    or 1000
+                ),
+            )
+            bootstrap_history_frames = bootstrap_frames
+            replay_manifest_path = run_dir / "replay_manifest.json"
+            _write_json(replay_manifest_path, replay_manifest)
+            artifacts["replay_manifest"] = str(replay_manifest_path)
+            paper_source = "replay"
 
         engine = PaperAgentEngine(
             project_config_path=project_config_path,
@@ -1060,6 +1067,9 @@ def _run_agent_streaming(
                 else None
             ),
             model_signal_runtimes=model_signal_runtimes,
+            gateway=gateway,
+            data_loader=data_loader,
+            bootstrap_history_frames=bootstrap_history_frames,
             initial_capital=initial_capital,
             max_risk_per_trade=max_risk_per_trade,
             max_portfolio_risk=max_portfolio_risk,
@@ -1079,7 +1089,7 @@ def _run_agent_streaming(
         _write_json(run_dir / "metrics.json", metrics_payload)
 
         artifacts = {
-            **summary["artifacts"],
+            **artifacts,
             "metrics": str(run_dir / "metrics.json"),
             "decisions": str(run_dir / "decisions.jsonl"),
             "executions": str(run_dir / "executions.jsonl"),
@@ -1102,6 +1112,8 @@ def _run_agent_streaming(
                 "metrics": metrics_payload,
             }
         )
+        if mode == "paper":
+            summary["paper_source"] = paper_source
         summary["timestamps"]["completed_at"] = datetime.now(timezone.utc).isoformat()
         apply_required_run_fields(
             summary,

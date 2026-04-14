@@ -70,6 +70,35 @@ class ProjectStreamingAPIConfig(BaseModel):
     port: int = Field(8000, ge=1, le=65535)
 
 
+class ProjectStreamingReplayConfig(BaseModel):
+    enabled: bool = False
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    pace_delay_ms: int = Field(0, ge=0)
+
+    @staticmethod
+    def _parse_date(value: str, field_name: str) -> datetime:
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError as exc:  # pragma: no cover - defensive guard
+            raise ValueError(
+                f"data.streaming.replay.{field_name} must be in ISO format YYYY-MM-DD. Received: {value!r}."
+            ) from exc
+
+    @model_validator(mode="after")
+    def validate_date_window(self) -> "ProjectStreamingReplayConfig":
+        start_dt = None
+        if self.start_date is not None:
+            start_dt = self._parse_date(self.start_date, "start_date")
+        if self.end_date is not None:
+            end_dt = self._parse_date(self.end_date, "end_date")
+            if start_dt is not None and start_dt > end_dt:
+                raise ValueError(
+                    "data.streaming.replay.start_date must be on or before data.streaming.replay.end_date."
+                )
+        return self
+
+
 class ProjectDataStreamingConfig(BaseModel):
     enabled: bool = False
     provider: Optional[str] = None
@@ -87,18 +116,30 @@ class ProjectDataStreamingConfig(BaseModel):
     alerts: Optional[ProjectStreamingAlertsConfig] = None
     metrics: Optional[ProjectStreamingMetricsConfig] = None
     api: Optional[ProjectStreamingAPIConfig] = None
+    replay: ProjectStreamingReplayConfig = Field(
+        default_factory=ProjectStreamingReplayConfig
+    )
 
     @model_validator(mode="after")
     def validate_enabled_requirements(self) -> "ProjectDataStreamingConfig":
         if not self.enabled:
+            return self
+        if self.replay.enabled:
+            missing = []
+            if not self.channels:
+                missing.append("channels")
+            if missing:
+                raise ValueError(
+                    "data.streaming requires "
+                    + ", ".join(missing)
+                    + " when replay is enabled."
+                )
             return self
         missing = []
         if not self.provider:
             missing.append("provider")
         if not self.websocket_url:
             missing.append("websocket_url")
-        if not self.symbols:
-            missing.append("symbols")
         if not self.channels:
             missing.append("channels")
         if missing:
@@ -808,6 +849,18 @@ class ProjectConfigSchema(BaseModel):
 
         requires_live = any(agent.mode == "live" for agent in self.agents)
         if requires_live:
+            if not self.data.streaming.provider:
+                raise ValueError(
+                    "data.streaming.provider is required when an agent is configured with mode=live."
+                )
+            if not self.data.streaming.websocket_url:
+                raise ValueError(
+                    "data.streaming.websocket_url is required when an agent is configured with mode=live."
+                )
+            if not self.data.streaming.channels:
+                raise ValueError(
+                    "data.streaming.channels is required when an agent is configured with mode=live."
+                )
             if self.risk is None:
                 raise ValueError(
                     "risk is required when an agent is configured with mode=live."

@@ -14,6 +14,8 @@ It drives:
 
 `live-trade` still uses the legacy runtime YAML files documented in [Runtime and Live Trading Configs](live-runtime-files.md).
 
+For local project-defined agents, `agent run --mode paper` defaults to deterministic replay when `data.streaming.replay.enabled: true`.
+
 ## Supported Project Workflows
 
 ### Research
@@ -160,6 +162,9 @@ data:
     auth_method: "api_key"
     symbols: ["AAPL"]
     channels: ["trades", "quotes"]
+    replay:
+      enabled: true
+      pace_delay_ms: 0
     buffer_size: 1000
     reconnect_attempts: 5
     health_check_interval: 30
@@ -312,17 +317,27 @@ When you use mapping syntax, validation checks `asset_class` against the asset c
 
 Used by project-defined paper and live agents.
 
-Required when any agent is configured with `mode: paper` or `mode: live`:
+Realtime-required fields:
 
 - `enabled: true`
 - `provider`
 - `websocket_url`
-- `auth_method`
 - `symbols`
 - `channels`
+
+General runtime fields:
+
+- `auth_method`
 - `buffer_size`
 - `reconnect_attempts`
 - `health_check_interval`
+
+Replay fields:
+
+- `replay.enabled`
+- `replay.start_date`
+- `replay.end_date`
+- `replay.pace_delay_ms`
 
 Optional passthrough sections:
 
@@ -336,7 +351,14 @@ Optional passthrough sections:
 
 These values are compiled into the runtime streaming YAML consumed by the current gateway.
 
-Validation enforces the same rule for both paper and live agents: if any agent is configured with `mode: paper` or `mode: live`, then `data.streaming.enabled` must be `true`.
+Happy-path behavior:
+
+- if `data.streaming.replay.enabled: true`, then `quanttradeai agent run --mode paper` replays historical OHLCV bars instead of connecting to a real-time websocket
+- replay dates resolve from `replay.start_date` and `replay.end_date`, then `data.test_start` and `data.test_end`, then `data.start_date` and `data.end_date`
+- local replay-backed paper runs may omit `provider` and `websocket_url`
+- `quanttradeai agent run --mode live` and `quanttradeai deploy` still require real-time streaming fields
+
+The default agent templates keep both the replay block and the real-time streaming block so the same project can move from local paper runs into later live promotion or paper deployment without restructuring the config.
 
 ### `features`
 
@@ -415,8 +437,10 @@ Paper mode:
 
 - compiles `data.streaming` into a runtime streaming config
 - warm-starts with recent historical OHLCV before streaming begins
+- replays historical OHLCV deterministically when `data.streaming.replay.enabled` is true
 - evaluates the configured rule on each completed streaming bar
 - writes `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, and `runtime_streaming_config.yaml`
+- writes `replay_manifest.json` and records `paper_source: replay` in `summary.json` when replay is enabled
 - does not emit `prompt_samples.json`
 
 Live mode:
@@ -446,8 +470,10 @@ Backtest mode:
 Paper mode:
 
 - compiles `data.streaming` into a runtime streaming config
+- warm-starts the model with historical bars so the first replay/live bar can infer immediately on the happy path
 - runs the existing paper/live engine with the compiled feature config
 - writes `summary.json`, `metrics.json`, `executions.jsonl`, and `runtime_streaming_config.yaml`
+- writes `replay_manifest.json` and records `paper_source: replay` in `summary.json` when replay is enabled
 
 Live mode:
 
@@ -474,8 +500,10 @@ Paper mode:
 
 - compiles `data.streaming` into a runtime streaming config
 - warm-starts with recent historical OHLCV before streaming begins
+- replays historical OHLCV deterministically when `data.streaming.replay.enabled` is true
 - aggregates streaming messages into completed bars before invoking the agent
 - writes `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, `prompt_samples.json`, and `runtime_streaming_config.yaml`
+- writes `replay_manifest.json` and records `paper_source: replay` in `summary.json` when replay is enabled
 
 Live mode:
 
@@ -506,6 +534,8 @@ Behavior:
 - `quanttradeai promote --run research/<run_id> -c config/project.yaml` copies trained model artifacts into stable `models/...` destinations and writes `promotion_manifest.json`
 - `quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml` updates `deployment.mode` to `paper` when promoting a successful agent backtest run
 - `quanttradeai deploy --agent <name> -c config/project.yaml --target docker-compose` generates a bundle under `reports/deployments/<agent>/<timestamp>/`
+- generated deployment bundles force `data.streaming.replay.enabled: false` in `resolved_project_config.yaml`
+- deployment generation fails if the project does not include the real-time `provider`, `websocket_url`, and `channels` required for paper deployment
 - generated bundles include `docker-compose.yml`, `Dockerfile`, `.env.example`, `README.md`, `resolved_project_config.yaml`, and `deployment_manifest.json`
 - generated compose services run `quanttradeai agent run --agent <name> -c config/project.yaml --mode paper`
 
@@ -614,6 +644,8 @@ Writes a batch directory under `runs/agent/batches/<timestamp>_<project>_<sweep>
 Writes under `runs/agent/paper/<timestamp>_<agent>/`.
 
 For `llm` and `hybrid` paper runs, the run directory includes both `decisions.jsonl` and `executions.jsonl` so prompt-driven decisions and actual paper executions can be audited separately.
+
+When replay is enabled, the run directory also includes `replay_manifest.json`, and `summary.json` records `paper_source: replay`.
 
 ### `quanttradeai agent run --mode live`
 

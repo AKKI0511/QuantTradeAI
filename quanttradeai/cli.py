@@ -162,6 +162,7 @@ PROJECT_TEMPLATES = {
                 "channels": ["trades", "quotes"],
                 "buffer_size": 1000,
                 "reconnect_attempts": 5,
+                "replay": {"enabled": True, "pace_delay_ms": 0},
                 "monitoring": {"enabled": True, "check_interval": 5},
                 "metrics": {"enabled": False, "host": "0.0.0.0", "port": 9000},
                 "api": {"enabled": False, "host": "0.0.0.0", "port": 8000},
@@ -249,6 +250,7 @@ PROJECT_TEMPLATES = {
                 "channels": ["trades", "quotes"],
                 "buffer_size": 1000,
                 "reconnect_attempts": 5,
+                "replay": {"enabled": True, "pace_delay_ms": 0},
                 "monitoring": {"enabled": True, "check_interval": 5},
                 "metrics": {"enabled": False, "host": "0.0.0.0", "port": 9000},
                 "api": {"enabled": False, "host": "0.0.0.0", "port": 8000},
@@ -361,6 +363,7 @@ PROJECT_TEMPLATES = {
                 "channels": ["trades", "quotes"],
                 "buffer_size": 1000,
                 "reconnect_attempts": 5,
+                "replay": {"enabled": True, "pace_delay_ms": 0},
                 "monitoring": {"enabled": True, "check_interval": 5},
                 "metrics": {"enabled": False, "host": "0.0.0.0", "port": 9000},
                 "api": {"enabled": False, "host": "0.0.0.0", "port": 8000},
@@ -453,6 +456,7 @@ PROJECT_TEMPLATES = {
                 "channels": ["trades", "quotes"],
                 "buffer_size": 1000,
                 "reconnect_attempts": 5,
+                "replay": {"enabled": True, "pace_delay_ms": 0},
                 "monitoring": {"enabled": True, "check_interval": 5},
                 "metrics": {"enabled": False, "host": "0.0.0.0", "port": 9000},
                 "api": {"enabled": False, "host": "0.0.0.0", "port": 8000},
@@ -1548,6 +1552,16 @@ def cmd_validate(
         f"research_enabled={summary['research_enabled']}, agents={len(summary['agents'])}, "
         f"sweeps={summary['sweeps']}"
     )
+    if summary.get("paper_source"):
+        replay_window = summary.get("paper_replay_window") or {}
+        if summary["paper_source"] == "replay":
+            typer.echo(
+                "- paper: source=replay, "
+                f"window={replay_window.get('start')}..{replay_window.get('end')}, "
+                f"pace_delay_ms={replay_window.get('pace_delay_ms', 0)}"
+            )
+        else:
+            typer.echo(f"- paper: source={summary['paper_source']}")
 
     if result.get("warnings"):
         for warning in result["warnings"]:

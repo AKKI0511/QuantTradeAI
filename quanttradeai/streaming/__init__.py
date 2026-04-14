@@ -12,6 +12,7 @@ from typing import Any
 
 _EXPORTS = {
     "StreamingGateway": (".gateway", "StreamingGateway"),
+    "ReplayGateway": (".replay", "ReplayGateway"),
     "AuthManager": (".auth_manager", "AuthManager"),
     "AdaptiveRateLimiter": (".rate_limiter", "AdaptiveRateLimiter"),
     "ConnectionPool": (".connection_pool", "ConnectionPool"),
