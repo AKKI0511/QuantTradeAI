@@ -30,7 +30,10 @@ from quanttradeai.utils.config_schemas import (
 )
 from quanttradeai.utils.impact_loader import ImpactConfigError, load_impact_config
 from quanttradeai.utils.project_paths import infer_project_root, resolve_project_path
-from quanttradeai.utils.project_config import load_project_config
+from quanttradeai.utils.project_config import (
+    load_project_config,
+    normalize_live_risk_compatibility,
+)
 from quanttradeai.utils.sweeps import expand_agent_backtest_sweep
 
 
@@ -420,18 +423,36 @@ def validate_project_config(
     *,
     output_dir: Path | str = "reports/config_validation",
     legacy_config_dir: Path | str | None = None,
+    project_config_override: dict[str, Any] | None = None,
     timestamp_subdir: bool = True,
 ) -> Dict:
-    loaded = load_project_config(
-        config_path=config_path,
-        legacy_config_dir=legacy_config_dir,
-    )
-    raw = loaded.raw
-    path = (
-        Path(config_path)
-        if loaded.source == "canonical"
-        else Path(legacy_config_dir or Path(config_path).parent) / "project.yaml"
-    )
+    if project_config_override is not None and legacy_config_dir is not None:
+        raise ValueError(
+            "project_config_override cannot be used with legacy_config_dir."
+        )
+
+    if project_config_override is not None:
+        raw, compatibility_warnings = normalize_live_risk_compatibility(
+            deepcopy(project_config_override)
+        )
+        path = Path(config_path)
+        loaded_source = "canonical"
+        loaded_source_path = str(path)
+        loaded_warnings = list(compatibility_warnings)
+    else:
+        loaded = load_project_config(
+            config_path=config_path,
+            legacy_config_dir=legacy_config_dir,
+        )
+        raw = loaded.raw
+        path = (
+            Path(config_path)
+            if loaded.source == "canonical"
+            else Path(legacy_config_dir or Path(config_path).parent) / "project.yaml"
+        )
+        loaded_source = loaded.source
+        loaded_source_path = loaded.source_path
+        loaded_warnings = list(loaded.warnings)
 
     missing_sections = [name for name in REQUIRED_PROJECT_SECTIONS if name not in raw]
     if missing_sections:
@@ -446,7 +467,7 @@ def validate_project_config(
     )
 
     unused_legacy_sections = sorted(LEGACY_PROJECT_SECTIONS.intersection(raw.keys()))
-    warnings = list(loaded.warnings)
+    warnings = list(loaded_warnings)
     if unused_legacy_sections:
         warnings.append(
             "Legacy compatibility sections present: "
@@ -480,18 +501,18 @@ def validate_project_config(
 
     result = {
         "timestamp": timestamp,
-        "config_path": loaded.source_path,
+        "config_path": loaded_source_path,
         "all_passed": True,
         "summary": summary,
         "warnings": warnings,
-        "source": loaded.source,
+        "source": loaded_source,
         "artifacts": {
             "resolved_config": str(resolved_path),
             "summary": str(summary_path),
         },
     }
 
-    if loaded.source == "legacy":
+    if loaded_source == "legacy":
         migrated_path = run_dir / "migrated_project_config.yaml"
         with migrated_path.open("w", encoding="utf-8") as f:
             yaml.safe_dump(resolved, f, sort_keys=False)

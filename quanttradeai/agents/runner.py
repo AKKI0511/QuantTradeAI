@@ -11,12 +11,17 @@ def _load_agent_config(
     *,
     project_config_path: str,
     agent_name: str,
+    project_config_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    loaded_project = load_project_config(config_path=project_config_path)
+    project_config = (
+        dict(project_config_override)
+        if project_config_override is not None
+        else load_project_config(config_path=project_config_path).raw
+    )
     agent_config = next(
         (
             dict(item)
-            for item in loaded_project.raw.get("agents") or []
+            for item in project_config.get("agents") or []
             if item.get("name") == agent_name
         ),
         None,
@@ -32,6 +37,7 @@ def run_project_agent(
     agent_name: str,
     mode: str = "backtest",
     skip_validation: bool = False,
+    project_config_override: dict[str, Any] | None = None,
     run_timestamp: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Dispatch a project-defined agent run and return its summary plus warnings."""
@@ -44,9 +50,15 @@ def run_project_agent(
     )
     from .paper import run_agent_live, run_agent_paper
 
+    if project_config_override is not None and mode != "backtest":
+        raise ValueError(
+            "project_config_override is supported only for backtest agent runs."
+        )
+
     agent_config = _load_agent_config(
         project_config_path=project_config_path,
         agent_name=agent_name,
+        project_config_override=project_config_override,
     )
     warnings: list[str] = []
 
@@ -70,6 +82,7 @@ def run_project_agent(
                 project_config_path=project_config_path,
                 agent_name=agent_name,
                 skip_validation=skip_validation,
+                project_config_override=project_config_override,
                 run_timestamp=run_timestamp,
             )
         elif mode == "paper":
@@ -99,6 +112,7 @@ def run_project_agent(
                 agent_name=agent_name,
                 mode=mode,
                 skip_validation=skip_validation,
+                project_config_override=project_config_override,
                 run_timestamp=run_timestamp,
             )
         elif mode == "paper":

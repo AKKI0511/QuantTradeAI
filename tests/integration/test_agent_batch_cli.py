@@ -3,6 +3,7 @@ from pathlib import Path
 import re
 from unittest.mock import patch
 
+import pandas as pd
 import yaml
 from typer.testing import CliRunner
 
@@ -233,11 +234,13 @@ def test_agent_run_all_writes_batch_artifacts_and_sorts_scoreboard(
         agent_name: str,
         mode: str,
         skip_validation: bool,
+        project_config_override: dict | None = None,
         run_timestamp: str | None = None,
     ):
         assert mode == "backtest"
         assert run_timestamp is not None
         assert Path(project_config_path).resolve() == config_path.resolve()
+        assert project_config_override is None
         run_dir = (
             Path("runs")
             / "agent"
@@ -343,11 +346,14 @@ def test_agent_run_sweep_writes_variant_artifacts_and_preserves_source_config(
         agent_name: str,
         mode: str,
         skip_validation: bool,
+        project_config_override: dict | None = None,
         run_timestamp: str | None = None,
     ):
         assert mode == "backtest"
         assert run_timestamp is not None
-        variant_config = yaml.safe_load(Path(project_config_path).read_text("utf-8"))
+        assert Path(project_config_path).resolve() == config_path.resolve()
+        assert project_config_override is not None
+        variant_config = project_config_override
         variant_agent = variant_config["agents"][0]
         assert variant_agent["name"] == agent_name
         run_dir = (
@@ -468,6 +474,108 @@ def test_agent_run_sweep_writes_variant_artifacts_and_preserves_source_config(
     }
 
 
+def test_agent_run_sweep_uses_canonical_project_root_for_llm_assets(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    config_path = tmp_path / "config" / "project.yaml"
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "llm-agent", "--output", str(config_path)],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    project_config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    project_config["data"]["start_date"] = "2024-01-01"
+    project_config["data"]["end_date"] = "2024-02-09"
+    project_config["data"]["test_start"] = "2024-01-26"
+    project_config["data"]["test_end"] = "2024-01-31"
+    project_config["sweeps"] = [
+        {
+            "name": "model_grid",
+            "kind": "agent_backtest",
+            "agent": "breakout_gpt",
+            "parameters": [{"path": "llm.model", "values": ["gpt-5.3"]}],
+        }
+    ]
+    config_path.write_text(
+        yaml.safe_dump(project_config, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    history_index = pd.date_range("2024-01-01", periods=40, freq="D")
+    history = pd.DataFrame(
+        {
+            "Open": [100.0 + idx for idx in range(len(history_index))],
+            "High": [101.0 + idx for idx in range(len(history_index))],
+            "Low": [99.0 + idx for idx in range(len(history_index))],
+            "Close": [100.5 + idx for idx in range(len(history_index))],
+            "Volume": [1000.0 + idx for idx in range(len(history_index))],
+        },
+        index=history_index,
+    )
+
+    def _fake_generate_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        featured = df.copy()
+        featured["rsi"] = [45.0 + (idx % 10) for idx in range(len(featured))]
+        return featured
+
+    with (
+        patch(
+            "quanttradeai.agents.backtest.DataLoader.fetch_data",
+            return_value={"AAPL": history},
+        ),
+        patch(
+            "quanttradeai.agents.backtest.DataProcessor.generate_features",
+            _fake_generate_features,
+        ),
+        patch(
+            "quanttradeai.agents.llm.completion",
+            return_value={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {"action": "hold", "reason": "grid check"}
+                            )
+                        }
+                    }
+                ]
+            },
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--sweep",
+                "model_grid",
+                "--config",
+                str(config_path),
+                "--mode",
+                "backtest",
+                "--skip-validation",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    assert payload["status"] == "success"
+    assert payload["success_count"] == 1
+
+    child_run_dir = Path(payload["results"][0]["run_dir"])
+    assert (child_run_dir / "prompt_samples.json").is_file()
+
+    summary = json.loads((child_run_dir / "summary.json").read_text("utf-8"))
+    resolved_project_path = Path(summary["artifacts"]["resolved_project_config"])
+    resolved_project = yaml.safe_load(resolved_project_path.read_text("utf-8"))
+    assert resolved_project["agents"][0]["name"] == payload["results"][0]["agent_name"]
+    assert payload["results"][0]["variant_project_config"]
+
+
 def test_agent_run_all_returns_non_zero_after_partial_failure(
     tmp_path: Path, monkeypatch
 ):
@@ -480,8 +588,10 @@ def test_agent_run_all_returns_non_zero_after_partial_failure(
         agent_name: str,
         mode: str,
         skip_validation: bool,
+        project_config_override: dict | None = None,
         run_timestamp: str | None = None,
     ):
+        assert project_config_override is None
         run_dir = (
             Path("runs")
             / "agent"

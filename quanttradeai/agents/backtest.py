@@ -163,6 +163,7 @@ def run_agent_backtest(
     agent_name: str,
     mode: str = "backtest",
     skip_validation: bool = False,
+    project_config_override: dict[str, Any] | None = None,
     run_timestamp: str | None = None,
 ) -> dict[str, Any]:
     """Run a rule, LLM, or hybrid agent over the configured backtest window."""
@@ -201,6 +202,7 @@ def run_agent_backtest(
         validation = validate_project_config(
             config_path=project_config_path,
             output_dir=run_dir,
+            project_config_override=project_config_override,
         )
         resolved_path = Path(validation["artifacts"]["resolved_config"])
         summary["warnings"] = list(validation.get("warnings", []))

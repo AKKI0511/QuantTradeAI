@@ -138,6 +138,7 @@ def _build_all_agent_specs(
             "run_timestamp": _child_run_timestamp(batch_timestamp, index),
             "display_order": index,
             "project_config_path": str(original_project_path),
+            "project_config_override": None,
             "variant_project_config": None,
             "base_agent_name": None,
             "parameters": None,
@@ -153,6 +154,7 @@ def _build_sweep_specs(
     resolved_project: dict[str, Any],
     batch_timestamp: str,
     batch_dir: Path,
+    original_project_path: Path,
     sweep_name: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     expansion = expand_agent_backtest_sweep(resolved_project, sweep_name)
@@ -184,7 +186,8 @@ def _build_sweep_specs(
                 ),
                 "run_timestamp": _child_run_timestamp(batch_timestamp, index),
                 "display_order": index,
-                "project_config_path": str(variant_config_path),
+                "project_config_path": str(original_project_path),
+                "project_config_override": dict(variant["project_config"]),
                 "variant_project_config": str(variant_config_path),
                 "base_agent_name": expansion["base_agent_name"],
                 "parameters": dict(variant["parameters"]),
@@ -254,6 +257,7 @@ def run_agent_backtest_batch(
             resolved_project=resolved_project,
             batch_timestamp=timestamp,
             batch_dir=batch_dir,
+            original_project_path=original_project_path,
             sweep_name=sweep_name,
         )
         batch_type = "sweep"
@@ -276,6 +280,7 @@ def run_agent_backtest_batch(
                 agent_name=agent_name,
                 mode="backtest",
                 skip_validation=skip_validation,
+                project_config_override=spec.get("project_config_override"),
                 run_timestamp=str(spec["run_timestamp"]),
             )
             summary = _attach_sweep_metadata(summary, sweep=spec.get("sweep"))
