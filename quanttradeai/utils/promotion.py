@@ -93,6 +93,21 @@ def _validate_agent_promotable_run(
     }
     required_source_mode = source_mode_by_target[target_mode]
 
+    sweep_metadata = dict(summary.get("sweep") or {})
+    if required_source_mode == "backtest" and sweep_metadata.get("promotable") is False:
+        sweep_name = str(sweep_metadata.get("name") or "unnamed_sweep")
+        base_agent_name = str(
+            sweep_metadata.get("base_agent_name")
+            or summary.get("agent_name")
+            or record.get("name")
+            or ""
+        ).strip()
+        raise ValueError(
+            "Sweep-generated backtest runs cannot be promoted directly. "
+            f"Copy the winning parameters from sweep '{sweep_name}' into config/project.yaml, "
+            f"rerun agent '{base_agent_name}' normally, and then promote that non-sweep backtest run."
+        )
+
     if run_type != "agent" or mode != required_source_mode or status != "success":
         raise ValueError(
             f"Only successful agent {required_source_mode} runs can be promoted to {target_mode}."

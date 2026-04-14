@@ -81,6 +81,7 @@ def _initialize_model_agent_run(
     run_dir: Path,
     summary: dict[str, Any],
     project_config_path: str,
+    project_config_override: dict[str, Any] | None = None,
     agent_name: str,
     mode: str,
 ) -> tuple[
@@ -97,6 +98,7 @@ def _initialize_model_agent_run(
     validation = validate_project_config(
         config_path=project_config_path,
         output_dir=run_dir,
+        project_config_override=project_config_override,
     )
     resolved_path = Path(validation["artifacts"]["resolved_config"])
     summary["warnings"] = list(validation.get("warnings", []))
@@ -253,6 +255,7 @@ def run_model_agent_backtest(
     project_config_path: str = "config/project.yaml",
     agent_name: str,
     skip_validation: bool = False,
+    project_config_override: dict[str, Any] | None = None,
     run_timestamp: str | None = None,
 ) -> dict[str, Any]:
     """Run a model agent over the configured backtest window."""
@@ -278,6 +281,7 @@ def run_model_agent_backtest(
             run_dir=run_dir,
             summary=summary,
             project_config_path=project_config_path,
+            project_config_override=project_config_override,
             agent_name=agent_name,
             mode="backtest",
         )
@@ -587,6 +591,7 @@ def _run_model_agent_streaming(
             run_dir=run_dir,
             summary=summary,
             project_config_path=project_config_path,
+            project_config_override=None,
             agent_name=agent_name,
             mode=mode,
         )

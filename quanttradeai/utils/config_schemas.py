@@ -16,6 +16,8 @@ from typing import List, Optional, Dict, Any, Literal, Set
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
+from quanttradeai.utils.sweeps import is_scalar_sweep_value
+
 
 IMPACT_CONFIG_PATH = Path("config/impact_config.yaml")
 
@@ -728,6 +730,53 @@ class ProjectAgentConfig(BaseModel):
         return self
 
 
+class ProjectSweepParameterConfig(BaseModel):
+    path: str
+    values: List[Any] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_parameter(self) -> "ProjectSweepParameterConfig":
+        if not self.path.strip():
+            raise ValueError("sweeps[].parameters[].path must not be blank.")
+        if not self.values:
+            raise ValueError(
+                "sweeps[].parameters[].values must define at least one value."
+            )
+        non_scalar_values = [
+            value for value in self.values if not is_scalar_sweep_value(value)
+        ]
+        if non_scalar_values:
+            raise ValueError(
+                "sweeps[].parameters[].values must contain scalar values only."
+            )
+        return self
+
+
+class ProjectSweepConfig(BaseModel):
+    name: str
+    kind: Literal["agent_backtest"]
+    agent: str
+    parameters: List[ProjectSweepParameterConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_sweep(self) -> "ProjectSweepConfig":
+        if not self.name.strip():
+            raise ValueError("sweeps[].name must not be blank.")
+        if not self.agent.strip():
+            raise ValueError("sweeps[].agent must not be blank.")
+        if not self.parameters:
+            raise ValueError("sweeps[].parameters must define at least one parameter.")
+        seen_paths: set[str] = set()
+        for parameter in self.parameters:
+            normalized_path = parameter.path.strip()
+            if normalized_path in seen_paths:
+                raise ValueError(
+                    f"sweeps[].parameters path '{normalized_path}' is duplicated."
+                )
+            seen_paths.add(normalized_path)
+        return self
+
+
 class ProjectDeploymentSection(BaseModel):
     target: str
     mode: str
@@ -743,6 +792,7 @@ class ProjectConfigSchema(BaseModel):
     deployment: ProjectDeploymentSection
     risk: Optional[RiskManagementConfig] = None
     position_manager: Optional[ProjectPositionManagerSection] = None
+    sweeps: List[ProjectSweepConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_agent_runtime_requirements(self) -> "ProjectConfigSchema":
@@ -769,5 +819,15 @@ class ProjectConfigSchema(BaseModel):
             if self.position_manager is None:
                 raise ValueError(
                     "position_manager is required when an agent is configured with mode=live."
+                )
+        seen_sweeps: set[str] = set()
+        agent_names = {agent.name for agent in self.agents}
+        for sweep in self.sweeps:
+            if sweep.name in seen_sweeps:
+                raise ValueError(f"sweeps[].name '{sweep.name}' must be unique.")
+            seen_sweeps.add(sweep.name)
+            if sweep.agent not in agent_names:
+                raise ValueError(
+                    f"sweeps[].agent '{sweep.agent}' must reference an existing agent."
                 )
         return self

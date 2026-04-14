@@ -1,6 +1,6 @@
 # QuantTradeAI Roadmap
 
-Last updated: 2026-04-10
+Last updated: 2026-04-12
 
 This document is the product source of truth for QuantTradeAI.
 It is written for both human contributors and coding agents.
@@ -349,11 +349,12 @@ Status on 2026-04-10:
 Goal:
 Make running many agents and many experiments on one machine easy and trustworthy.
 
-Status on 2026-04-11:
+Status on 2026-04-12:
 
 - `quanttradeai runs list --scoreboard` is implemented for local research and agent runs, with metric-aware sorting via `--sort-by` and additive JSON scoreboard payloads.
 - `quanttradeai agent run --all -c config/project.yaml --mode backtest` is implemented for local multi-agent backtest batches, with bounded concurrency, preserved child runs, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
-- Parameter sweeps, paper/live multi-agent orchestration, and richer comparison workflows remain future Stage 2 work.
+- `quanttradeai agent run --sweep <name> -c config/project.yaml --mode backtest` is implemented for backtest-only parameter sweeps defined under `sweeps:` in `config/project.yaml`, with deterministic variant expansion, preserved child runs, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
+- Paper/live multi-agent orchestration and richer comparison workflows remain future Stage 2 work.
 
 Deliverables:
 
@@ -447,10 +448,11 @@ quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode pape
 quanttradeai promote --run agent/paper/<run_id> --to live --acknowledge-live paper_momentum
 quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode live
 quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
+quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest
 ```
 
 Current implementation note:
-`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. `deploy --target docker-compose` still generates paper-agent bundles only.
+`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. Backtest-only parameter sweeps are supported through the optional `sweeps:` section in `config/project.yaml`. `deploy --target docker-compose` still generates paper-agent bundles only.
 
 ### Hybrid track
 
