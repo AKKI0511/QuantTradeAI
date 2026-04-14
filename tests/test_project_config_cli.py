@@ -200,6 +200,221 @@ def test_validate_writes_resolved_artifacts(tmp_path: Path, monkeypatch):
     assert resolved_path.parent.parent.name == "config_validation"
 
 
+def test_validate_reports_sweep_count_for_valid_project(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["sweeps"] = [
+        {
+            "name": "rsi_threshold_grid",
+            "kind": "agent_backtest",
+            "agent": "rsi_reversion",
+            "parameters": [
+                {"path": "rule.buy_below", "values": [25.0, 30.0]},
+                {"path": "rule.sell_above", "values": [70.0, 75.0]},
+            ],
+        }
+    ]
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 0, result.stdout
+    assert "sweeps=1" in result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    assert payload["summary"]["sweeps"] == 1
+
+
+def test_validate_fails_when_sweep_names_duplicate(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["sweeps"] = [
+        {
+            "name": "rsi_threshold_grid",
+            "kind": "agent_backtest",
+            "agent": "rsi_reversion",
+            "parameters": [{"path": "rule.buy_below", "values": [25.0]}],
+        },
+        {
+            "name": "rsi_threshold_grid",
+            "kind": "agent_backtest",
+            "agent": "rsi_reversion",
+            "parameters": [{"path": "rule.sell_above", "values": [75.0]}],
+        },
+    ]
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "must be unique" in result.stderr.lower()
+
+
+def test_validate_fails_when_sweep_agent_is_unknown(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["sweeps"] = [
+        {
+            "name": "missing_agent_grid",
+            "kind": "agent_backtest",
+            "agent": "ghost_agent",
+            "parameters": [{"path": "rule.buy_below", "values": [25.0]}],
+        }
+    ]
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "must reference an existing agent" in result.stderr.lower()
+
+
+def test_validate_fails_when_sweep_parameter_path_is_invalid(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["sweeps"] = [
+        {
+            "name": "invalid_path_grid",
+            "kind": "agent_backtest",
+            "agent": "rsi_reversion",
+            "parameters": [{"path": "rule.missing", "values": [25.0]}],
+        }
+    ]
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "must resolve to an existing scalar leaf" in result.stderr.lower()
+
+
+def test_validate_fails_when_sweep_parameter_values_are_empty(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["sweeps"] = [
+        {
+            "name": "empty_values_grid",
+            "kind": "agent_backtest",
+            "agent": "rsi_reversion",
+            "parameters": [{"path": "rule.buy_below", "values": []}],
+        }
+    ]
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "must define at least one value" in result.stderr.lower()
+
+
+def test_validate_fails_when_sweep_parameter_path_is_non_scalar(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["sweeps"] = [
+        {
+            "name": "non_scalar_grid",
+            "kind": "agent_backtest",
+            "agent": "rsi_reversion",
+            "parameters": [{"path": "context.features", "values": ["rsi_14"]}],
+        }
+    ]
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "must resolve to an existing scalar leaf" in result.stderr.lower()
+
+
+def test_validate_fails_when_sweep_variant_breaks_project_validation(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["llm-agent"], sort_keys=False)
+    )
+    config_payload["sweeps"] = [
+        {
+            "name": "prompt_grid",
+            "kind": "agent_backtest",
+            "agent": "breakout_gpt",
+            "parameters": [
+                {"path": "llm.prompt_file", "values": ["prompts/missing.md"]}
+            ],
+        }
+    ]
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    prompt_path = Path("prompts/breakout.md")
+    prompt_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.write_text("Return JSON only.", encoding="utf-8")
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "variant" in result.stderr.lower()
+    assert "prompt file does not exist" in result.stderr.lower()
+
+
 def test_init_writes_prompt_assets_for_agent_templates(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 

@@ -1,4 +1,4 @@
-"""Batch orchestration for multi-agent backtest runs."""
+"""Batch orchestration for multi-agent and sweep backtest runs."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from quanttradeai.utils.run_scoreboard import (
     render_scoreboard_table,
     sort_run_records,
 )
+from quanttradeai.utils.sweeps import expand_agent_backtest_sweep, sweep_summary_payload
 
 from .runner import run_project_agent
 
@@ -31,6 +32,11 @@ def _slugify(value: str | None) -> str:
 def _write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _write_yaml(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
 def _copy_artifact(source: str | Path, destination: Path) -> str:
@@ -71,13 +77,148 @@ def _child_run_timestamp(batch_timestamp: str, index: int) -> str:
     return f"{batch_timestamp}_{index:02d}"
 
 
+def _write_child_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    run_dir = Path(str(summary.get("run_dir") or ""))
+    if run_dir:
+        _write_json(run_dir / "summary.json", summary)
+    return summary
+
+
+def _attach_sweep_metadata(
+    summary: dict[str, Any],
+    *,
+    sweep: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not sweep:
+        return summary
+    patched = dict(summary)
+    patched["sweep"] = dict(sweep)
+    return _write_child_summary(patched)
+
+
+def _default_failed_summary(
+    *,
+    agent_name: str,
+    child_run_dir: Path,
+    error: str,
+) -> dict[str, Any]:
+    return {
+        "run_id": f"agent/backtest/{child_run_dir.name}",
+        "run_type": "agent",
+        "mode": "backtest",
+        "name": agent_name,
+        "status": "failed",
+        "timestamps": {},
+        "symbols": [],
+        "warnings": [],
+        "artifacts": {},
+        "run_dir": str(child_run_dir),
+        "error": error,
+    }
+
+
+def _build_all_agent_specs(
+    *,
+    resolved_project: dict[str, Any],
+    batch_timestamp: str,
+    original_project_path: Path,
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    agents = sorted(
+        [dict(agent) for agent in resolved_project.get("agents") or []],
+        key=lambda agent: str(agent.get("name") or ""),
+    )
+    if not agents:
+        raise ValueError("Project config defines no agents to run with --all.")
+
+    specs = [
+        {
+            "agent_name": str(agent.get("name") or ""),
+            "agent_kind": str(agent.get("kind") or ""),
+            "configured_mode": str(agent.get("mode") or ""),
+            "run_timestamp": _child_run_timestamp(batch_timestamp, index),
+            "display_order": index,
+            "project_config_path": str(original_project_path),
+            "variant_project_config": None,
+            "base_agent_name": None,
+            "parameters": None,
+            "sweep": None,
+        }
+        for index, agent in enumerate(agents, start=1)
+    ]
+    return None, specs
+
+
+def _build_sweep_specs(
+    *,
+    resolved_project: dict[str, Any],
+    batch_timestamp: str,
+    batch_dir: Path,
+    sweep_name: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    expansion = expand_agent_backtest_sweep(resolved_project, sweep_name)
+    variants = list(expansion["variants"])
+    if not variants:
+        raise ValueError(f"Sweep '{sweep_name}' expanded to zero variants.")
+
+    specs: list[dict[str, Any]] = []
+    expanded_variants: list[dict[str, Any]] = []
+    variants_root = batch_dir / "variants"
+    for index, variant in enumerate(variants, start=1):
+        variant_dir = variants_root / f"{index:03d}_{_slugify(variant['name'])}"
+        variant_config_path = variant_dir / "project.yaml"
+        _write_yaml(variant_config_path, dict(variant["project_config"]))
+
+        sweep_metadata = sweep_summary_payload(
+            sweep_name=expansion["name"],
+            base_agent_name=expansion["base_agent_name"],
+            parameters=dict(variant["parameters"]),
+        )
+        specs.append(
+            {
+                "agent_name": str(variant["name"]),
+                "agent_kind": str(
+                    (variant.get("agent_config") or {}).get("kind") or ""
+                ),
+                "configured_mode": str(
+                    (variant.get("agent_config") or {}).get("mode") or ""
+                ),
+                "run_timestamp": _child_run_timestamp(batch_timestamp, index),
+                "display_order": index,
+                "project_config_path": str(variant_config_path),
+                "variant_project_config": str(variant_config_path),
+                "base_agent_name": expansion["base_agent_name"],
+                "parameters": dict(variant["parameters"]),
+                "sweep": sweep_metadata,
+            }
+        )
+        expanded_variants.append(
+            {
+                "name": str(variant["name"]),
+                "base_agent_name": expansion["base_agent_name"],
+                "parameters": dict(variant["parameters"]),
+                "project_config_path": str(variant_config_path),
+            }
+        )
+
+    sweep_payload = {
+        "name": expansion["name"],
+        "kind": expansion["kind"],
+        "base_agent_name": expansion["base_agent_name"],
+        "parameters": list(expansion["parameters"]),
+        "variant_count": len(expanded_variants),
+        "expanded_variants": expanded_variants,
+    }
+    return sweep_payload, specs
+
+
 def run_agent_backtest_batch(
     *,
     project_config_path: str = "config/project.yaml",
     skip_validation: bool = False,
     max_concurrency: int = 1,
+    sweep_name: str | None = None,
 ) -> dict[str, Any]:
-    """Run every configured agent through the normal backtest path."""
+    """Run every configured agent or sweep variant through the backtest path."""
 
     if max_concurrency < 1:
         raise ValueError("--max-concurrency must be at least 1.")
@@ -88,12 +229,12 @@ def run_agent_backtest_batch(
     project_name = (loaded_project.raw.get("project") or {}).get("name") or Path(
         original_project_path
     ).stem
-    batch_dir = (
-        Path("runs")
-        / "agent"
-        / "batches"
-        / f"{timestamp}_{_slugify(project_name)}_backtest"
+    batch_name = (
+        f"{timestamp}_{_slugify(project_name)}_{_slugify(sweep_name)}_backtest"
+        if sweep_name
+        else f"{timestamp}_{_slugify(project_name)}_backtest"
     )
+    batch_dir = Path("runs") / "agent" / "batches" / batch_name
     batch_dir.mkdir(parents=True, exist_ok=True)
 
     validation = validate_project_config(
@@ -108,36 +249,36 @@ def run_agent_backtest_batch(
         yaml.safe_load(resolved_project_path.read_text(encoding="utf-8")) or {}
     )
 
-    agents = sorted(
-        [dict(agent) for agent in resolved_project.get("agents") or []],
-        key=lambda agent: str(agent.get("name") or ""),
-    )
-    if not agents:
-        raise ValueError("Project config defines no agents to run with --all.")
-
-    agent_specs = [
-        {
-            "agent_name": str(agent.get("name") or ""),
-            "agent_kind": str(agent.get("kind") or ""),
-            "configured_mode": str(agent.get("mode") or ""),
-            "run_timestamp": _child_run_timestamp(timestamp, index),
-        }
-        for index, agent in enumerate(agents, start=1)
-    ]
+    if sweep_name:
+        sweep_payload, agent_specs = _build_sweep_specs(
+            resolved_project=resolved_project,
+            batch_timestamp=timestamp,
+            batch_dir=batch_dir,
+            sweep_name=sweep_name,
+        )
+        batch_type = "sweep"
+    else:
+        sweep_payload, agent_specs = _build_all_agent_specs(
+            resolved_project=resolved_project,
+            batch_timestamp=timestamp,
+            original_project_path=original_project_path,
+        )
+        batch_type = "all_agents"
 
     def _run_one(spec: dict[str, Any]) -> dict[str, Any]:
-        agent_name = spec["agent_name"]
+        agent_name = str(spec["agent_name"])
         stdout_log = _stdout_log_path(batch_dir, agent_name)
         stderr_log = _stderr_log_path(batch_dir, agent_name)
 
         try:
             summary, warnings = run_project_agent(
-                project_config_path=str(original_project_path),
+                project_config_path=str(spec["project_config_path"]),
                 agent_name=agent_name,
                 mode="backtest",
                 skip_validation=skip_validation,
                 run_timestamp=str(spec["run_timestamp"]),
             )
+            summary = _attach_sweep_metadata(summary, sweep=spec.get("sweep"))
             stdout_log.write_text(
                 json.dumps({"summary": summary, "warnings": warnings}, indent=2),
                 encoding="utf-8",
@@ -158,19 +299,17 @@ def run_agent_backtest_batch(
                 agent_name=agent_name,
                 run_timestamp=str(spec["run_timestamp"]),
             )
-            child_summary = _load_summary(child_run_dir / "summary.json") or {
-                "run_id": f"agent/backtest/{child_run_dir.name}",
-                "run_type": "agent",
-                "mode": "backtest",
-                "name": agent_name,
-                "status": "failed",
-                "timestamps": {},
-                "symbols": [],
-                "warnings": [],
-                "artifacts": {},
-                "run_dir": str(child_run_dir),
-                "error": str(exc),
-            }
+            child_summary = _load_summary(
+                child_run_dir / "summary.json"
+            ) or _default_failed_summary(
+                agent_name=agent_name,
+                child_run_dir=child_run_dir,
+                error=str(exc),
+            )
+            child_summary = _attach_sweep_metadata(
+                child_summary,
+                sweep=spec.get("sweep"),
+            )
             return {
                 **spec,
                 "status": "failed",
@@ -187,7 +326,7 @@ def run_agent_backtest_batch(
         for future in as_completed(futures):
             results.append(future.result())
 
-    results.sort(key=lambda item: item["agent_name"])
+    results.sort(key=lambda item: int(item["display_order"]))
 
     scoreboard_records = attach_scoreboard([item["summary"] for item in results])
     scoreboard_records = sort_run_records(
@@ -195,19 +334,28 @@ def run_agent_backtest_batch(
         sort_by="net_sharpe",
         ascending=False,
     )
+    scoreboard_order = [
+        str(record.get("run_id") or "") for record in scoreboard_records
+    ]
 
     results_payload = {
+        "batch_type": batch_type,
+        "mode": "backtest",
+        "scoreboard_order": scoreboard_order,
         "results": [
             {
                 "agent_name": item["agent_name"],
+                "base_agent_name": item.get("base_agent_name"),
                 "agent_kind": item["agent_kind"],
                 "configured_mode": item["configured_mode"],
                 "status": item["status"],
                 "warnings": item["warnings"],
                 "error": item.get("error"),
+                "parameters": item.get("parameters"),
                 "run_timestamp": item["run_timestamp"],
                 "run_id": item["summary"].get("run_id"),
                 "run_dir": item["summary"].get("run_dir"),
+                "variant_project_config": item.get("variant_project_config"),
                 "stdout_log": item["stdout_log"],
                 "stderr_log": item["stderr_log"],
                 "scoreboard": next(
@@ -220,8 +368,14 @@ def run_agent_backtest_batch(
                 ),
             }
             for item in results
-        ]
+        ],
     }
+    if sweep_payload is not None:
+        results_payload["sweep"] = dict(sweep_payload)
+        results_payload["expanded_variants"] = list(
+            sweep_payload.get("expanded_variants") or []
+        )
+
     scoreboard_payload = {
         "sort_by": "net_sharpe",
         "records": scoreboard_records,
@@ -244,6 +398,7 @@ def run_agent_backtest_batch(
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "status": batch_status,
+        "batch_type": batch_type,
         "project_name": project_name,
         "project_config_path": str(original_project_path),
         "resolved_project_config": str(resolved_project_path),
@@ -253,6 +408,7 @@ def run_agent_backtest_batch(
         "agent_count": len(results),
         "success_count": success_count,
         "failure_count": failure_count,
+        "scoreboard_order": scoreboard_order,
         "artifacts": {
             "results": str(results_path),
             "scoreboard_json": str(scoreboard_json_path),
@@ -261,12 +417,15 @@ def run_agent_backtest_batch(
         "agents": [
             {
                 "agent_name": item["agent_name"],
+                "base_agent_name": item.get("base_agent_name"),
+                "parameters": item.get("parameters"),
                 "agent_kind": item["agent_kind"],
                 "configured_mode": item["configured_mode"],
                 "status": item["status"],
                 "run_timestamp": item["run_timestamp"],
                 "run_id": item["summary"].get("run_id"),
                 "run_dir": item["summary"].get("run_dir"),
+                "variant_project_config": item.get("variant_project_config"),
                 "stdout_log": item["stdout_log"],
                 "stderr_log": item["stderr_log"],
             }
@@ -274,11 +433,18 @@ def run_agent_backtest_batch(
         ],
         "warnings": list(dict.fromkeys(validation.get("warnings", []))),
     }
+    if sweep_payload is not None:
+        manifest["sweep"] = dict(sweep_payload)
+        manifest["expanded_variants"] = list(
+            sweep_payload.get("expanded_variants") or []
+        )
+
     manifest_path = batch_dir / "batch_manifest.json"
     _write_json(manifest_path, manifest)
 
     return {
         "status": batch_status,
+        "batch_type": batch_type,
         "project_name": project_name,
         "mode": "backtest",
         "run_dir": str(batch_dir),
@@ -291,4 +457,5 @@ def run_agent_backtest_batch(
         },
         "results": results_payload["results"],
         "warnings": manifest["warnings"],
+        **({"sweep": dict(sweep_payload)} if sweep_payload is not None else {}),
     }

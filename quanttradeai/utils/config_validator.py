@@ -31,6 +31,7 @@ from quanttradeai.utils.config_schemas import (
 from quanttradeai.utils.impact_loader import ImpactConfigError, load_impact_config
 from quanttradeai.utils.project_paths import infer_project_root, resolve_project_path
 from quanttradeai.utils.project_config import load_project_config
+from quanttradeai.utils.sweeps import expand_agent_backtest_sweep
 
 
 DEFAULT_CONFIG_PATHS: Dict[str, Path] = {
@@ -291,6 +292,53 @@ def _validate_agent_project_sections(
     return warnings
 
 
+def _validate_project_sweeps(
+    *,
+    resolved: dict[str, Any],
+    config_path: Path,
+) -> None:
+    errors: list[str] = []
+
+    for sweep in resolved.get("sweeps") or []:
+        sweep_name = str(sweep.get("name") or "").strip() or "<unnamed>"
+        try:
+            expansion = expand_agent_backtest_sweep(resolved, sweep_name)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+
+        for variant in expansion["variants"]:
+            variant_config = dict(variant.get("project_config") or {})
+            try:
+                variant_schema = ProjectConfigSchema(**variant_config)
+            except ValidationError as exc:
+                errors.append(
+                    f"Sweep '{sweep_name}' variant '{variant['name']}' is invalid: {exc}"
+                )
+                continue
+
+            variant_resolved = _merge_preserving_unknown(
+                variant_config,
+                variant_schema.model_dump(mode="json"),
+            )
+            try:
+                _validate_research_project_sections(
+                    resolved=variant_resolved,
+                    config_path=config_path,
+                )
+                _validate_agent_project_sections(
+                    resolved=variant_resolved,
+                    config_path=config_path,
+                )
+            except ValueError as exc:
+                errors.append(
+                    f"Sweep '{sweep_name}' variant '{variant['name']}' is invalid: {exc}"
+                )
+
+    if errors:
+        raise ValueError("\n".join(errors))
+
+
 def _render_project_summary(resolved: dict, warnings: list[str]) -> dict:
     agents = resolved.get("agents") or []
     data = resolved.get("data") or {}
@@ -317,6 +365,7 @@ def _render_project_summary(resolved: dict, warnings: list[str]) -> dict:
         "feature_definitions": len(
             (resolved.get("features") or {}).get("definitions", [])
         ),
+        "sweeps": len(resolved.get("sweeps") or []),
         "research_enabled": bool(
             (resolved.get("research") or {}).get("enabled", False)
         ),
@@ -409,6 +458,10 @@ def validate_project_config(
             resolved=resolved,
             config_path=path,
         )
+    )
+    _validate_project_sweeps(
+        resolved=resolved,
+        config_path=path,
     )
 
     summary = _render_project_summary(resolved=resolved, warnings=warnings)

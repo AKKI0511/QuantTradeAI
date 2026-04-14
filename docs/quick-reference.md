@@ -30,6 +30,10 @@ poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --
 poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest
 poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest --max-concurrency 4
 
+# Backtest one sweep of agent parameter variants
+poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
+
 # Generate a Docker Compose bundle for the paper agent
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
 
@@ -105,6 +109,12 @@ Canonical multi-agent batch artifacts:
 - `runs/agent/batches/<timestamp>_<project>_backtest/results.json`
 - `runs/agent/batches/<timestamp>_<project>_backtest/scoreboard.json`
 - `runs/agent/batches/<timestamp>_<project>_backtest/scoreboard.txt`
+
+Canonical sweep batch artifacts:
+- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/batch_manifest.json`
+- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/results.json`
+- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.json`
+- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.txt`
 
 ## Python API Patterns
 
@@ -280,7 +290,7 @@ Use these pages instead of copying large config blocks out of the quick referenc
 
 Quick decision rule:
 
-- Use `config/project.yaml` for `validate`, `research run`, and `agent run`
+- Use `config/project.yaml` for `validate`, `research run`, `agent run`, and `agent run --sweep`
 - Use `quanttradeai runs list --scoreboard` to compare local research and agent runs by metrics
 - Use the runtime YAML files for `live-trade`, `backtest-model`, and operational streaming setup
 

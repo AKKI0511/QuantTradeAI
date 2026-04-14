@@ -292,6 +292,46 @@ def test_promote_failure_cases_do_not_mutate_project_yaml(
         assert config_path.read_text(encoding="utf-8") == original
 
 
+def test_promote_rejects_sweep_generated_backtest_run(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = Path("config/project.yaml")
+    _write_project_config(config_path)
+    original = config_path.read_text(encoding="utf-8")
+
+    run_id = "agent/backtest/20260101_010000_rsi_sweep_variant"
+    _write_run_summary(
+        run_id=run_id,
+        agent_name="rsi_reversion__rsi_threshold_grid__buy_below-25_0__sell_above-70_0",
+        artifacts={"metrics": "runs/agent/backtest/metrics.json"},
+    )
+    summary_path = Path("runs").joinpath(*run_id.split("/")) / "summary.json"
+    summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary_payload["sweep"] = {
+        "name": "rsi_threshold_grid",
+        "base_agent_name": "rsi_reversion",
+        "parameters": {
+            "rule.buy_below": 25.0,
+            "rule.sell_above": 70.0,
+        },
+        "promotable": False,
+    }
+    summary_path.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["promote", "--run", run_id, "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 1
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert "cannot be promoted directly" in combined_output
+    assert "copy the winning parameters" in combined_output.lower()
+    assert config_path.read_text(encoding="utf-8") == original
+
+
 def test_promote_research_run_copies_models_to_promoted_paths(
     tmp_path: Path,
     monkeypatch,

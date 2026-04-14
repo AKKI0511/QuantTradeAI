@@ -1394,6 +1394,11 @@ def cmd_agent_run(
         "--all",
         help="Run every project-defined agent. Backtest mode only in this release.",
     ),
+    sweep: Optional[str] = typer.Option(
+        None,
+        "--sweep",
+        help="Run every expanded variant for the named sweep. Backtest mode only in this release.",
+    ),
     config: str = typer.Option(
         "config/project.yaml", "-c", "--config", help="Path to project config YAML"
     ),
@@ -1419,8 +1424,9 @@ def cmd_agent_run(
     from .agents.batch import run_agent_backtest_batch
     from .agents.runner import run_project_agent
 
-    if bool(agent) == bool(run_all):
-        raise typer.BadParameter("Choose exactly one of --agent or --all.")
+    chosen = sum((1 if agent else 0, 1 if run_all else 0, 1 if sweep else 0))
+    if chosen != 1:
+        raise typer.BadParameter("Choose exactly one of --agent, --all, or --sweep.")
 
     try:
         if run_all:
@@ -1432,6 +1438,21 @@ def cmd_agent_run(
                 max_concurrency=max_concurrency,
             )
             typer.echo(f"Agent batch completed: {batch_result['run_dir']}")
+            typer.echo(json.dumps(batch_result, indent=2))
+            if batch_result["status"] != "success":
+                raise typer.Exit(code=1)
+            return
+
+        if sweep:
+            if mode != "backtest":
+                raise ValueError("--sweep currently supports only --mode backtest.")
+            batch_result = run_agent_backtest_batch(
+                project_config_path=config,
+                skip_validation=skip_validation,
+                max_concurrency=max_concurrency,
+                sweep_name=sweep,
+            )
+            typer.echo(f"Agent sweep completed: {batch_result['run_dir']}")
             typer.echo(json.dumps(batch_result, indent=2))
             if batch_result["status"] != "success":
                 raise typer.Exit(code=1)
@@ -1524,7 +1545,8 @@ def cmd_validate(
     )
     typer.echo(
         f"- features: definitions={summary['feature_definitions']}, "
-        f"research_enabled={summary['research_enabled']}, agents={len(summary['agents'])}"
+        f"research_enabled={summary['research_enabled']}, agents={len(summary['agents'])}, "
+        f"sweeps={summary['sweeps']}"
     )
 
     if result.get("warnings"):

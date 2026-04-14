@@ -35,6 +35,7 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 | Run an LLM agent | `init --template llm-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Prompt-driven agent logic using project config across all three modes |
 | Run a hybrid agent | `init --template hybrid` -> `research run` -> `promote --run research/<run_id>` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Model signals plus LLM reasoning in one project, with research outputs promoted into a stable path before the agent is promoted through environments |
 | Backtest every project agent together | `agent run --all --mode backtest --max-concurrency 4` | A local multi-agent backtest batch with preserved child runs plus batch-level manifests and scoreboards |
+| Sweep one agent across parameter variants | `agent run --sweep rsi_threshold_grid --mode backtest --max-concurrency 4` | A local sweep batch that expands one agent into many backtest variants, preserves normal child runs, and ranks them with the same scoreboard flow |
 | Generate a Docker Compose deployment bundle | `deploy --agent <name> --target docker-compose` | A paper-agent bundle with compose, Dockerfile, env placeholders, and resolved config |
 | Keep using the older live loop | `live-trade` with runtime YAML files | Legacy compatibility for existing setups |
 
@@ -77,6 +78,7 @@ QuantTradeAI is one framework with two connected tracks:
 | Research-run promotion to stable model paths | Supported |
 | Agent backtest-to-paper promotion | Supported |
 | Agent paper-to-live promotion with acknowledgement | Supported |
+| `agent run --sweep <name> --mode backtest` from `project.yaml` | Supported |
 | `deploy --target docker-compose` for paper agents | Supported |
 | `live-trade` legacy runtime YAML workflow | Supported for compatibility |
 
@@ -222,6 +224,33 @@ This writes batch artifacts under `runs/agent/batches/<timestamp>_<project>_back
 
 Each child agent still writes its normal run under `runs/agent/backtest/...`, so `quanttradeai runs list --scoreboard` continues to work without a separate comparison path.
 
+### Sweep One Agent
+
+Use this when you want to evaluate a small grid of backtest-only parameter variants for one agent without mutating your checked-in project config.
+
+```bash
+poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
+```
+
+Add the sweep to `config/project.yaml`:
+
+```yaml
+sweeps:
+  - name: "rsi_threshold_grid"
+    kind: "agent_backtest"
+    agent: "rsi_reversion"
+    parameters:
+      - path: "rule.buy_below"
+        values: [25.0, 30.0]
+      - path: "rule.sell_above"
+        values: [70.0, 75.0]
+```
+
+This writes batch artifacts under `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/` plus one normal child run per expanded variant under `runs/agent/backtest/...`.
+
+Sweep child runs are intentionally not promotable. Copy the winning parameters into `config/project.yaml`, rerun that agent normally, and then promote the non-sweep run.
+
 ### Deploy A Paper Agent
 
 Use this if you want a generated Docker Compose bundle for a project-defined paper agent.
@@ -280,6 +309,13 @@ For the full shape, field reference, and supported agent modes, see [Project YAM
 | Agent backtest | `runs/agent/backtest/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, backtest files |
 | Agent paper | `runs/agent/paper/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime YAML snapshots |
 | Agent live | `runs/agent/live/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime streaming/risk/position-manager YAML snapshots |
+
+Sweep batch artifacts:
+
+- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/batch_manifest.json`
+- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/results.json`
+- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.json`
+- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.txt`
 
 This makes it easier to compare runs, audit what actually executed, and reuse winning configurations.
 
