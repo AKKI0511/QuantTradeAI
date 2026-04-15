@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import yaml
 from typer.testing import CliRunner
 
 from quanttradeai.cli import app
@@ -166,6 +167,55 @@ def test_model_agent_deploy_writes_manifest_and_models_mount(
     )
     assert payload["artifacts"]["manifest"].endswith("deployment_manifest.json")
     assert manifest["agent_kind"] == "model"
+
+
+def test_deploy_disables_replay_in_generated_bundle_and_warns(
+    tmp_path: Path, monkeypatch
+):
+    config_path = _init_template(tmp_path, monkeypatch, "rule-agent")
+
+    result = _deploy_agent(
+        agent_name="rsi_reversion",
+        config_path=config_path,
+        output_dir="deployments/rule-replay",
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    output_dir = Path(payload["output_dir"])
+    resolved_project = yaml.safe_load(
+        (output_dir / "resolved_project_config.yaml").read_text(encoding="utf-8")
+    )
+
+    assert config_path.read_text(encoding="utf-8") != ""
+    assert resolved_project["data"]["streaming"]["replay"]["enabled"] is False
+    assert any(
+        "replay was disabled in the generated bundle" in warning.lower()
+        for warning in payload["warnings"]
+    )
+
+
+def test_deploy_rejects_replay_only_project_without_realtime_streaming_fields(
+    tmp_path: Path, monkeypatch
+):
+    config_path = _init_template(tmp_path, monkeypatch, "rule-agent")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["streaming"].pop("provider")
+    config_payload["data"]["streaming"].pop("websocket_url")
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = _deploy_agent(
+        agent_name="rsi_reversion",
+        config_path=config_path,
+        output_dir="deployments/rule-missing-realtime",
+    )
+
+    assert result.exit_code == 1
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert "data.streaming.provider must be configured" in combined_output
 
 
 def test_deploy_failure_cases(

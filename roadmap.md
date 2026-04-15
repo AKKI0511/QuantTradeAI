@@ -113,8 +113,12 @@ data:
   streaming:
     enabled: true
     provider: "alpaca"
+    websocket_url: "wss://stream.data.alpaca.markets/v2/iex"
     symbols: ["AAPL"]
     channels: ["trades", "quotes"]
+    replay:
+      enabled: true
+      pace_delay_ms: 0
 
 features:
   definitions:
@@ -331,9 +335,10 @@ Status on 2026-04-10:
 - `quanttradeai agent run --agent <name> -c config/project.yaml --mode live` is implemented for `rule`, `model`, `llm`, and `hybrid` agents.
 - Agent templates now write the referenced prompt markdown assets.
 - Agent backtest runs now persist resolved config, runtime YAML snapshots, metrics, equity curve, ledger, decisions, sampled prompt/response payloads where applicable, and standardized run metadata under `runs/agent/backtest/...`.
-- Model-agent paper runs now persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, and `executions.jsonl` under `runs/agent/paper/...`.
-- LLM and hybrid paper runs now persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, and sampled prompt payloads under `runs/agent/paper/...`.
-- Rule-agent paper runs now persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, `decisions.jsonl`, and `executions.jsonl` under `runs/agent/paper/...`.
+- Project-defined paper runs now support deterministic OHLCV replay through `data.streaming.replay`, resolving the replay window from replay dates, then test dates, then data dates.
+- Model-agent paper runs now warm-start from historical bars, persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, `executions.jsonl`, and write `replay_manifest.json` when replay is enabled under `runs/agent/paper/...`.
+- LLM and hybrid paper runs now warm-start from historical bars, persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, sampled prompt payloads, and write `replay_manifest.json` when replay is enabled under `runs/agent/paper/...`.
+- Rule-agent paper runs now warm-start from historical bars, persist resolved config, runtime YAML snapshots, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, and write `replay_manifest.json` when replay is enabled under `runs/agent/paper/...`.
 - Live agent runs now persist resolved config, runtime streaming/risk/position-manager YAML snapshots, `summary.json`, `metrics.json`, `executions.jsonl`, and `decisions.jsonl` under `runs/agent/live/...`, with `prompt_samples.json` for `llm` and `hybrid`.
 - `quanttradeai runs list` is implemented for local research and agent run discovery.
 - `quanttradeai promote --run research/<run_id> -c config/project.yaml` is implemented for successful research-model promotion into stable `models/...` paths, with `promotion_manifest.json` written in each promoted destination.
@@ -341,7 +346,7 @@ Status on 2026-04-10:
 - `quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml` is implemented for successful agent backtest-to-paper promotion.
 - `quanttradeai promote --run agent/paper/<run_id> --to live --acknowledge-live <agent_name>` is implemented for successful paper-to-live promotion with an explicit safety acknowledgement.
 - Top-level `risk` and `position_manager` are now the canonical live safety/runtime sections in `config/project.yaml`.
-- `quanttradeai deploy --agent <name> -c config/project.yaml --target docker-compose` now generates a paper-agent deployment bundle with compose, Dockerfile, env placeholders, resolved config, and a deployment manifest.
+- `quanttradeai deploy --agent <name> -c config/project.yaml --target docker-compose` now generates a real-time paper-agent deployment bundle with compose, Dockerfile, env placeholders, resolved config, and a deployment manifest. Replay is disabled in the emitted bundle config.
 - `live-trade`, `config/risk_config.yaml`, `config/position_manager.yaml`, and `config/streaming.yaml` remain supported as legacy compatibility paths, but they are no longer the primary live workflow for project-defined agents.
 
 ### Stage 2: Multi-Agent Lab
@@ -452,7 +457,7 @@ quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode 
 ```
 
 Current implementation note:
-`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. Backtest-only parameter sweeps are supported through the optional `sweeps:` section in `config/project.yaml`. `deploy --target docker-compose` still generates paper-agent bundles only.
+`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. Local paper mode defaults to replay-backed execution through `data.streaming.replay`. Backtest-only parameter sweeps are supported through the optional `sweeps:` section in `config/project.yaml`. `deploy --target docker-compose` still generates real-time paper bundles only.
 
 ### Hybrid track
 

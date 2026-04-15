@@ -43,7 +43,7 @@ The model-agent template creates:
 
 - a canonical `config/project.yaml`
 - a placeholder model artifact directory at `models/promoted/aapl_daily_classifier/`
-- a minimal `data.streaming` block
+- a replay-enabled `data.streaming` block for local paper runs
 - top-level `risk` and `position_manager` defaults for later live promotion
 
 Replace the placeholder model directory with a promoted research model artifact or another compatible saved model before running the agent.
@@ -61,6 +61,8 @@ poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
 ```
 
+Local paper mode uses deterministic historical replay by default. If you leave `data.streaming.replay.start_date` and `end_date` unset, QuantTradeAI resolves the replay window from `data.test_start` and `data.test_end`, then falls back to `data.start_date` and `data.end_date`.
+
 ### Promote The Same Agent To Live
 
 ```bash
@@ -74,12 +76,16 @@ poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml 
 poetry run quanttradeai deploy --agent paper_momentum -c config/project.yaml --target docker-compose
 ```
 
+Generated deployment bundles are still real-time paper deployments. QuantTradeAI disables replay in the emitted `resolved_project_config.yaml` and requires the normal provider and websocket settings to be present in the source project config.
+
 Paper and live runs write standardized artifacts under `runs/agent/paper/...` and `runs/agent/live/...`, including:
 
 - `summary.json`
 - `metrics.json`
 - `executions.jsonl`
 - compiled runtime YAML snapshots
+
+Replay-backed paper runs also write `replay_manifest.json`.
 
 Live runs also write compiled `runtime_risk_config.yaml` and `runtime_position_manager_config.yaml`.
 
@@ -153,7 +159,8 @@ poetry run quanttradeai live-trade -m <model_dir> -c config/model_config.yaml -s
 
 Important boundary:
 
-- project-defined paper and live agents compile runtime config from `config/project.yaml`
+- project-defined paper agents default to replay from `config/project.yaml`
+- deployment bundles and live agents still use real-time streaming compiled from `config/project.yaml`
 - `live-trade` still uses the legacy runtime YAML files directly
 
 ## Where To Go Next

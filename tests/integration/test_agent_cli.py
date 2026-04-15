@@ -656,6 +656,13 @@ def test_model_agent_paper_run_writes_metrics_and_execution_log(
     assert init_result.exit_code == 0, init_result.stdout
 
     observed: dict[str, str] = {}
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["streaming"]["replay"]["enabled"] = False
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
 
     def _engine_factory(**kwargs):
         observed.update({key: str(value) for key, value in kwargs.items()})
@@ -695,6 +702,71 @@ def test_model_agent_paper_run_writes_metrics_and_execution_log(
     assert metrics_payload["execution_count"] == 2
     assert metrics_payload["realized_pnl"] == 120.0
     assert metrics_payload["open_positions"]["AAPL"]["unrealized_pnl"] == 50.0
+
+
+def test_model_agent_paper_run_uses_replay_manifest(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _stub_prometheus_client(monkeypatch)
+    _stub_live_trading_module(monkeypatch)
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "model-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["start_date"] = "2024-01-01"
+    config_payload["data"]["end_date"] = "2024-02-09"
+    config_payload["data"]["test_start"] = "2024-02-01"
+    config_payload["data"]["test_end"] = "2024-02-03"
+    config_payload["data"]["streaming"].pop("websocket_url")
+    config_payload["data"]["streaming"].pop("provider")
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    observed: dict[str, object] = {}
+
+    def _engine_factory(**kwargs):
+        observed.update(kwargs)
+        return FakePaperEngine(**kwargs)
+
+    with (
+        patch(
+            "quanttradeai.agents.model_agent.DataLoader.fetch_data",
+            return_value={"AAPL": _mock_history()},
+        ),
+        patch(
+            "quanttradeai.agents.model_agent.LiveTradingEngine",
+            side_effect=_engine_factory,
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "paper_momentum",
+                "--config",
+                "config/project.yaml",
+                "--mode",
+                "paper",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    run_dir = Path(payload["run_dir"])
+    assert payload["paper_source"] == "replay"
+    assert (run_dir / "replay_manifest.json").is_file()
+    assert observed["gateway"].__class__.__name__ == "ReplayGateway"
+    assert observed["bootstrap_history_frames"]
 
 
 def test_model_agent_live_run_writes_live_artifacts_and_risk_metrics(
@@ -782,6 +854,7 @@ def test_llm_agent_paper_run_writes_standardized_artifacts(tmp_path: Path, monke
     config_payload["data"]["test_start"] = "2024-02-01"
     config_payload["data"]["test_end"] = "2024-02-09"
     config_payload["agents"][0]["mode"] = "paper"
+    config_payload["data"]["streaming"]["replay"]["enabled"] = False
     config_path.write_text(
         yaml.safe_dump(config_payload, sort_keys=False),
         encoding="utf-8",
@@ -871,6 +944,67 @@ def test_llm_agent_paper_run_writes_standardized_artifacts(tmp_path: Path, monke
     assert metrics_payload["execution_count"] == 1
 
 
+def test_llm_agent_paper_run_uses_replay_without_realtime_streaming(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "llm-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["start_date"] = "2024-01-01"
+    config_payload["data"]["end_date"] = "2024-02-09"
+    config_payload["data"]["test_start"] = "2024-02-01"
+    config_payload["data"]["test_end"] = "2024-02-03"
+    config_payload["data"]["streaming"].pop("websocket_url")
+    config_payload["data"]["streaming"].pop("provider")
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    with (
+        patch(
+            "quanttradeai.agents.paper.DataLoader.fetch_data",
+            return_value={"AAPL": _mock_history()},
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataProcessor.generate_features",
+            _fake_generate_features,
+        ),
+        patch(
+            "quanttradeai.agents.llm.completion",
+            side_effect=_completion_from_actions(["buy", "hold", "sell", "hold"]),
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "breakout_gpt",
+                "--config",
+                str(config_path),
+                "--mode",
+                "paper",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    run_dir = Path(payload["run_dir"])
+    assert payload["paper_source"] == "replay"
+    assert (run_dir / "replay_manifest.json").is_file()
+    assert (run_dir / "prompt_samples.json").is_file()
+
+
 def test_rule_agent_paper_run_writes_metrics_and_execution_log(
     tmp_path: Path, monkeypatch
 ):
@@ -891,6 +1025,7 @@ def test_rule_agent_paper_run_writes_metrics_and_execution_log(
     config_payload["data"]["test_end"] = "2024-02-09"
     config_payload["agents"][0]["rule"]["buy_below"] = 50.0
     config_payload["agents"][0]["rule"]["sell_above"] = 60.0
+    config_payload["data"]["streaming"]["replay"]["enabled"] = False
     config_path.write_text(
         yaml.safe_dump(config_payload, sort_keys=False),
         encoding="utf-8",
@@ -978,6 +1113,63 @@ def test_rule_agent_paper_run_writes_metrics_and_execution_log(
     metrics_payload = json.loads((run_dir / "metrics.json").read_text("utf-8"))
     assert metrics_payload["decision_count"] == 2
     assert metrics_payload["execution_count"] == 2
+
+
+def test_rule_agent_paper_run_uses_replay_without_realtime_streaming(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["start_date"] = "2024-01-01"
+    config_payload["data"]["end_date"] = "2024-02-09"
+    config_payload["data"]["test_start"] = "2024-02-01"
+    config_payload["data"]["test_end"] = "2024-02-03"
+    config_payload["data"]["streaming"].pop("websocket_url")
+    config_payload["data"]["streaming"].pop("provider")
+    config_payload["agents"][0]["rule"]["buy_below"] = 50.0
+    config_payload["agents"][0]["rule"]["sell_above"] = 60.0
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    with (
+        patch(
+            "quanttradeai.agents.paper.DataLoader.fetch_data",
+            return_value={"AAPL": _mock_history()},
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataProcessor.generate_features",
+            _rule_paper_features,
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "rsi_reversion",
+                "--config",
+                str(config_path),
+                "--mode",
+                "paper",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    run_dir = Path(payload["run_dir"])
+    assert payload["paper_source"] == "replay"
+    assert (run_dir / "replay_manifest.json").is_file()
 
 
 def test_rule_agent_live_run_writes_live_artifacts_and_risk_metrics(
@@ -1111,6 +1303,7 @@ def test_hybrid_agent_paper_run_includes_model_signals_in_decisions(
     config_payload["data"]["test_start"] = "2024-02-01"
     config_payload["data"]["test_end"] = "2024-02-09"
     config_payload["agents"][0]["mode"] = "paper"
+    config_payload["data"]["streaming"]["replay"]["enabled"] = False
     config_path.write_text(
         yaml.safe_dump(config_payload, sort_keys=False),
         encoding="utf-8",
@@ -1198,6 +1391,92 @@ def test_hybrid_agent_paper_run_includes_model_signals_in_decisions(
     first_decision = json.loads(decision_lines[0])
     assert first_decision["model_signals"]["aapl_daily_classifier"]["signal"] == 1
     assert first_decision["action"] == "buy"
+
+
+def test_hybrid_agent_paper_run_uses_replay_without_realtime_streaming(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "hybrid", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    model_dir = Path("models/promoted/aapl_daily_classifier")
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["start_date"] = "2024-01-01"
+    config_payload["data"]["end_date"] = "2024-02-09"
+    config_payload["data"]["test_start"] = "2024-02-01"
+    config_payload["data"]["test_end"] = "2024-02-03"
+    config_payload["data"]["streaming"].pop("websocket_url")
+    config_payload["data"]["streaming"].pop("provider")
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    def _hybrid_completion(**kwargs):
+        content = kwargs["messages"][-1]["content"]
+        action = "buy" if '"signal": 1' in content else "hold"
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {"action": action, "reason": "Model signal driven"}
+                        )
+                    }
+                }
+            ]
+        }
+
+    with (
+        patch(
+            "quanttradeai.agents.paper.DataLoader.fetch_data",
+            return_value={"AAPL": _mock_history()},
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataProcessor.generate_features",
+            _fake_generate_features,
+        ),
+        patch(
+            "quanttradeai.agents.backtest.MomentumClassifier",
+            FakeSignalClassifier,
+        ),
+        patch(
+            "quanttradeai.agents.backtest._load_feature_preprocessor",
+            return_value=None,
+        ),
+        patch(
+            "quanttradeai.agents.llm.completion",
+            side_effect=_hybrid_completion,
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "hybrid_swing_agent",
+                "--config",
+                str(config_path),
+                "--mode",
+                "paper",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    run_dir = Path(payload["run_dir"])
+    assert payload["paper_source"] == "replay"
+    assert (run_dir / "replay_manifest.json").is_file()
 
 
 def test_agent_run_warns_when_cli_mode_differs_from_configured_mode(

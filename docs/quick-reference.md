@@ -2,6 +2,8 @@
 
 Common commands, patterns, and examples for QuantTradeAI.
 
+Project-defined `agent run --mode paper` defaults to deterministic replay through `data.streaming.replay`. Generated deployment bundles stay on the real-time paper path.
+
 ## CLI Commands
 
 ```bash
@@ -24,6 +26,7 @@ poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 # Promote the successful backtest run before starting paper mode
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
+# Local paper mode replays historical OHLCV by default
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
 
 # Backtest every configured project agent together
@@ -35,6 +38,7 @@ poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.y
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
 
 # Generate a Docker Compose bundle for the paper agent
+# Generated bundles disable replay and expect real-time streaming settings
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
 
 # Import an existing legacy config/ directory into the canonical workflow
@@ -92,9 +96,10 @@ Canonical agent paper artifacts:
 - `runs/agent/paper/<timestamp>_<agent>/runtime_streaming_config.yaml`
 - `runs/agent/paper/<timestamp>_<agent>/summary.json`
 - `runs/agent/paper/<timestamp>_<agent>/metrics.json`
-- `runs/agent/paper/<timestamp>_<agent>/decisions.jsonl`
 - `runs/agent/paper/<timestamp>_<agent>/executions.jsonl`
-- `runs/agent/paper/<timestamp>_<agent>/prompt_samples.json`
+- `runs/agent/paper/<timestamp>_<agent>/decisions.jsonl` for `rule`, `llm`, and `hybrid`
+- `runs/agent/paper/<timestamp>_<agent>/prompt_samples.json` for `llm` and `hybrid`
+- `runs/agent/paper/<timestamp>_<agent>/replay_manifest.json` when replay is enabled
 
 Canonical deployment bundle artifacts:
 - `reports/deployments/<agent>/<timestamp>/docker-compose.yml`
@@ -291,6 +296,7 @@ Use these pages instead of copying large config blocks out of the quick referenc
 Quick decision rule:
 
 - Use `config/project.yaml` for `validate`, `research run`, `agent run`, and `agent run --sweep`
+- Use `data.streaming.replay` for deterministic local paper runs; keep provider/websocket fields in place for later deployment or live promotion
 - Use `quanttradeai runs list --scoreboard` to compare local research and agent runs by metrics
 - Use the runtime YAML files for `live-trade`, `backtest-model`, and operational streaming setup
 

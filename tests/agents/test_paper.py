@@ -1,6 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
+import time
 
 import numpy as np
 import pandas as pd
@@ -11,6 +12,7 @@ from quanttradeai.agents.paper import (
     _build_paper_runtime_model_config,
     _required_bootstrap_bars,
 )
+from quanttradeai.streaming.replay import ReplayGateway
 from quanttradeai.streaming.stream_buffer import StreamBuffer
 
 
@@ -306,3 +308,65 @@ def test_paper_engine_records_prompt_context_and_hybrid_model_signals(
     assert len(context["market_data"]["bars"]) == 2
     assert engine.prompt_samples
     assert "messages" in engine.prompt_samples[0]["prompt_payload"]
+
+
+def test_paper_engine_replay_bootstrap_does_not_double_count_history(
+    tmp_path: Path, monkeypatch
+):
+    engine = _build_engine(
+        tmp_path,
+        monkeypatch,
+        gateway_messages=[],
+        completion=_completion_from_actions(["buy", "hold"]),
+    )
+    bootstrap_history = {"AAPL": _mock_history(periods=2)}
+    replay_frames = {"AAPL": _mock_history(periods=4).iloc[2:4]}
+
+    engine.bootstrap_history_frames = bootstrap_history
+    engine.gateway = ReplayGateway(replay_frames, pace_delay_ms=0, buffer_size=16)
+
+    asyncio.run(engine.start())
+
+    assert len(engine.decision_log) == 2
+    assert [entry["timestamp"] for entry in engine.decision_log] == [
+        pd.Timestamp("2024-01-03T00:00:00Z"),
+        pd.Timestamp("2024-01-04T00:00:00Z"),
+    ]
+    assert len(engine.execution_log) == 1
+    assert engine.execution_log[0]["action"] == "buy"
+    assert len(engine._history["AAPL"]) == 4
+
+
+def test_paper_engine_replay_waits_for_completion_signal(
+    tmp_path: Path, monkeypatch
+):
+    def _slow_completion(**kwargs):
+        time.sleep(0.12)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {"action": "hold", "reason": "slow replay test"}
+                        )
+                    }
+                }
+            ]
+        }
+
+    engine = _build_engine(
+        tmp_path,
+        monkeypatch,
+        gateway_messages=[],
+        completion=_slow_completion,
+    )
+    bootstrap_history = {"AAPL": _mock_history(periods=2)}
+    replay_frames = {"AAPL": _mock_history(periods=8).iloc[2:8]}
+
+    engine.bootstrap_history_frames = bootstrap_history
+    engine.gateway = ReplayGateway(replay_frames, pace_delay_ms=0, buffer_size=32)
+
+    asyncio.run(engine.start())
+
+    assert len(engine.decision_log) == 6
+    assert len(engine.execution_log) == 0
