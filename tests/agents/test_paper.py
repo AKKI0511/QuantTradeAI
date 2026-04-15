@@ -93,6 +93,9 @@ def _build_engine(
     gateway_messages: list[dict],
     completion,
     model_signal_runtimes=None,
+    context_overrides: dict | None = None,
+    history_frame: pd.DataFrame | None = None,
+    notes_content: str | None = None,
 ) -> PaperAgentEngine:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr("quanttradeai.agents.llm.completion", completion)
@@ -144,6 +147,16 @@ def _build_engine(
         "tools": ["get_quote", "place_order"],
         "risk": {"max_position_pct": 0.05},
     }
+    if context_overrides:
+        agent_config["context"].update(context_overrides)
+
+    if agent_config["context"].get("notes"):
+        notes_path = tmp_path / "notes" / "paper_agent.md"
+        notes_path.parent.mkdir(parents=True, exist_ok=True)
+        notes_path.write_text(
+            notes_content or "Trade only when the signal is clear.",
+            encoding="utf-8",
+        )
 
     return PaperAgentEngine(
         project_config_path=str(project_path),
@@ -156,7 +169,9 @@ def _build_engine(
         ],
         model_signal_runtimes=model_signal_runtimes or [],
         gateway=ScriptedGateway(gateway_messages),
-        data_loader=FakeLoader({"AAPL": _mock_history()}),
+        data_loader=FakeLoader(
+            {"AAPL": history_frame if history_frame is not None else _mock_history()}
+        ),
         data_processor=DummyProcessor(),
         history_window=512,
     )
@@ -308,6 +323,91 @@ def test_paper_engine_records_prompt_context_and_hybrid_model_signals(
     assert len(context["market_data"]["bars"]) == 2
     assert engine.prompt_samples
     assert "messages" in engine.prompt_samples[0]["prompt_payload"]
+
+
+def test_paper_engine_context_blocks_include_orders_memory_news_and_notes(
+    tmp_path: Path, monkeypatch
+):
+    history = _mock_history()
+    history["text"] = ""
+    history.iloc[-3, history.columns.get_loc("text")] = "Analyst upgrades Apple"
+    history.iloc[-2, history.columns.get_loc("text")] = "Apple expands buyback"
+    history.iloc[-1, history.columns.get_loc("text")] = "Apple expands buyback"
+
+    engine = _build_engine(
+        tmp_path,
+        monkeypatch,
+        gateway_messages=[
+            {
+                "symbol": "AAPL",
+                "price": 121.0,
+                "volume": 10,
+                "timestamp": "2024-09-17T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 123.0,
+                "volume": 12,
+                "timestamp": "2024-09-18T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 124.0,
+                "volume": 14,
+                "timestamp": "2024-09-19T00:00:00Z",
+            },
+        ],
+        completion=_completion_from_actions(["buy", "hold"]),
+        history_frame=history,
+        context_overrides={
+            "orders": {"enabled": True, "max_entries": 2},
+            "memory": {"enabled": True, "max_entries": 2},
+            "news": {"enabled": True, "max_items": 2},
+            "notes": True,
+        },
+        notes_content="Prefer continuation trades over counter-trend calls.",
+    )
+
+    asyncio.run(engine.start())
+
+    assert len(engine.decision_log) == 2
+    first_context = engine.decision_log[0]["context"]
+    assert first_context["orders"] == {"recent_orders": []}
+    assert first_context["memory"] == {"recent_decisions": []}
+    assert first_context["news"]["headlines"] == [
+        {
+            "timestamp": "2024-09-16T00:00:00+00:00",
+            "text": "Apple expands buyback",
+        },
+        {
+            "timestamp": "2024-09-14T00:00:00+00:00",
+            "text": "Analyst upgrades Apple",
+        },
+    ]
+    assert first_context["notes"] == {
+        "path": "notes/paper_agent.md",
+        "content": "Prefer continuation trades over counter-trend calls.",
+    }
+
+    second_context = engine.decision_log[1]["context"]
+    assert second_context["orders"]["recent_orders"] == [
+        {
+            "timestamp": "2024-09-17T00:00:00+00:00",
+            "action": "buy",
+            "qty": engine.execution_log[0]["qty"],
+            "price": 121.0,
+            "status": "executed",
+        }
+    ]
+    assert second_context["memory"]["recent_decisions"] == [
+        {
+            "timestamp": "2024-09-17T00:00:00+00:00",
+            "action": "buy",
+            "reason": "buy signal",
+            "execution_status": "executed",
+            "target_position_after": 1,
+        }
+    ]
 
 
 def test_paper_engine_replay_bootstrap_does_not_double_count_history(

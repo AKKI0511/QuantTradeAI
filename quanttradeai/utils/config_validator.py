@@ -19,7 +19,11 @@ from typing import Any, Callable, Dict, Iterable, Mapping
 import yaml
 from pydantic import ValidationError
 
-from quanttradeai.agents.context import _infer_feature_columns
+from quanttradeai.agents.context import (
+    _infer_feature_columns,
+    context_block_enabled,
+    resolve_agent_notes_path,
+)
 from quanttradeai.utils.config_schemas import (
     BacktestConfigSchema,
     FeaturesConfigSchema,
@@ -189,6 +193,7 @@ def _validate_agent_project_sections(
     feature_names = set(feature_definitions)
     data_streaming_cfg = dict((resolved.get("data") or {}).get("streaming") or {})
     position_manager_cfg = dict(resolved.get("position_manager") or {})
+    top_level_news_cfg = dict(resolved.get("news") or {})
 
     if "risk_management" in position_manager_cfg:
         warnings.append(
@@ -289,6 +294,32 @@ def _validate_agent_project_sections(
                 f"Agent '{agent_name}' references unknown model signals: "
                 + ", ".join(missing_signal_refs)
             )
+
+        if agent_kind in {"llm", "hybrid"} and context_block_enabled(
+            context_cfg.get("news")
+        ):
+            if not top_level_news_cfg.get("enabled", False):
+                errors.append(
+                    f"Agent '{agent_name}' enables context.news but top-level news.enabled is not true."
+                )
+
+        if agent_kind in {"llm", "hybrid"} and context_block_enabled(
+            context_cfg.get("notes")
+        ):
+            notes_path = resolve_agent_notes_path(
+                agent_config=agent,
+                project_config_path=config_path,
+            )
+            if notes_path is None or not notes_path.is_file():
+                errors.append(
+                    f"Agent '{agent_name}' enables context.notes but the notes file does not exist: {notes_path}"
+                )
+            else:
+                notes_content = notes_path.read_text(encoding="utf-8").strip()
+                if not notes_content:
+                    errors.append(
+                        f"Agent '{agent_name}' enables context.notes but the notes file is empty: {notes_path}"
+                    )
 
     if errors:
         raise ValueError("\n".join(errors))

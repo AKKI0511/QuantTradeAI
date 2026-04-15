@@ -508,6 +508,77 @@ Hybrid agents may also define `model_signal_sources`.
 
 `model_signal_sources` must be written as objects with `name` and `path` for runnable agent configs. Legacy string entries can still pass `quanttradeai validate` with a deprecation warning, but `quanttradeai agent run --mode backtest` raises a runtime `ValueError` when loading them.
 
+Prompt context for `llm` and `hybrid` agents supports these blocks:
+
+- `market_data`
+- `features`
+- `model_signals`
+- `positions`
+- `risk_state`
+- `orders`
+- `memory`
+- `news`
+- `notes`
+
+`orders`, `memory`, and `news` accept either boolean shorthand or an object with `enabled` plus a cap:
+
+- `orders: true` means `max_entries: 5`
+- `memory: true` means `max_entries: 5`
+- `news: true` means `max_items: 5`
+
+`notes` accepts either boolean shorthand or an object with `enabled` and `file`:
+
+- `notes: true` resolves to `notes/<agent_name>.md`
+- the resolved notes file must exist and contain non-empty text
+
+Validation rules:
+
+- `context.news` requires top-level `news.enabled: true`
+- `context.notes` fails validation when the resolved file is missing or empty
+
+Runtime behavior:
+
+- `orders.recent_orders` includes recent executions for the current symbol with `timestamp`, `action`, `qty`, `price`, and `status`
+- `memory.recent_decisions` includes recent decisions for the current symbol with `timestamp`, `action`, `reason`, `execution_status`, and `target_position_after`
+- `news.headlines` uses recent non-empty `text` rows already attached to the symbol history, newest first, deduped, capped
+- `notes` is loaded once per run as `{path, content}`
+
+Example:
+
+```yaml
+news:
+  enabled: true
+  provider: "yfinance"
+  lookback_days: 7
+
+agents:
+  - name: "breakout_gpt"
+    kind: "llm"
+    mode: "paper"
+    llm:
+      provider: "openai"
+      model: "gpt-5.3"
+      prompt_file: "prompts/breakout.md"
+    context:
+      market_data:
+        enabled: true
+        timeframe: "1d"
+        lookback_bars: 20
+      features: ["rsi_14"]
+      positions: true
+      orders:
+        enabled: true
+        max_entries: 5
+      memory: true
+      news:
+        enabled: true
+        max_items: 5
+      notes:
+        enabled: true
+        file: "notes/breakout_gpt.md"
+      risk_state: true
+```
+
 Paper mode:
 
 - compiles `data.streaming` into a runtime streaming config

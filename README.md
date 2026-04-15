@@ -210,6 +210,32 @@ poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.y
 
 The default hybrid template is prewired to `models/promoted/aapl_daily_classifier`, so you do not need to hand-edit timestamped experiment paths after the research run.
 
+LLM and hybrid agents can now pull first-class prompt context from recent orders, recent decisions, optional news headlines, and a project-relative notes file in addition to market data, features, model signals, positions, and risk state.
+
+```yaml
+news:
+  enabled: true
+  provider: "yfinance"
+
+agents:
+  - name: "breakout_gpt"
+    kind: "llm"
+    mode: "paper"
+    llm:
+      provider: "openai"
+      model: "gpt-5.3"
+      prompt_file: "prompts/breakout.md"
+    context:
+      market_data: {enabled: true, lookback_bars: 20}
+      features: ["rsi_14"]
+      positions: true
+      orders: {enabled: true, max_entries: 5}
+      memory: true
+      news: {enabled: true, max_items: 5}
+      notes: {enabled: true, file: "notes/breakout_gpt.md"}
+      risk_state: true
+```
+
 ### Run Every Project Agent
 
 Use this when one `config/project.yaml` defines several agents and you want one local batch run that keeps the normal child runs intact.

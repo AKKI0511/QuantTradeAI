@@ -4,6 +4,25 @@ Common commands, patterns, and examples for QuantTradeAI.
 
 Project-defined `agent run --mode paper` defaults to deterministic replay through `data.streaming.replay`. Generated deployment bundles stay on the real-time paper path.
 
+LLM and hybrid agents can include prompt context from recent orders, recent decisions, news headlines, and a notes file:
+
+```yaml
+news:
+  enabled: true
+
+agents:
+  - name: "breakout_gpt"
+    kind: "llm"
+    mode: "paper"
+    context:
+      orders: {enabled: true, max_entries: 5}
+      memory: true
+      news: {enabled: true, max_items: 5}
+      notes: {enabled: true, file: "notes/breakout_gpt.md"}
+```
+
+`context.news` requires top-level `news.enabled: true`. `context.notes` requires a non-empty file.
+
 ## CLI Commands
 
 ```bash

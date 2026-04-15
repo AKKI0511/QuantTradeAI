@@ -54,7 +54,7 @@ from .backtest import (
     _load_model_signal_sources,
 )
 from .base import AgentDecision, AgentSimulationState
-from .context import build_context_payload
+from .context import build_context_payload, load_agent_notes_payload
 
 logger = logging.getLogger(__name__)
 
@@ -286,6 +286,7 @@ class PaperAgentEngine:
     decision_log: list[dict[str, Any]] = field(default_factory=list, init=False)
     execution_log: list[dict[str, Any]] = field(default_factory=list, init=False)
     prompt_samples: list[dict[str, Any]] = field(default_factory=list, init=False)
+    notes_payload: dict[str, Any] | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self.gateway = self.gateway or StreamingGateway(self.runtime_streaming_config)
@@ -301,6 +302,10 @@ class PaperAgentEngine:
             "llm",
             "hybrid",
         }
+        self.notes_payload = load_agent_notes_payload(
+            agent_config=self.agent_config,
+            project_config_path=self.project_config_path,
+        )
         risk_manager = None
         if self.mode == "live":
             drawdown_guard = _load_risk_guard(self.runtime_risk_config)
@@ -474,7 +479,7 @@ class PaperAgentEngine:
             history = history[
                 [
                     column
-                    for column in ("Open", "High", "Low", "Close", "Volume")
+                    for column in ("Open", "High", "Low", "Close", "Volume", "text")
                     if column in history.columns
                 ]
             ].copy()
@@ -635,6 +640,7 @@ class PaperAgentEngine:
                         "qty": qty,
                         "price": price,
                         "timestamp": timestamp,
+                        "status": "executed",
                         "decision_action": decision.action,
                     }
                     self.execution_log.append(execution_payload)
@@ -660,6 +666,7 @@ class PaperAgentEngine:
                         "qty": qty,
                         "price": price,
                         "timestamp": timestamp,
+                        "status": "executed",
                         "decision_action": decision.action,
                     }
                     self.execution_log.append(execution_payload)
@@ -715,6 +722,9 @@ class PaperAgentEngine:
             current_row=current_row,
             model_signals=model_signals,
             state=state,
+            decision_history=self.decision_log,
+            execution_history=self.execution_log,
+            notes_payload=self.notes_payload,
         )
         decision = self.strategy.decide(
             agent_name=str(self.agent_config.get("name") or ""),
@@ -735,6 +745,7 @@ class PaperAgentEngine:
             "timestamp": completed_timestamp,
             "action": decision.action,
             "reason": decision.reason,
+            "target_position_after": execution_result["position_after"],
             "context": context,
             "model_signals": {
                 name: {"signal": signal} for name, signal in model_signals.items()

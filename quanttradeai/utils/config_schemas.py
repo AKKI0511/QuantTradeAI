@@ -699,6 +699,62 @@ class ProjectAgentMarketDataContext(BaseModel):
         return value
 
 
+class ProjectAgentOrdersContext(BaseModel):
+    enabled: bool = True
+    max_entries: int = Field(5, gt=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_bool(cls, value: Any) -> Dict[str, Any]:
+        if value in (None, False):
+            return {"enabled": False}
+        if value is True:
+            return {"enabled": True}
+        return value
+
+
+class ProjectAgentMemoryContext(BaseModel):
+    enabled: bool = True
+    max_entries: int = Field(5, gt=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_bool(cls, value: Any) -> Dict[str, Any]:
+        if value in (None, False):
+            return {"enabled": False}
+        if value is True:
+            return {"enabled": True}
+        return value
+
+
+class ProjectAgentNewsContext(BaseModel):
+    enabled: bool = True
+    max_items: int = Field(5, gt=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_bool(cls, value: Any) -> Dict[str, Any]:
+        if value in (None, False):
+            return {"enabled": False}
+        if value is True:
+            return {"enabled": True}
+        return value
+
+
+class ProjectAgentNotesContext(BaseModel):
+    enabled: bool = True
+    file: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_bool(cls, value: Any) -> Dict[str, Any]:
+        if value in (None, False):
+            return {"enabled": False}
+        if value is True:
+            return {"enabled": True}
+        return value
+
+
 class ProjectModelSignalSourceConfig(BaseModel):
     name: str
     path: str
@@ -709,11 +765,11 @@ class ProjectAgentContextConfig(BaseModel):
     features: List[str] = Field(default_factory=list)
     model_signals: List[str] = Field(default_factory=list)
     positions: bool = False
-    orders: bool = False
+    orders: bool | ProjectAgentOrdersContext = False
     risk_state: bool = False
-    news: bool = False
-    memory: bool = False
-    notes: bool = False
+    news: bool | ProjectAgentNewsContext = False
+    memory: bool | ProjectAgentMemoryContext = False
+    notes: bool | ProjectAgentNotesContext = False
 
 
 class ProjectAgentConfig(BaseModel):

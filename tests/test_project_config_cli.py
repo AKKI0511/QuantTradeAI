@@ -1030,6 +1030,147 @@ def test_validate_fails_when_agent_prompt_file_missing(tmp_path: Path, monkeypat
     assert "prompt file does not exist" in result.stderr.lower()
 
 
+def test_validate_passes_when_llm_context_blocks_use_bool_shorthand(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path = Path("prompts/breakout.md")
+    prompt_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.write_text("Return JSON only.", encoding="utf-8")
+    notes_path = Path("notes/breakout_gpt.md")
+    notes_path.parent.mkdir(parents=True, exist_ok=True)
+    notes_path.write_text("Trade with the prevailing trend.", encoding="utf-8")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["llm-agent"], sort_keys=False)
+    )
+    config_payload["news"] = {"enabled": True}
+    config_payload["agents"][0]["context"].update(
+        {
+            "orders": True,
+            "memory": True,
+            "news": True,
+            "notes": True,
+        }
+    )
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 0, result.stdout
+
+
+def test_validate_passes_when_llm_context_blocks_use_object_form(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path = Path("prompts/breakout.md")
+    prompt_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.write_text("Return JSON only.", encoding="utf-8")
+    notes_path = Path("notes/custom_breakout.md")
+    notes_path.parent.mkdir(parents=True, exist_ok=True)
+    notes_path.write_text("Only take high-conviction setups.", encoding="utf-8")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["llm-agent"], sort_keys=False)
+    )
+    config_payload["news"] = {"enabled": True}
+    config_payload["agents"][0]["context"].update(
+        {
+            "orders": {"enabled": True, "max_entries": 3},
+            "memory": {"enabled": True, "max_entries": 4},
+            "news": {"enabled": True, "max_items": 2},
+            "notes": {"enabled": True, "file": "notes/custom_breakout.md"},
+        }
+    )
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    resolved = yaml.safe_load(
+        Path(payload["artifacts"]["resolved_config"]).read_text(encoding="utf-8")
+    )
+    context = resolved["agents"][0]["context"]
+    assert context["orders"]["max_entries"] == 3
+    assert context["memory"]["max_entries"] == 4
+    assert context["news"]["max_items"] == 2
+    assert context["notes"]["file"] == "notes/custom_breakout.md"
+
+
+def test_validate_fails_when_context_news_enabled_without_top_level_news(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path = Path("prompts/breakout.md")
+    prompt_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.write_text("Return JSON only.", encoding="utf-8")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["llm-agent"], sort_keys=False)
+    )
+    config_payload["agents"][0]["context"]["news"] = True
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "context.news" in result.stderr
+    assert "news.enabled" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("notes_payload", "expected_message"),
+    [
+        (None, "notes file does not exist"),
+        ("", "notes file is empty"),
+    ],
+)
+def test_validate_fails_when_context_notes_file_is_missing_or_empty(
+    tmp_path: Path,
+    monkeypatch,
+    notes_payload: str | None,
+    expected_message: str,
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path = Path("prompts/breakout.md")
+    prompt_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.write_text("Return JSON only.", encoding="utf-8")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["llm-agent"], sort_keys=False)
+    )
+    config_payload["agents"][0]["context"]["notes"] = True
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False), encoding="utf-8"
+    )
+
+    notes_path = Path("notes/breakout_gpt.md")
+    if notes_payload is not None:
+        notes_path.parent.mkdir(parents=True, exist_ok=True)
+        notes_path.write_text(notes_payload, encoding="utf-8")
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert expected_message in result.stderr.lower()
+
+
 def test_validate_warns_for_deprecated_model_signal_source_strings(
     tmp_path: Path, monkeypatch
 ):

@@ -30,6 +30,15 @@ def _mock_history() -> pd.DataFrame:
     )
 
 
+def _mock_history_with_news() -> pd.DataFrame:
+    history = _mock_history()
+    history["text"] = ""
+    history.loc[pd.Timestamp("2024-01-24"), "text"] = "Apple expands its buyback"
+    history.loc[pd.Timestamp("2024-01-25"), "text"] = "Apple expands its buyback"
+    history.loc[pd.Timestamp("2024-01-26"), "text"] = "Analyst raises Apple target"
+    return history
+
+
 def _fake_generate_features(self, df: pd.DataFrame) -> pd.DataFrame:
     featured = df.copy()
     featured["rsi"] = np.linspace(45.0, 65.0, len(featured))
@@ -190,6 +199,103 @@ def test_agent_run_backtest_writes_artifacts(tmp_path: Path, monkeypatch):
     prompt_samples = json.loads((run_dir / "prompt_samples.json").read_text("utf-8"))
     assert prompt_samples
     assert "messages" in prompt_samples[0]["prompt_payload"]
+
+
+def test_llm_agent_backtest_context_blocks_include_orders_memory_news_and_notes(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "llm-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["start_date"] = "2024-01-01"
+    config_payload["data"]["end_date"] = "2024-02-09"
+    config_payload["data"]["test_start"] = "2024-01-26"
+    config_payload["data"]["test_end"] = "2024-01-31"
+    config_payload["news"] = {"enabled": True}
+    config_payload["agents"][0]["context"].update(
+        {
+            "orders": {"enabled": True, "max_entries": 2},
+            "memory": {"enabled": True, "max_entries": 2},
+            "news": {"enabled": True, "max_items": 2},
+            "notes": True,
+        }
+    )
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    notes_path = Path("notes/breakout_gpt.md")
+    notes_path.parent.mkdir(parents=True, exist_ok=True)
+    notes_path.write_text("Favor continuation setups over noise.", encoding="utf-8")
+
+    with (
+        patch(
+            "quanttradeai.agents.backtest.DataLoader.fetch_data",
+            return_value={"AAPL": _mock_history_with_news()},
+        ),
+        patch(
+            "quanttradeai.agents.backtest.DataProcessor.generate_features",
+            _fake_generate_features,
+        ),
+        patch(
+            "quanttradeai.agents.llm.completion",
+            side_effect=_completion_from_actions(
+                ["buy", "hold", "sell", "hold", "buy", "hold"]
+            ),
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "breakout_gpt",
+                "--config",
+                str(config_path),
+                "--mode",
+                "backtest",
+                "--skip-validation",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    run_dir = Path(payload["run_dir"])
+    decisions = [
+        json.loads(line)
+        for line in (run_dir / "decisions.jsonl")
+        .read_text(encoding="utf-8")
+        .strip()
+        .splitlines()
+    ]
+
+    first_context = decisions[0]["context"]
+    assert first_context["orders"] == {"recent_orders": []}
+    assert first_context["memory"] == {"recent_decisions": []}
+    assert first_context["notes"] == {
+        "path": "notes/breakout_gpt.md",
+        "content": "Favor continuation setups over noise.",
+    }
+    assert first_context["news"]["headlines"][0]["text"] == "Analyst raises Apple target"
+
+    second_context = decisions[1]["context"]
+    assert second_context["orders"]["recent_orders"][0]["action"] == "buy"
+    assert second_context["orders"]["recent_orders"][0]["status"] == "simulated"
+    assert second_context["memory"]["recent_decisions"][0]["action"] == "buy"
+    assert (
+        second_context["memory"]["recent_decisions"][0]["execution_status"]
+        == "simulated"
+    )
 
 
 def test_agent_run_backtest_omits_ledger_artifact_when_no_trades(
@@ -942,6 +1048,130 @@ def test_llm_agent_paper_run_writes_standardized_artifacts(tmp_path: Path, monke
     metrics_payload = json.loads((run_dir / "metrics.json").read_text("utf-8"))
     assert metrics_payload["decision_count"] == 2
     assert metrics_payload["execution_count"] == 1
+
+
+def test_llm_agent_paper_context_blocks_include_orders_memory_news_and_notes(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _stub_streaming_gateway_module(monkeypatch)
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "llm-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["start_date"] = "2024-01-01"
+    config_payload["data"]["end_date"] = "2024-02-09"
+    config_payload["data"]["test_start"] = "2024-02-01"
+    config_payload["data"]["test_end"] = "2024-02-09"
+    config_payload["agents"][0]["mode"] = "paper"
+    config_payload["data"]["streaming"]["replay"]["enabled"] = False
+    config_payload["news"] = {"enabled": True}
+    config_payload["agents"][0]["context"].update(
+        {
+            "orders": {"enabled": True, "max_entries": 2},
+            "memory": {"enabled": True, "max_entries": 2},
+            "news": {"enabled": True, "max_items": 2},
+            "notes": True,
+        }
+    )
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    notes_path = Path("notes/breakout_gpt.md")
+    notes_path.parent.mkdir(parents=True, exist_ok=True)
+    notes_path.write_text("Bias toward clear trend continuation.", encoding="utf-8")
+
+    gateway = FakeStreamingGateway(
+        [
+            {
+                "symbol": "AAPL",
+                "price": 121.0,
+                "volume": 10,
+                "timestamp": "2024-02-10T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 123.0,
+                "volume": 12,
+                "timestamp": "2024-02-11T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 124.0,
+                "volume": 14,
+                "timestamp": "2024-02-12T00:00:00Z",
+            },
+        ]
+    )
+
+    with (
+        patch(
+            "quanttradeai.agents.paper.StreamingGateway",
+            return_value=gateway,
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataLoader.fetch_data",
+            return_value={"AAPL": _mock_history_with_news()},
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataProcessor.generate_features",
+            _fake_generate_features,
+        ),
+        patch(
+            "quanttradeai.agents.llm.completion",
+            side_effect=_completion_from_actions(["buy", "hold"]),
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "breakout_gpt",
+                "--config",
+                str(config_path),
+                "--mode",
+                "paper",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    run_dir = Path(payload["run_dir"])
+    decisions = [
+        json.loads(line)
+        for line in (run_dir / "decisions.jsonl")
+        .read_text(encoding="utf-8")
+        .strip()
+        .splitlines()
+    ]
+
+    first_context = decisions[0]["context"]
+    assert first_context["orders"] == {"recent_orders": []}
+    assert first_context["memory"] == {"recent_decisions": []}
+    assert first_context["notes"] == {
+        "path": "notes/breakout_gpt.md",
+        "content": "Bias toward clear trend continuation.",
+    }
+    assert first_context["news"]["headlines"][0]["text"] == "Analyst raises Apple target"
+
+    second_context = decisions[1]["context"]
+    assert second_context["orders"]["recent_orders"][0]["action"] == "buy"
+    assert second_context["orders"]["recent_orders"][0]["status"] == "executed"
+    assert second_context["memory"]["recent_decisions"][0]["action"] == "buy"
+    assert (
+        second_context["memory"]["recent_decisions"][0]["execution_status"]
+        == "executed"
+    )
 
 
 def test_llm_agent_paper_run_uses_replay_without_realtime_streaming(
