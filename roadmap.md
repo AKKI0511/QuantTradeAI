@@ -354,12 +354,13 @@ Status on 2026-04-10:
 Goal:
 Make running many agents and many experiments on one machine easy and trustworthy.
 
-Status on 2026-04-12:
+Status on 2026-04-14:
 
 - `quanttradeai runs list --scoreboard` is implemented for local research and agent runs, with metric-aware sorting via `--sort-by` and additive JSON scoreboard payloads.
 - `quanttradeai agent run --all -c config/project.yaml --mode backtest` is implemented for local multi-agent backtest batches, with bounded concurrency, preserved child runs, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
+- `quanttradeai agent run --all -c config/project.yaml --mode paper` is implemented for local multi-agent paper batches, reusing the existing replay-backed paper path, preserving child runs under `runs/agent/paper/...`, and writing batch-level manifests plus scoreboards under `runs/agent/batches/...`.
 - `quanttradeai agent run --sweep <name> -c config/project.yaml --mode backtest` is implemented for backtest-only parameter sweeps defined under `sweeps:` in `config/project.yaml`, with deterministic variant expansion, preserved child runs, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
-- Paper/live multi-agent orchestration and richer comparison workflows remain future Stage 2 work.
+- Live multi-agent orchestration and richer comparison workflows remain future Stage 2 work.
 
 Deliverables:
 
@@ -457,7 +458,7 @@ quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode 
 ```
 
 Current implementation note:
-`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. Local paper mode defaults to replay-backed execution through `data.streaming.replay`. Backtest-only parameter sweeps are supported through the optional `sweeps:` section in `config/project.yaml`. `deploy --target docker-compose` still generates real-time paper bundles only.
+`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. Local paper mode defaults to replay-backed execution through `data.streaming.replay`, including `agent run --all --mode paper`. Backtest-only parameter sweeps are supported through the optional `sweeps:` section in `config/project.yaml`. `deploy --target docker-compose` still generates real-time paper bundles only.
 
 ### Hybrid track
 

@@ -137,7 +137,7 @@ def test_agent_run_rejects_mixing_agent_and_sweep(tmp_path: Path, monkeypatch):
     assert "--sweep" in combined
 
 
-def test_agent_run_all_rejects_non_backtest_modes(tmp_path: Path, monkeypatch):
+def test_agent_run_all_rejects_live_mode(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config_path = _seed_agent_assets(tmp_path)
 
@@ -150,13 +150,13 @@ def test_agent_run_all_rejects_non_backtest_modes(tmp_path: Path, monkeypatch):
             "--config",
             str(config_path),
             "--mode",
-            "paper",
+            "live",
         ],
     )
 
     assert result.exit_code == 1
     combined = f"{result.stdout}\n{result.stderr}"
-    assert "--all currently supports only --mode backtest" in combined
+    assert "--all currently supports only --mode backtest or --mode paper" in combined
 
 
 def test_agent_run_sweep_rejects_non_backtest_modes(tmp_path: Path, monkeypatch):
@@ -331,6 +331,250 @@ def test_agent_run_all_writes_batch_artifacts_and_sorts_scoreboard(
         "rsi_reversion",
     ]
     assert "NET_SHARPE" in (batch_dir / "scoreboard.txt").read_text("utf-8")
+
+
+def test_agent_run_all_paper_writes_batch_artifacts_and_sorts_by_total_pnl(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = _seed_agent_assets(tmp_path)
+
+    def _fake_run_project_agent(
+        *,
+        project_config_path: str,
+        agent_name: str,
+        mode: str,
+        skip_validation: bool,
+        project_config_override: dict | None = None,
+        run_timestamp: str | None = None,
+    ):
+        assert mode == "paper"
+        assert run_timestamp is not None
+        assert Path(project_config_path).resolve() == config_path.resolve()
+        assert project_config_override is None
+        run_dir = (
+            Path("runs") / "agent" / "paper" / f"{run_timestamp}_{agent_name.lower()}"
+        )
+        run_dir.mkdir(parents=True, exist_ok=True)
+        pnl_by_agent = {
+            "rsi_reversion": 80.0,
+            "paper_momentum": 120.0,
+            "breakout_gpt": 240.0,
+            "hybrid_swing_agent": 170.0,
+        }
+        metrics_path = run_dir / "metrics.json"
+        metrics_path.write_text(
+            json.dumps(
+                {
+                    "total_pnl": pnl_by_agent[agent_name],
+                    "portfolio_value": 100000.0 + pnl_by_agent[agent_name],
+                    "execution_count": int(pnl_by_agent[agent_name] / 10.0),
+                    "decision_count": int(pnl_by_agent[agent_name] / 5.0),
+                    "risk_status": "ok",
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        summary = {
+            "run_id": f"agent/paper/{run_dir.name}",
+            "run_type": "agent",
+            "mode": "paper",
+            "name": agent_name,
+            "status": "success",
+            "timestamps": {"started_at": "2026-01-01T00:00:00+00:00"},
+            "symbols": ["AAPL"],
+            "warnings": [],
+            "artifacts": {"metrics": str(metrics_path)},
+            "paper_source": "replay",
+            "run_dir": str(run_dir),
+        }
+        (run_dir / "summary.json").write_text(
+            json.dumps(summary, indent=2),
+            encoding="utf-8",
+        )
+        return summary, []
+
+    with patch(
+        "quanttradeai.agents.batch.run_project_agent",
+        side_effect=_fake_run_project_agent,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--all",
+                "--config",
+                str(config_path),
+                "--mode",
+                "paper",
+                "--max-concurrency",
+                "2",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    batch_dir = Path(payload["run_dir"])
+
+    assert payload["status"] == "success"
+    assert payload["mode"] == "paper"
+    assert batch_dir.name.endswith("_paper")
+    assert (batch_dir / "results.json").is_file()
+    assert (batch_dir / "scoreboard.json").is_file()
+
+    results_payload = json.loads((batch_dir / "results.json").read_text("utf-8"))
+    assert results_payload["mode"] == "paper"
+    assert results_payload["scoreboard_sort_by"] == "total_pnl"
+    assert [item["agent_name"] for item in results_payload["results"]] == [
+        "breakout_gpt",
+        "hybrid_swing_agent",
+        "paper_momentum",
+        "rsi_reversion",
+    ]
+    assert all(
+        item["run_id"].startswith("agent/paper/") for item in results_payload["results"]
+    )
+    assert all(
+        Path(item["run_dir"]).parts[:3] == ("runs", "agent", "paper")
+        for item in results_payload["results"]
+    )
+    assert all(item["paper_source"] == "replay" for item in results_payload["results"])
+
+    scoreboard_payload = json.loads((batch_dir / "scoreboard.json").read_text("utf-8"))
+    assert scoreboard_payload["sort_by"] == "total_pnl"
+    assert [record["name"] for record in scoreboard_payload["records"]] == [
+        "breakout_gpt",
+        "hybrid_swing_agent",
+        "paper_momentum",
+        "rsi_reversion",
+    ]
+    scoreboard_text = (batch_dir / "scoreboard.txt").read_text("utf-8")
+    assert "TOTAL_PNL" in scoreboard_text
+    assert "RISK" in scoreboard_text
+
+
+def test_agent_run_all_paper_preserves_child_failures_and_logs(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = _seed_agent_assets(tmp_path)
+
+    def _fake_run_project_agent(
+        *,
+        project_config_path: str,
+        agent_name: str,
+        mode: str,
+        skip_validation: bool,
+        project_config_override: dict | None = None,
+        run_timestamp: str | None = None,
+    ):
+        assert mode == "paper"
+        assert run_timestamp is not None
+        assert Path(project_config_path).resolve() == config_path.resolve()
+        assert project_config_override is None
+        run_dir = (
+            Path("runs") / "agent" / "paper" / f"{run_timestamp}_{agent_name.lower()}"
+        )
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        if agent_name == "hybrid_swing_agent":
+            child_summary = {
+                "run_id": f"agent/paper/{run_dir.name}",
+                "run_type": "agent",
+                "mode": "paper",
+                "name": agent_name,
+                "status": "failed",
+                "timestamps": {"started_at": "2026-01-01T00:00:00+00:00"},
+                "symbols": ["AAPL"],
+                "warnings": ["child warning"],
+                "artifacts": {},
+                "run_dir": str(run_dir),
+                "error": "paper child failed",
+            }
+            (run_dir / "summary.json").write_text(
+                json.dumps(child_summary, indent=2),
+                encoding="utf-8",
+            )
+            raise RuntimeError("simulated paper failure")
+
+        pnl_by_agent = {
+            "rsi_reversion": 80.0,
+            "paper_momentum": 120.0,
+            "breakout_gpt": 240.0,
+        }
+        metrics_path = run_dir / "metrics.json"
+        metrics_path.write_text(
+            json.dumps(
+                {
+                    "total_pnl": pnl_by_agent[agent_name],
+                    "portfolio_value": 100000.0 + pnl_by_agent[agent_name],
+                    "execution_count": int(pnl_by_agent[agent_name] / 10.0),
+                    "decision_count": int(pnl_by_agent[agent_name] / 5.0),
+                    "risk_status": "ok",
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        summary = {
+            "run_id": f"agent/paper/{run_dir.name}",
+            "run_type": "agent",
+            "mode": "paper",
+            "name": agent_name,
+            "status": "success",
+            "timestamps": {"started_at": "2026-01-01T00:00:00+00:00"},
+            "symbols": ["AAPL"],
+            "warnings": [],
+            "artifacts": {"metrics": str(metrics_path)},
+            "paper_source": "replay",
+            "run_dir": str(run_dir),
+        }
+        (run_dir / "summary.json").write_text(
+            json.dumps(summary, indent=2),
+            encoding="utf-8",
+        )
+        return summary, []
+
+    with patch(
+        "quanttradeai.agents.batch.run_project_agent",
+        side_effect=_fake_run_project_agent,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--all",
+                "--config",
+                str(config_path),
+                "--mode",
+                "paper",
+                "--max-concurrency",
+                "2",
+            ],
+        )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    assert payload["status"] == "failed"
+    assert payload["failure_count"] == 1
+    assert payload["success_count"] == 3
+
+    failed_entry = next(
+        item
+        for item in payload["results"]
+        if item["agent_name"] == "hybrid_swing_agent"
+    )
+    assert failed_entry["status"] == "failed"
+    assert failed_entry["warnings"] == ["child warning"]
+    assert failed_entry["run_id"].startswith("agent/paper/")
+    assert Path(failed_entry["stderr_log"]).read_text("utf-8")
+    successful_names = {
+        item["agent_name"] for item in payload["results"] if item["status"] == "success"
+    }
+    assert successful_names == {"breakout_gpt", "paper_momentum", "rsi_reversion"}
 
 
 def test_agent_run_sweep_writes_variant_artifacts_and_preserves_source_config(

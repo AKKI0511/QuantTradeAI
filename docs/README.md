@@ -28,16 +28,17 @@ poetry install
 
 ### Basic Usage
 ```bash
-# Canonical Stage 1 workflow (project config)
+# Canonical project workflow
 poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai runs list
 
-# Runnable agent backtest workflow
+# Runnable agent workflow
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --all -c config/project.yaml --mode paper
 
 # Import an existing legacy config/ directory into the canonical workflow
 poetry run quanttradeai validate --legacy-config-dir config
