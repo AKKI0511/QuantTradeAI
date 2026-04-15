@@ -13,7 +13,10 @@ from typing import Any
 import yaml
 
 from quanttradeai.utils.config_validator import validate_project_config
-from quanttradeai.utils.project_config import load_project_config
+from quanttradeai.utils.project_config import (
+    compile_paper_streaming_runtime_config,
+    load_project_config,
+)
 from quanttradeai.utils.run_scoreboard import (
     attach_scoreboard,
     render_scoreboard_table,
@@ -22,6 +25,13 @@ from quanttradeai.utils.run_scoreboard import (
 from quanttradeai.utils.sweeps import expand_agent_backtest_sweep, sweep_summary_payload
 
 from .runner import run_project_agent
+
+
+SUPPORTED_BATCH_MODES = {"backtest", "paper"}
+BATCH_SCOREBOARD_SORT_FIELDS = {
+    "backtest": "net_sharpe",
+    "paper": "total_pnl",
+}
 
 
 def _slugify(value: str | None) -> str:
@@ -67,10 +77,8 @@ def _load_summary(path: Path) -> dict[str, Any] | None:
     return payload
 
 
-def _predict_child_run_dir(*, agent_name: str, run_timestamp: str) -> Path:
-    return (
-        Path("runs") / "agent" / "backtest" / f"{run_timestamp}_{_slugify(agent_name)}"
-    )
+def _predict_child_run_dir(*, agent_name: str, run_timestamp: str, mode: str) -> Path:
+    return Path("runs") / "agent" / mode / f"{run_timestamp}_{_slugify(agent_name)}"
 
 
 def _child_run_timestamp(batch_timestamp: str, index: int) -> str:
@@ -100,12 +108,13 @@ def _default_failed_summary(
     *,
     agent_name: str,
     child_run_dir: Path,
+    mode: str,
     error: str,
 ) -> dict[str, Any]:
     return {
-        "run_id": f"agent/backtest/{child_run_dir.name}",
+        "run_id": f"agent/{mode}/{child_run_dir.name}",
         "run_type": "agent",
-        "mode": "backtest",
+        "mode": mode,
         "name": agent_name,
         "status": "failed",
         "timestamps": {},
@@ -147,6 +156,32 @@ def _build_all_agent_specs(
         for index, agent in enumerate(agents, start=1)
     ]
     return None, specs
+
+
+def _scoreboard_sort_field(mode: str) -> str:
+    try:
+        return BATCH_SCOREBOARD_SORT_FIELDS[mode]
+    except KeyError as exc:  # pragma: no cover - defensive guard
+        raise ValueError(f"Unsupported batch mode: {mode}") from exc
+
+
+def _sort_result_entries(
+    entries: list[dict[str, Any]],
+    *,
+    scoreboard_order: list[str],
+    mode: str,
+) -> list[dict[str, Any]]:
+    if mode != "paper":
+        return entries
+
+    order_index = {run_id: index for index, run_id in enumerate(scoreboard_order)}
+    return sorted(
+        entries,
+        key=lambda entry: (
+            order_index.get(str(entry.get("run_id") or ""), len(scoreboard_order)),
+            int(entry.get("display_order") or 0),
+        ),
+    )
 
 
 def _build_sweep_specs(
@@ -214,17 +249,25 @@ def _build_sweep_specs(
     return sweep_payload, specs
 
 
-def run_agent_backtest_batch(
+def run_agent_batch(
     *,
     project_config_path: str = "config/project.yaml",
+    mode: str = "backtest",
     skip_validation: bool = False,
     max_concurrency: int = 1,
     sweep_name: str | None = None,
 ) -> dict[str, Any]:
-    """Run every configured agent or sweep variant through the backtest path."""
+    """Run every configured agent or sweep variant through a supported batch path."""
 
     if max_concurrency < 1:
         raise ValueError("--max-concurrency must be at least 1.")
+    if mode not in SUPPORTED_BATCH_MODES:
+        supported = ", ".join(sorted(SUPPORTED_BATCH_MODES))
+        raise ValueError(
+            f"Unsupported batch mode '{mode}'. Supported modes: {supported}."
+        )
+    if sweep_name is not None and mode != "backtest":
+        raise ValueError("--sweep currently supports only --mode backtest.")
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     original_project_path = Path(project_config_path).resolve()
@@ -233,9 +276,9 @@ def run_agent_backtest_batch(
         original_project_path
     ).stem
     batch_name = (
-        f"{timestamp}_{_slugify(project_name)}_{_slugify(sweep_name)}_backtest"
+        f"{timestamp}_{_slugify(project_name)}_{_slugify(sweep_name)}_{mode}"
         if sweep_name
-        else f"{timestamp}_{_slugify(project_name)}_backtest"
+        else f"{timestamp}_{_slugify(project_name)}_{mode}"
     )
     batch_dir = Path("runs") / "agent" / "batches" / batch_name
     batch_dir.mkdir(parents=True, exist_ok=True)
@@ -251,6 +294,9 @@ def run_agent_backtest_batch(
     resolved_project = (
         yaml.safe_load(resolved_project_path.read_text(encoding="utf-8")) or {}
     )
+    if mode == "paper":
+        # Fail fast for project-wide paper prerequisites before launching child runs.
+        compile_paper_streaming_runtime_config(resolved_project)
 
     if sweep_name:
         sweep_payload, agent_specs = _build_sweep_specs(
@@ -278,7 +324,7 @@ def run_agent_backtest_batch(
             summary, warnings = run_project_agent(
                 project_config_path=str(spec["project_config_path"]),
                 agent_name=agent_name,
-                mode="backtest",
+                mode=mode,
                 skip_validation=skip_validation,
                 project_config_override=spec.get("project_config_override"),
                 run_timestamp=str(spec["run_timestamp"]),
@@ -303,12 +349,14 @@ def run_agent_backtest_batch(
             child_run_dir = _predict_child_run_dir(
                 agent_name=agent_name,
                 run_timestamp=str(spec["run_timestamp"]),
+                mode=mode,
             )
             child_summary = _load_summary(
                 child_run_dir / "summary.json"
             ) or _default_failed_summary(
                 agent_name=agent_name,
                 child_run_dir=child_run_dir,
+                mode=mode,
                 error=str(exc),
             )
             child_summary = _attach_sweep_metadata(
@@ -334,46 +382,59 @@ def run_agent_backtest_batch(
     results.sort(key=lambda item: int(item["display_order"]))
 
     scoreboard_records = attach_scoreboard([item["summary"] for item in results])
+    scoreboard_sort_by = _scoreboard_sort_field(mode)
     scoreboard_records = sort_run_records(
         scoreboard_records,
-        sort_by="net_sharpe",
+        sort_by=scoreboard_sort_by,
         ascending=False,
     )
     scoreboard_order = [
         str(record.get("run_id") or "") for record in scoreboard_records
     ]
 
+    result_entries = [
+        {
+            "agent_name": item["agent_name"],
+            "base_agent_name": item.get("base_agent_name"),
+            "agent_kind": item["agent_kind"],
+            "configured_mode": item["configured_mode"],
+            "status": item["status"],
+            "warnings": item["warnings"],
+            "error": item.get("error"),
+            "parameters": item.get("parameters"),
+            "paper_source": item["summary"].get("paper_source"),
+            "run_timestamp": item["run_timestamp"],
+            "run_id": item["summary"].get("run_id"),
+            "run_dir": item["summary"].get("run_dir"),
+            "variant_project_config": item.get("variant_project_config"),
+            "stdout_log": item["stdout_log"],
+            "stderr_log": item["stderr_log"],
+            "display_order": item["display_order"],
+            "scoreboard": next(
+                (
+                    record.get("scoreboard")
+                    for record in scoreboard_records
+                    if record.get("run_id") == item["summary"].get("run_id")
+                ),
+                None,
+            ),
+        }
+        for item in results
+    ]
+    result_entries = _sort_result_entries(
+        result_entries,
+        scoreboard_order=scoreboard_order,
+        mode=mode,
+    )
+    for entry in result_entries:
+        entry.pop("display_order", None)
+
     results_payload = {
         "batch_type": batch_type,
-        "mode": "backtest",
+        "mode": mode,
+        "scoreboard_sort_by": scoreboard_sort_by,
         "scoreboard_order": scoreboard_order,
-        "results": [
-            {
-                "agent_name": item["agent_name"],
-                "base_agent_name": item.get("base_agent_name"),
-                "agent_kind": item["agent_kind"],
-                "configured_mode": item["configured_mode"],
-                "status": item["status"],
-                "warnings": item["warnings"],
-                "error": item.get("error"),
-                "parameters": item.get("parameters"),
-                "run_timestamp": item["run_timestamp"],
-                "run_id": item["summary"].get("run_id"),
-                "run_dir": item["summary"].get("run_dir"),
-                "variant_project_config": item.get("variant_project_config"),
-                "stdout_log": item["stdout_log"],
-                "stderr_log": item["stderr_log"],
-                "scoreboard": next(
-                    (
-                        record.get("scoreboard")
-                        for record in scoreboard_records
-                        if record.get("run_id") == item["summary"].get("run_id")
-                    ),
-                    None,
-                ),
-            }
-            for item in results
-        ],
+        "results": result_entries,
     }
     if sweep_payload is not None:
         results_payload["sweep"] = dict(sweep_payload)
@@ -382,7 +443,7 @@ def run_agent_backtest_batch(
         )
 
     scoreboard_payload = {
-        "sort_by": "net_sharpe",
+        "sort_by": scoreboard_sort_by,
         "records": scoreboard_records,
     }
 
@@ -407,12 +468,13 @@ def run_agent_backtest_batch(
         "project_name": project_name,
         "project_config_path": str(original_project_path),
         "resolved_project_config": str(resolved_project_path),
-        "mode": "backtest",
+        "mode": mode,
         "max_concurrency": max_concurrency,
         "run_dir": str(batch_dir),
         "agent_count": len(results),
         "success_count": success_count,
         "failure_count": failure_count,
+        "scoreboard_sort_by": scoreboard_sort_by,
         "scoreboard_order": scoreboard_order,
         "artifacts": {
             "results": str(results_path),
@@ -421,20 +483,24 @@ def run_agent_backtest_batch(
         },
         "agents": [
             {
-                "agent_name": item["agent_name"],
-                "base_agent_name": item.get("base_agent_name"),
-                "parameters": item.get("parameters"),
-                "agent_kind": item["agent_kind"],
-                "configured_mode": item["configured_mode"],
-                "status": item["status"],
-                "run_timestamp": item["run_timestamp"],
-                "run_id": item["summary"].get("run_id"),
-                "run_dir": item["summary"].get("run_dir"),
-                "variant_project_config": item.get("variant_project_config"),
-                "stdout_log": item["stdout_log"],
-                "stderr_log": item["stderr_log"],
+                key: entry.get(key)
+                for key in (
+                    "agent_name",
+                    "base_agent_name",
+                    "parameters",
+                    "agent_kind",
+                    "configured_mode",
+                    "status",
+                    "paper_source",
+                    "run_timestamp",
+                    "run_id",
+                    "run_dir",
+                    "variant_project_config",
+                    "stdout_log",
+                    "stderr_log",
+                )
             }
-            for item in results
+            for entry in result_entries
         ],
         "warnings": list(dict.fromkeys(validation.get("warnings", []))),
     }
@@ -451,7 +517,7 @@ def run_agent_backtest_batch(
         "status": batch_status,
         "batch_type": batch_type,
         "project_name": project_name,
-        "mode": "backtest",
+        "mode": mode,
         "run_dir": str(batch_dir),
         "agent_count": len(results),
         "success_count": success_count,
@@ -464,3 +530,21 @@ def run_agent_backtest_batch(
         "warnings": manifest["warnings"],
         **({"sweep": dict(sweep_payload)} if sweep_payload is not None else {}),
     }
+
+
+def run_agent_backtest_batch(
+    *,
+    project_config_path: str = "config/project.yaml",
+    skip_validation: bool = False,
+    max_concurrency: int = 1,
+    sweep_name: str | None = None,
+) -> dict[str, Any]:
+    """Backward-compatible wrapper for backtest batch orchestration."""
+
+    return run_agent_batch(
+        project_config_path=project_config_path,
+        mode="backtest",
+        skip_validation=skip_validation,
+        max_concurrency=max_concurrency,
+        sweep_name=sweep_name,
+    )

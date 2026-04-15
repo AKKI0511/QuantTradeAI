@@ -8,6 +8,7 @@ It drives:
 - `quanttradeai validate`
 - `quanttradeai research run`
 - `quanttradeai agent run` for project-defined agents in `backtest`, `paper`, and `live`
+- `quanttradeai agent run --all` for multi-agent batches in `backtest` and `paper`
 - `quanttradeai agent run --sweep <name>` for backtest-only parameter sweeps
 - `quanttradeai promote` for research-model promotion plus agent backtest-to-paper and paper-to-live promotion
 - `quanttradeai deploy` for docker-compose paper-agent bundles
@@ -82,6 +83,17 @@ poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.y
 ```
 
 The default hybrid template already points `model_signal_sources` at `models/promoted/aapl_daily_classifier`, so the happy path does not require editing timestamped experiment directories.
+
+### Multi-Agent Paper Batches
+
+```bash
+poetry run quanttradeai agent run --all -c config/project.yaml --mode paper
+poetry run quanttradeai agent run --all -c config/project.yaml --mode paper --max-concurrency 4
+```
+
+Multi-agent paper batches preserve the normal child runs under `runs/agent/paper/...` and write batch artifacts under `runs/agent/batches/<timestamp>_<project>_paper/`.
+
+Paper batches rank the batch scoreboard by `total_pnl`.
 
 ### Backtest Sweeps
 
@@ -646,6 +658,12 @@ Writes under `runs/agent/paper/<timestamp>_<agent>/`.
 For `llm` and `hybrid` paper runs, the run directory includes both `decisions.jsonl` and `executions.jsonl` so prompt-driven decisions and actual paper executions can be audited separately.
 
 When replay is enabled, the run directory also includes `replay_manifest.json`, and `summary.json` records `paper_source: replay`.
+
+### `quanttradeai agent run --all --mode paper`
+
+Writes a batch directory under `runs/agent/batches/<timestamp>_<project>_paper/` and one normal child paper run under `runs/agent/paper/...` for each enumerated agent.
+
+Batch scoreboards for paper mode sort by `total_pnl`.
 
 ### `quanttradeai agent run --mode live`
 

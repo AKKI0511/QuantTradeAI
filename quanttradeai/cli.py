@@ -1396,7 +1396,7 @@ def cmd_agent_run(
     run_all: bool = typer.Option(
         False,
         "--all",
-        help="Run every project-defined agent. Backtest mode only in this release.",
+        help="Run every project-defined agent. Supports backtest and paper modes in this release.",
     ),
     sweep: Optional[str] = typer.Option(
         None,
@@ -1414,18 +1414,18 @@ def cmd_agent_run(
     skip_validation: bool = typer.Option(
         False,
         "--skip-validation",
-        help="Skip data-quality validation before backtesting",
+        help="Skip data-quality validation before backtesting. Ignored for paper/live runs.",
     ),
     max_concurrency: int = typer.Option(
         1,
         "--max-concurrency",
         min=1,
-        help="Maximum concurrent child runs when using --all.",
+        help="Maximum concurrent child runs when using --all or --sweep.",
     ),
 ):
     """Run a first-class project agent in backtest, paper, or live mode."""
 
-    from .agents.batch import run_agent_backtest_batch
+    from .agents.batch import run_agent_batch
     from .agents.runner import run_project_agent
 
     chosen = sum((1 if agent else 0, 1 if run_all else 0, 1 if sweep else 0))
@@ -1434,10 +1434,13 @@ def cmd_agent_run(
 
     try:
         if run_all:
-            if mode != "backtest":
-                raise ValueError("--all currently supports only --mode backtest.")
-            batch_result = run_agent_backtest_batch(
+            if mode == "live":
+                raise ValueError(
+                    "--all currently supports only --mode backtest or --mode paper."
+                )
+            batch_result = run_agent_batch(
                 project_config_path=config,
+                mode=mode,
                 skip_validation=skip_validation,
                 max_concurrency=max_concurrency,
             )
@@ -1450,8 +1453,9 @@ def cmd_agent_run(
         if sweep:
             if mode != "backtest":
                 raise ValueError("--sweep currently supports only --mode backtest.")
-            batch_result = run_agent_backtest_batch(
+            batch_result = run_agent_batch(
                 project_config_path=config,
+                mode=mode,
                 skip_validation=skip_validation,
                 max_concurrency=max_concurrency,
                 sweep_name=sweep,
