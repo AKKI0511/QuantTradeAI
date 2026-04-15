@@ -1,6 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
+import time
 
 import numpy as np
 import pandas as pd
@@ -334,3 +335,38 @@ def test_paper_engine_replay_bootstrap_does_not_double_count_history(
     assert len(engine.execution_log) == 1
     assert engine.execution_log[0]["action"] == "buy"
     assert len(engine._history["AAPL"]) == 4
+
+
+def test_paper_engine_replay_waits_for_completion_signal(
+    tmp_path: Path, monkeypatch
+):
+    def _slow_completion(**kwargs):
+        time.sleep(0.12)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {"action": "hold", "reason": "slow replay test"}
+                        )
+                    }
+                }
+            ]
+        }
+
+    engine = _build_engine(
+        tmp_path,
+        monkeypatch,
+        gateway_messages=[],
+        completion=_slow_completion,
+    )
+    bootstrap_history = {"AAPL": _mock_history(periods=2)}
+    replay_frames = {"AAPL": _mock_history(periods=8).iloc[2:8]}
+
+    engine.bootstrap_history_frames = bootstrap_history
+    engine.gateway = ReplayGateway(replay_frames, pace_delay_ms=0, buffer_size=32)
+
+    asyncio.run(engine.start())
+
+    assert len(engine.decision_log) == 6
+    assert len(engine.execution_log) == 0

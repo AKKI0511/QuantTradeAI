@@ -759,6 +759,11 @@ class PaperAgentEngine:
     async def _consume_buffer(self) -> None:
         while True:
             message = await self.gateway.buffer.get()
+            completion_type = getattr(self.gateway, "completion_type", None)
+            if completion_type and message.get("type") == completion_type:
+                if getattr(self.gateway, "flush_on_stop", False):
+                    self._finalize_open_bars()
+                return
             try:
                 normalized = self._normalize_message(message)
                 symbol = normalized.get("symbol")
@@ -801,10 +806,16 @@ class PaperAgentEngine:
     async def start(self) -> None:
         self.bootstrap_history()
         self._consumer = asyncio.create_task(self._consume_buffer())
+        completed_via_signal = False
         try:
             await self.gateway._start()
+            if self._consumer is not None and getattr(
+                self.gateway, "signals_completion", False
+            ):
+                await self._consumer
+                completed_via_signal = True
         finally:
-            if self._consumer is not None:
+            if self._consumer is not None and not completed_via_signal:
                 if self.shutdown_drain_timeout > 0:
                     deadline = (
                         asyncio.get_running_loop().time() + self.shutdown_drain_timeout

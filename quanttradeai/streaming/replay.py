@@ -21,6 +21,8 @@ class ReplayGateway:
     buffer_size: int = 1000
     buffer: StreamBuffer = field(init=False)
     flush_on_stop: bool = field(default=True, init=False)
+    signals_completion: bool = field(default=True, init=False)
+    completion_type: str = field(default="replay_complete", init=False)
 
     def __post_init__(self) -> None:
         self.buffer = StreamBuffer(self.buffer_size)
@@ -59,3 +61,4 @@ class ReplayGateway:
             await self.buffer.put(message)
             if delay_seconds > 0:
                 await asyncio.sleep(delay_seconds)
+        await self.buffer.put({"type": self.completion_type})

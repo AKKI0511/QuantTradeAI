@@ -155,7 +155,9 @@ def split_replay_frames(
     history_window: int,
 ) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame], dict[str, Any]]:
     replay_start = pd.Timestamp(replay_window.start_date).tz_localize(timezone.utc)
-    replay_end = pd.Timestamp(replay_window.end_date).tz_localize(timezone.utc)
+    replay_end_exclusive = pd.Timestamp(replay_window.end_date).tz_localize(
+        timezone.utc
+    ) + timedelta(days=1)
     bootstrap_frames: dict[str, pd.DataFrame] = {}
     replay_frames: dict[str, pd.DataFrame] = {}
     symbols_manifest: list[dict[str, Any]] = []
@@ -163,7 +165,7 @@ def split_replay_frames(
     for symbol, frame in frames.items():
         history = ensure_utc_datetime_index(frame)
         replay_slice = history[
-            (history.index >= replay_start) & (history.index <= replay_end)
+            (history.index >= replay_start) & (history.index < replay_end_exclusive)
         ]
         bootstrap_slice = history[history.index < replay_start].tail(history_window)
         if not bootstrap_slice.empty:

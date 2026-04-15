@@ -1,9 +1,11 @@
 import asyncio
+import time
 from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
 
+from quanttradeai.streaming.replay import ReplayGateway
 from quanttradeai.streaming.live_trading import LiveTradingEngine
 from quanttradeai.streaming.monitoring.health_monitor import StreamingHealthMonitor
 from quanttradeai.streaming.stream_buffer import StreamBuffer
@@ -51,6 +53,16 @@ class DummyModel:
     def predict(self, X):
         value = self.outputs.pop(0) if self.outputs else 0
         return [value for _ in range(len(X))]
+
+
+class SlowDummyModel(DummyModel):
+    def __init__(self, outputs=None, delay_seconds: float = 0.12) -> None:
+        super().__init__(outputs=outputs)
+        self.delay_seconds = delay_seconds
+
+    def predict(self, X):
+        time.sleep(self.delay_seconds)
+        return super().predict(X)
 
 
 class DummyPreprocessor:
@@ -525,3 +537,58 @@ async def test_live_trading_engine_bootstrap_history_allows_first_bar_inference(
     assert len(engine.execution_log) == 1
     assert engine.execution_log[0]["action"] == "buy"
     assert len(engine._history["AAPL"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_live_trading_engine_replay_waits_for_completion_signal():
+    bootstrap_history = {
+        "AAPL": pd.DataFrame(
+            [
+                {
+                    "Open": 10.0,
+                    "High": 10.0,
+                    "Low": 10.0,
+                    "Close": 10.0,
+                    "Volume": 100,
+                }
+            ],
+            index=pd.to_datetime(["2024-01-01T00:00:00Z"], utc=True),
+        )
+    }
+    replay_history = pd.DataFrame(
+        {
+            "Open": [11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+            "High": [11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+            "Low": [11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+            "Close": [11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+            "Volume": [100, 100, 100, 100, 100, 100],
+        },
+        index=pd.to_datetime(
+            [
+                "2024-01-01T00:01:00Z",
+                "2024-01-01T00:02:00Z",
+                "2024-01-01T00:03:00Z",
+                "2024-01-01T00:04:00Z",
+                "2024-01-01T00:05:00Z",
+                "2024-01-01T00:06:00Z",
+            ],
+            utc=True,
+        ),
+    )
+    engine = LiveTradingEngine(
+        model_config="config/model_config.yaml",
+        model_path="unused",
+        gateway=ReplayGateway({"AAPL": replay_history}, pace_delay_ms=0, buffer_size=32),
+        data_processor=DummyProcessor(),
+        model=SlowDummyModel(outputs=[1, 1, 1, 1, 1, 1], delay_seconds=0.12),
+        min_history_for_features=2,
+        history_window=16,
+        risk_config=None,
+        position_manager_config=None,
+        bootstrap_history_frames=bootstrap_history,
+    )
+
+    await engine.start()
+
+    assert len(engine.decision_log) == 6
+    assert len(engine.execution_log) == 1
