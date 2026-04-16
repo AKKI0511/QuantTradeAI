@@ -32,7 +32,7 @@ def _mock_history() -> pd.DataFrame:
 
 def _mock_history_with_news() -> pd.DataFrame:
     history = _mock_history()
-    history["text"] = ""
+    history["text"] = pd.Series([np.nan] * len(history), index=history.index, dtype=object)
     history.loc[pd.Timestamp("2024-01-24"), "text"] = "Apple expands its buyback"
     history.loc[pd.Timestamp("2024-01-25"), "text"] = "Apple expands its buyback"
     history.loc[pd.Timestamp("2024-01-26"), "text"] = "Analyst raises Apple target"
@@ -41,6 +41,15 @@ def _mock_history_with_news() -> pd.DataFrame:
 
 def _fake_generate_features(self, df: pd.DataFrame) -> pd.DataFrame:
     featured = df.copy()
+    featured["rsi"] = np.linspace(45.0, 65.0, len(featured))
+    featured["volume_momentum_20"] = np.linspace(0.1, 0.3, len(featured))
+    return featured
+
+
+def _drop_text_sensitive_generate_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    featured = df.copy()
+    if "text" in featured.columns:
+        featured = featured.dropna()
     featured["rsi"] = np.linspace(45.0, 65.0, len(featured))
     featured["volume_momentum_20"] = np.linspace(0.1, 0.3, len(featured))
     return featured
@@ -244,7 +253,7 @@ def test_llm_agent_backtest_context_blocks_include_orders_memory_news_and_notes(
         ),
         patch(
             "quanttradeai.agents.backtest.DataProcessor.generate_features",
-            _fake_generate_features,
+            _drop_text_sensitive_generate_features,
         ),
         patch(
             "quanttradeai.agents.llm.completion",
@@ -616,6 +625,7 @@ def test_rule_agent_backtest_writes_standardized_artifacts(tmp_path: Path, monke
     config_payload["data"]["test_end"] = "2024-01-31"
     config_payload["agents"][0]["rule"]["buy_below"] = 50.0
     config_payload["agents"][0]["rule"]["sell_above"] = 60.0
+    config_payload["agents"][0]["context"]["notes"] = True
     config_path.write_text(
         yaml.safe_dump(config_payload, sort_keys=False),
         encoding="utf-8",
@@ -1255,6 +1265,7 @@ def test_rule_agent_paper_run_writes_metrics_and_execution_log(
     config_payload["data"]["test_end"] = "2024-02-09"
     config_payload["agents"][0]["rule"]["buy_below"] = 50.0
     config_payload["agents"][0]["rule"]["sell_above"] = 60.0
+    config_payload["agents"][0]["context"]["notes"] = True
     config_payload["data"]["streaming"]["replay"]["enabled"] = False
     config_path.write_text(
         yaml.safe_dump(config_payload, sort_keys=False),

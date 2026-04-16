@@ -46,6 +46,15 @@ class DummyProcessor:
         return featured
 
 
+class DropTextSensitiveProcessor:
+    def generate_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        featured = df.copy()
+        if "text" in featured.columns:
+            featured = featured.dropna()
+        featured["rsi"] = np.linspace(45.0, 65.0, len(featured))
+        return featured
+
+
 class ScriptedGateway:
     def __init__(self, messages: list[dict]) -> None:
         self.buffer = StreamBuffer(32)
@@ -96,6 +105,7 @@ def _build_engine(
     context_overrides: dict | None = None,
     history_frame: pd.DataFrame | None = None,
     notes_content: str | None = None,
+    processor=None,
 ) -> PaperAgentEngine:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr("quanttradeai.agents.llm.completion", completion)
@@ -172,7 +182,7 @@ def _build_engine(
         data_loader=FakeLoader(
             {"AAPL": history_frame if history_frame is not None else _mock_history()}
         ),
-        data_processor=DummyProcessor(),
+        data_processor=processor or DummyProcessor(),
         history_window=512,
     )
 
@@ -406,6 +416,53 @@ def test_paper_engine_context_blocks_include_orders_memory_news_and_notes(
             "reason": "buy signal",
             "execution_status": "executed",
             "target_position_after": 1,
+        }
+    ]
+
+
+def test_paper_engine_sparse_news_does_not_drop_completed_bar_decisions(
+    tmp_path: Path, monkeypatch
+):
+    history = _mock_history()
+    history["text"] = pd.Series([np.nan] * len(history), index=history.index, dtype=object)
+    history.iloc[-2, history.columns.get_loc("text")] = "Apple updates guidance"
+
+    engine = _build_engine(
+        tmp_path,
+        monkeypatch,
+        gateway_messages=[
+            {
+                "symbol": "AAPL",
+                "price": 121.0,
+                "volume": 10,
+                "timestamp": "2024-09-17T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 123.0,
+                "volume": 12,
+                "timestamp": "2024-09-18T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 124.0,
+                "volume": 14,
+                "timestamp": "2024-09-19T00:00:00Z",
+            },
+        ],
+        completion=_completion_from_actions(["buy", "hold"]),
+        history_frame=history,
+        context_overrides={"news": {"enabled": True, "max_items": 1}},
+        processor=DropTextSensitiveProcessor(),
+    )
+
+    asyncio.run(engine.start())
+
+    assert len(engine.decision_log) == 2
+    assert engine.decision_log[0]["context"]["news"]["headlines"] == [
+        {
+            "timestamp": "2024-09-15T00:00:00+00:00",
+            "text": "Apple updates guidance",
         }
     ]
 

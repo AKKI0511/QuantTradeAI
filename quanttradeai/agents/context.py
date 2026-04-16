@@ -11,6 +11,8 @@ from quanttradeai.utils.project_paths import infer_project_root, resolve_project
 
 from .base import AgentSimulationState, target_position_label
 
+PROMPT_CONTEXT_HISTORY_COLUMNS = ("text",)
+
 
 def _serialize_scalar(value: Any) -> Any:
     if isinstance(value, pd.Timestamp):
@@ -221,6 +223,30 @@ def _recent_news_items(
         if len(items) >= max_items:
             break
     return items
+
+
+def strip_prompt_context_history_columns(history: pd.DataFrame) -> pd.DataFrame:
+    return history.drop(
+        columns=[
+            column
+            for column in PROMPT_CONTEXT_HISTORY_COLUMNS
+            if column in history.columns
+        ],
+        errors="ignore",
+    )
+
+
+def attach_prompt_context_history_columns(
+    featured_history: pd.DataFrame,
+    *,
+    source_history: pd.DataFrame,
+) -> pd.DataFrame:
+    restored = featured_history.copy()
+    for column in PROMPT_CONTEXT_HISTORY_COLUMNS:
+        if column not in source_history.columns:
+            continue
+        restored[column] = source_history.reindex(restored.index)[column]
+    return restored
 
 
 def build_context_payload(

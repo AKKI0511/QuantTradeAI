@@ -54,7 +54,12 @@ from .backtest import (
     _load_model_signal_sources,
 )
 from .base import AgentDecision, AgentSimulationState
-from .context import build_context_payload, load_agent_notes_payload
+from .context import (
+    attach_prompt_context_history_columns,
+    build_context_payload,
+    load_agent_notes_payload,
+    strip_prompt_context_history_columns,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -302,9 +307,13 @@ class PaperAgentEngine:
             "llm",
             "hybrid",
         }
-        self.notes_payload = load_agent_notes_payload(
-            agent_config=self.agent_config,
-            project_config_path=self.project_config_path,
+        self.notes_payload = (
+            load_agent_notes_payload(
+                agent_config=self.agent_config,
+                project_config_path=self.project_config_path,
+            )
+            if self.include_prompt_artifacts
+            else None
         )
         risk_manager = None
         if self.mode == "live":
@@ -700,7 +709,13 @@ class PaperAgentEngine:
         if history is None or history.empty:
             return
 
-        featured_history = self.data_processor.generate_features(history.copy())
+        featured_history = self.data_processor.generate_features(
+            strip_prompt_context_history_columns(history).copy()
+        )
+        featured_history = attach_prompt_context_history_columns(
+            featured_history,
+            source_history=history,
+        )
         if (
             featured_history.empty
             or featured_history.index.max() != completed_timestamp
