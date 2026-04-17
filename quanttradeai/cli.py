@@ -31,6 +31,7 @@ from .utils.run_records import (
     discover_runs,
     filter_runs,
 )
+from .utils.run_compare import build_run_comparison, render_run_comparison
 from .utils.run_scoreboard import (
     SCOREBOARD_SORT_FIELDS,
     attach_scoreboard,
@@ -1234,8 +1235,58 @@ def cmd_runs_list(
     json_output: bool = typer.Option(
         False, "--json", help="Emit normalized run records as JSON"
     ),
+    compare: Optional[list[str]] = typer.Option(
+        None,
+        "--compare",
+        help="Explicit run id to compare. Repeat 2-4 times for detailed comparison.",
+    ),
 ):
     """List normalized research and agent runs from the local runs directory."""
+
+    normalized_sort_by = _normalize_choice(
+        sort_by,
+        allowed=SCOREBOARD_SORT_FIELDS,
+        field_name="sort-by",
+    )
+
+    compare_values = list(compare or [])
+    if compare_values:
+        incompatible_flags = []
+        if run_type != "all":
+            incompatible_flags.append("--type")
+        if mode != "all":
+            incompatible_flags.append("--mode")
+        if status != "all":
+            incompatible_flags.append("--status")
+        if limit != 20:
+            incompatible_flags.append("--limit")
+        if scoreboard:
+            incompatible_flags.append("--scoreboard")
+        if incompatible_flags:
+            typer.echo(
+                "Run comparison failed: Compare mode does not support "
+                + ", ".join(incompatible_flags)
+                + ".",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+        try:
+            comparison = build_run_comparison(
+                run_ids=compare_values,
+                sort_by=normalized_sort_by,
+                ascending=ascending,
+            )
+        except Exception as exc:
+            typer.echo(f"Run comparison failed: {exc}", err=True)
+            raise typer.Exit(code=1)
+
+        if json_output:
+            typer.echo(json.dumps(comparison, indent=2))
+            return
+
+        typer.echo(render_run_comparison(comparison))
+        return
 
     discovered = discover_runs()
     filters = RunFilters(
@@ -1253,11 +1304,6 @@ def cmd_runs_list(
             field_name="status",
         ),
         limit=max(len(discovered), 1),
-    )
-    normalized_sort_by = _normalize_choice(
-        sort_by,
-        allowed=SCOREBOARD_SORT_FIELDS,
-        field_name="sort-by",
     )
     records = filter_runs(discovered, filters)
     needs_scoreboard = scoreboard or normalized_sort_by not in {
