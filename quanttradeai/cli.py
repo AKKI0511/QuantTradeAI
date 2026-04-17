@@ -1263,9 +1263,13 @@ def cmd_runs_list(
         if scoreboard:
             incompatible_flags.append("--scoreboard")
         if incompatible_flags:
-            raise typer.BadParameter(
-                "Compare mode does not support " + ", ".join(incompatible_flags) + "."
+            typer.echo(
+                "Run comparison failed: Compare mode does not support "
+                + ", ".join(incompatible_flags)
+                + ".",
+                err=True,
             )
+            raise typer.Exit(code=1)
 
         try:
             comparison = build_run_comparison(
