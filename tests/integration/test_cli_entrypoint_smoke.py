@@ -20,3 +20,7 @@ def test_python_module_cli_help_smoke():
 
     assert result.returncode == 0, result.stderr
     assert "QuantTradeAI command line interface" in result.stdout
+    assert "train" not in result.stdout
+    assert "backtest-model" not in result.stdout
+    assert "live-trade" not in result.stdout
+    assert "validate-config" not in result.stdout

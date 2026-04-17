@@ -12,7 +12,7 @@
 ## Project Structure
 - Core package: `quanttradeai/` (CLI entry points in `quanttradeai/main.py` and `quanttradeai/cli.py`).
 - Modules: `data/`, `features/`, `models/`, `backtest/`, `trading/`, `streaming/`, `utils/`.
-- Configs: current codebase still uses multiple YAML files under `config/`; target UX in the roadmap is a single `config/project.yaml` entrypoint.
+- Configs: the canonical UX is a single `config/project.yaml` entrypoint. Some lower-level utility commands still use focused YAML files under `config/`.
 - Tests mirror modules under `tests/`.
 - Outputs: `data/`, `models/`, `reports/` (gitignored).
 
@@ -21,7 +21,7 @@
 - Format: `make format`
 - Lint: `make lint`
 - Tests: `make test` or `poetry run pytest`
-- Pipeline: `poetry run quanttradeai train -c config/model_config.yaml`
+- Pipeline: `poetry run quanttradeai research run -c config/project.yaml`
 - CLI help: `poetry run quanttradeai --help`
 
 ## Engineering Expectations
@@ -45,5 +45,5 @@
 
 ## Security and Configuration
 - Keep secrets in env vars; never commit `.env`.
-- Validate configs with `poetry run quanttradeai validate-config` when changing YAML.
+- Validate configs with `poetry run quanttradeai validate -c config/project.yaml` when changing the canonical project YAML.
 - Write outputs to `data/`, `models/`, and `reports/`.

@@ -4,6 +4,7 @@ import subprocess
 import sys
 
 import pandas as pd
+import pytest
 import yaml
 from typer.testing import CliRunner
 from unittest.mock import patch
@@ -37,16 +38,6 @@ def test_cli_fetch_data_smoke():
         result = runner.invoke(
             app, ["fetch-data", "-c", "config/model_config.yaml", "--refresh"]
         )
-        assert result.exit_code == 0
-        mock_fn.assert_called_once()
-
-
-def test_cli_train_smoke():
-    from quanttradeai.cli import app
-
-    runner = CliRunner()
-    with patch("quanttradeai.cli.run_pipeline") as mock_fn:
-        result = runner.invoke(app, ["train", "-c", "config/model_config.yaml"])
         assert result.exit_code == 0
         mock_fn.assert_called_once()
 
@@ -112,23 +103,20 @@ def test_cli_backtest_smoke_with_overrides():
             assert "sharpe_ratio" in result.stdout
 
 
-def test_cli_backtest_model_smoke():
+@pytest.mark.parametrize(
+    "command",
+    [
+        "train",
+        "backtest-model",
+        "live-trade",
+        "validate-config",
+    ],
+)
+def test_removed_legacy_commands_are_rejected(command: str):
     from quanttradeai.cli import app
 
     runner = CliRunner()
-    with patch(
-        "quanttradeai.cli.run_model_backtest",
-        return_value={"AAA": {"metrics": {"sharpe_ratio": 2.0}}},
-    ):
-        result = runner.invoke(
-            app,
-            [
-                "backtest-model",
-                "-m",
-                "models/experiments/foo/AAPL",
-                "-c",
-                "config/model_config.yaml",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "sharpe_ratio" in result.stdout
+    result = runner.invoke(app, [command])
+
+    assert result.exit_code != 0
+    assert "No such command" in result.output

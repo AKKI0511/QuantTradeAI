@@ -151,26 +151,25 @@ Batch artifacts include:
 
 Backtest batches rank by `net_sharpe`. Paper batches rank by `total_pnl`. Live still runs one agent at a time.
 
-## Legacy Runtime Workflows
+## Standalone Utility Commands
 
-These remain supported:
+These commands still exist for lower-level workflows that do not yet have a project-based replacement:
 
 ```bash
-poetry run quanttradeai train -c config/model_config.yaml
+poetry run quanttradeai fetch-data -c config/model_config.yaml
 poetry run quanttradeai evaluate -m <model_dir> -c config/model_config.yaml
-poetry run quanttradeai backtest-model -m <model_dir> -c config/model_config.yaml -b config/backtest_config.yaml
-poetry run quanttradeai live-trade -m <model_dir> -c config/model_config.yaml -s config/streaming.yaml
+poetry run quanttradeai backtest -c config/backtest_config.yaml
 ```
 
 Important boundary:
 
 - project-defined paper agents default to replay from `config/project.yaml`
-- deployment bundles and live agents still use real-time streaming compiled from `config/project.yaml`
-- `live-trade` still uses the legacy runtime YAML files directly
+- deployment bundles and live agents use real-time runtime YAML snapshots compiled from `config/project.yaml`
+- the product happy path is still `init` -> `validate` -> `research run` or `agent run`
 
 ## Where To Go Next
 
 - [Project YAML](configuration/project-yaml.md)
-- [Runtime and Live Trading Configs](configuration/live-runtime-files.md)
+- [Generated Runtime Files](configuration/live-runtime-files.md)
 - [Quick Reference](quick-reference.md)
 - [Roadmap](../roadmap.md)

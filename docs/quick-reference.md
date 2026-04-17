@@ -65,35 +65,16 @@ poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.y
 # Generated bundles disable replay and expect real-time streaming settings
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
 
-# Import an existing legacy config/ directory into the canonical workflow
-poetry run quanttradeai validate --legacy-config-dir config
-poetry run quanttradeai research run --legacy-config-dir config
-
-# Legacy compatibility commands
+# Lower-level utility commands that still exist
 poetry run quanttradeai fetch-data
 poetry run quanttradeai fetch-data --refresh
 
-# Train models
-poetry run quanttradeai train
-poetry run quanttradeai train --skip-validation  # bypass data-quality gate
-
-# Evaluate model
+# Evaluate an existing model artifact
 poetry run quanttradeai evaluate -m models/experiments/<timestamp>/<SYMBOL>
 
-# Backtest a saved model (end-to-end)
-poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> \
-  -c config/model_config.yaml -b config/backtest_config.yaml \
-  --cost-bps 5 --slippage-fixed 0.01 --liquidity-max-participation 0.25 \
-  --skip-validation  # optional
-
-# Live trading (streaming)
-# This path still uses model_config.yaml + features_config.yaml + streaming/risk/position_manager YAMLs
-poetry run quanttradeai live-trade -m models/experiments/<timestamp>/<SYMBOL> \
-  -c config/model_config.yaml \
-  -s config/streaming.yaml \
-  --risk-config config/risk_config.yaml \
-  --position-manager-config config/position_manager.yaml \
-  --initial-capital 1000000 --min-history 220 --history-window 512
+# Standalone CSV backtest
+poetry run quanttradeai backtest -c config/backtest_config.yaml \
+  --cost-bps 5 --slippage-fixed 0.01 --liquidity-max-participation 0.25
 ```
 
 Canonical research artifacts:
@@ -239,15 +220,15 @@ df_trades = simulate_trades(
 metrics = compute_metrics(df_trades, risk_free_rate=0.02)
 ```
 
-### Backtest a Saved Model
+### Backtest a Model Agent
 ```bash
-# Uses saved feature_columns and execution config to produce PnL metrics
-poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> \
-  -c config/model_config.yaml -b config/backtest_config.yaml
+# Use the model-agent template and point agents[].model.path at a promoted model
+poetry run quanttradeai init --template model-agent -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
 
 # Artifacts are saved under:
-# reports/backtests/<run_timestamp>/<SYMBOL>/{metrics.json,equity_curve.csv,ledger.csv}
-# reports/backtests/<run_timestamp>/portfolio/{metrics.json,equity_curve.csv}
+# runs/agent/backtest/<timestamp>_<agent>/{summary.json,metrics.json,decisions.jsonl,...}
 ```
 
 ## Technical Indicators
@@ -318,15 +299,15 @@ Use these pages instead of copying large config blocks out of the quick referenc
 
 - [Configuration Overview](configuration.md)
 - [Project Config (`project.yaml`)](configuration/project-yaml.md)
-- [Runtime and Live Trading Configs](configuration/live-runtime-files.md)
-- [Legacy Config Compatibility](configuration/legacy-configs.md)
+- [Generated Runtime Files](configuration/live-runtime-files.md)
+- [Legacy Command Migration](configuration/legacy-configs.md)
 
 Quick decision rule:
 
 - Use `config/project.yaml` for `validate`, `research run`, `agent run`, and `agent run --sweep`
 - Use `data.streaming.replay` for deterministic local paper runs; keep provider/websocket fields in place for later deployment or live promotion
 - Use `quanttradeai runs list --scoreboard` to rank local runs, then `quanttradeai runs list --compare ...` to inspect shortlisted runs by metrics and config deltas
-- Use the runtime YAML files for `live-trade`, `backtest-model`, and operational streaming setup
+- Use the generated runtime YAML snapshots under each run directory to inspect what actually executed
 
 ## Time-Aware Splitting
 
@@ -381,7 +362,7 @@ environments:
 
 - Use `discovery.refresh()` to hot reload newly added adapters.
 - `monitor.execute_with_health()` wraps connect/subscribe calls with circuit breaking and failover handling.
-- Legacy `config/streaming.yaml` continues to control shared buffers, subscriptions, and rate limits for the built-in gateway.
+- Project-defined paper and live runs persist `runtime_streaming_config.yaml` snapshots so the exact streaming settings are visible after each run.
 
 ### Position Manager
 
@@ -394,7 +375,7 @@ pm = PositionManager.from_config("config/position_manager.yaml")
 pm.bind_gateway(gw, ["AAPL", "MSFT"])
 ```
 
-The built-in `live-trade` command wires the position manager for you when `--position-manager-config` is provided.
+Project-defined live runs compile `runtime_position_manager_config.yaml` from `config/project.yaml` and persist it in the run directory.
 
 ## Error Handling
 

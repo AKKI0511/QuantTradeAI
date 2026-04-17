@@ -1,9 +1,14 @@
 # Configuration
 
-QuantTradeAI has one **canonical project config** for research and project-defined agents, plus a set of **runtime YAML files** that still power `live-trade` and some compatibility workflows.
+QuantTradeAI is centered on one canonical config file: `config/project.yaml`.
 
-> Start with `config/project.yaml` if you are building a new research or agent workflow.
-> Use the runtime YAMLs when you are running `live-trade`, saved-model backtests, or migrating older setups.
+Use it for:
+
+- `quanttradeai validate`
+- `quanttradeai research run`
+- `quanttradeai agent run`
+- `quanttradeai promote`
+- `quanttradeai deploy`
 
 ## Choose the Right File
 
@@ -12,32 +17,17 @@ QuantTradeAI has one **canonical project config** for research and project-defin
 | Run the canonical research workflow | `config/project.yaml` | `quanttradeai validate`, `quanttradeai research run` |
 | Run or promote a project-defined agent | `config/project.yaml` | `quanttradeai agent run`, `quanttradeai promote` |
 | Generate a project-agent deployment bundle | `config/project.yaml` | `quanttradeai deploy` |
-| Run live streaming inference | `config/model_config.yaml`, `config/features_config.yaml`, `config/streaming.yaml`, `config/risk_config.yaml`, `config/position_manager.yaml` | `quanttradeai live-trade` |
-| Backtest a saved model with execution costs | `config/model_config.yaml`, `config/backtest_config.yaml`, optional `config/risk_config.yaml`, optional `config/impact_config.yaml` | `quanttradeai backtest-model` |
-| Validate the runtime YAML bundle | Runtime YAML files under `config/` | `quanttradeai validate-config` |
-| Import an existing legacy config bundle into the canonical validator | Legacy YAML files under `config/` | `quanttradeai validate --legacy-config-dir ...` |
+| Fetch historical data with the older utility flow | `config/model_config.yaml` | `quanttradeai fetch-data` |
+| Evaluate an already-trained model artifact | `config/model_config.yaml` | `quanttradeai evaluate` |
+| Run a standalone CSV backtest | `config/backtest_config.yaml` | `quanttradeai backtest` |
 
 ## Recommended Reading
 
 - [Project Config (`project.yaml`)](configuration/project-yaml.md)
-- [Runtime and Live Trading Configs](configuration/live-runtime-files.md)
-- [Legacy Config Compatibility](configuration/legacy-configs.md)
+- [Generated Runtime Files](configuration/live-runtime-files.md)
+- [Legacy Command Migration](configuration/legacy-configs.md)
 
 ## Typical Workflows
-
-### Local Paper Mode
-
-```bash
-poetry run quanttradeai init --template rule-agent -o config/project.yaml
-poetry run quanttradeai validate -c config/project.yaml
-poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode paper
-```
-
-By default, project-defined paper runs use `data.streaming.replay` for deterministic OHLCV replay. Replay dates resolve in this order:
-
-- `data.streaming.replay.start_date` / `data.streaming.replay.end_date`
-- `data.test_start` / `data.test_end`
-- `data.start_date` / `data.end_date`
 
 ### Research
 
@@ -63,28 +53,11 @@ poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
 ```
 
-Deployment bundles are still real-time paper bundles. QuantTradeAI disables replay in the emitted deployment config and expects provider/websocket settings to be valid.
-
-### Live Trading
-
-```bash
-poetry run quanttradeai live-trade \
-  -m models/experiments/<timestamp>/<SYMBOL> \
-  -c config/model_config.yaml \
-  -s config/streaming.yaml \
-  --risk-config config/risk_config.yaml \
-  --position-manager-config config/position_manager.yaml
-```
+Deployment bundles are generated from `config/project.yaml`. Paper bundles disable replay in the emitted deployment config and expect valid real-time provider settings.
 
 ## Important Boundaries
 
-- `config/project.yaml` is the center of gravity for **research**, **agent runs**, **promotion**, and **deployment generation**
-- local `agent run --mode paper` defaults to replay from `config/project.yaml`
-- generated deployment bundles keep paper mode but switch the emitted config back to real-time streaming
-- `quanttradeai live-trade` does **not** read `config/project.yaml` today
-- `config/streaming.yaml`, `config/risk_config.yaml`, and `config/position_manager.yaml` are still first-class runtime files
-- `quanttradeai validate-config` is the fastest way to catch malformed runtime YAMLs before running live or backtest commands
-
-## If You Are Migrating
-
-Legacy YAMLs are still supported, but they are no longer the best place to start. If you already have a working `config/` folder, see [Legacy Config Compatibility](configuration/legacy-configs.md) for the shortest path into the current workflow.
+- `config/project.yaml` is the center of gravity for research, agents, promotion, and deployment.
+- Local `agent run --mode paper` defaults to replay from `data.streaming.replay` in `config/project.yaml`.
+- Live agents compile runtime streaming, risk, and position-manager YAML snapshots from `config/project.yaml` into each run directory.
+- `fetch-data`, `evaluate`, and standalone `backtest` remain utility commands, but they are not the primary product workflow.

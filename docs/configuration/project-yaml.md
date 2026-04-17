@@ -13,8 +13,6 @@ It drives:
 - `quanttradeai promote` for research-model promotion plus agent backtest-to-paper and paper-to-live promotion
 - `quanttradeai deploy` for docker-compose paper and live agent bundles
 
-`live-trade` still uses the legacy runtime YAML files documented in [Runtime and Live Trading Configs](live-runtime-files.md).
-
 For local project-defined agents, `agent run --mode paper` defaults to deterministic replay when `data.streaming.replay.enabled: true`.
 
 ## Supported Project Workflows
@@ -690,8 +688,6 @@ You will get:
 
 - `resolved_project_config.yaml`
 - `summary.json`
-
-When you validate with `--legacy-config-dir`, QuantTradeAI also writes `migrated_project_config.yaml`.
 
 ### `quanttradeai research run`
 

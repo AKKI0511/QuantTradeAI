@@ -292,7 +292,7 @@ These are the highest-value gaps relative to the final product vision.
 - Dead or misleading config surface area.
 - Partial config validation.
 - No clear resolved-config UX.
-- No migration path from legacy config layout to the target layout.
+- Replaced legacy CLI and config paths still need to be removed from the public product surface.
 
 ### Correctness gaps for the happy path
 
@@ -317,7 +317,7 @@ Deliverables:
 - Add `quanttradeai init`.
 - Add `quanttradeai validate`.
 - Make `validate` show a resolved config summary and warn about unused or legacy fields.
-- Support legacy config import and migration, but do not make migration a primary workflow command.
+- Remove replaced legacy CLI and config paths once the canonical `project.yaml` workflow exists.
 - Standardize run records for research, backtest, paper, and live runs.
 - Persist resolved config snapshots in every run directory.
 - Add a first-class `Strategy` / `Agent` abstraction.
@@ -326,9 +326,9 @@ Deliverables:
 - Make feature selection explicit and shared across research and agent flows.
 - Fix time-aware preprocessing and evaluation defaults.
 
-Status on 2026-04-10:
+Status on 2026-04-17:
 
-- Implemented for the research happy path: canonical `config/project.yaml`, `init`, `validate`, legacy config import via flags, resolved-config artifacts, standardized research run directories, automatic backtests from `research run`, and time-aware preprocessing/evaluation defaults.
+- Implemented for the research happy path: canonical `config/project.yaml`, `init`, `validate`, resolved-config artifacts, standardized research run directories, automatic backtests from `research run`, and time-aware preprocessing/evaluation defaults.
 - `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest|paper` is implemented for `llm` and `hybrid` agents.
 - `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest|paper` is implemented for `model` agents.
 - `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest|paper` is implemented for `rule` agents.
@@ -347,7 +347,7 @@ Status on 2026-04-10:
 - `quanttradeai promote --run agent/paper/<run_id> --to live --acknowledge-live <agent_name>` is implemented for successful paper-to-live promotion with an explicit safety acknowledgement.
 - Top-level `risk` and `position_manager` are now the canonical live safety/runtime sections in `config/project.yaml`.
 - `quanttradeai deploy --agent <name> -c config/project.yaml --target docker-compose` now generates a real-time paper-agent deployment bundle with compose, Dockerfile, env placeholders, resolved config, and a deployment manifest. Replay is disabled in the emitted bundle config.
-- `live-trade`, `config/risk_config.yaml`, `config/position_manager.yaml`, and `config/streaming.yaml` remain supported as legacy compatibility paths, but they are no longer the primary live workflow for project-defined agents.
+- Replaced legacy paths have been removed from the primary CLI surface: `train`, `backtest-model`, `live-trade`, `validate-config`, and the `--legacy-config-dir` import flags are gone. `fetch-data`, `evaluate`, and standalone `backtest` remain as utility commands outside the primary product workflow.
 
 ### Stage 2: Multi-Agent Lab
 

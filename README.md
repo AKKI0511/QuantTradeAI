@@ -37,7 +37,6 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 | Run every project agent together | `agent run --all --mode backtest|paper --max-concurrency 4` | A local multi-agent batch that preserves normal child runs plus batch-level manifests and scoreboards |
 | Sweep one agent across parameter variants | `agent run --sweep rsi_threshold_grid --mode backtest --max-concurrency 4` | A local sweep batch that expands one agent into many backtest variants, preserves normal child runs, and ranks them with the same scoreboard flow |
 | Generate a Docker Compose deployment bundle | `deploy --agent <name> --target docker-compose --mode paper|live` | A Docker Compose bundle for a promoted paper or live agent with compose, Dockerfile, env placeholders, and resolved config |
-| Keep using the older live loop | `live-trade` with runtime YAML files | Legacy compatibility for existing setups |
 
 ## How It Fits Together
 
@@ -82,11 +81,6 @@ QuantTradeAI is one framework with two connected tracks:
 | `agent run --all --mode paper` from `project.yaml` | Supported |
 | `agent run --sweep <name> --mode backtest` from `project.yaml` | Supported |
 | `deploy --target docker-compose` for paper or live agents | Supported |
-| `live-trade` legacy runtime YAML workflow | Supported for compatibility |
-
-> [!NOTE]
-> `agent run --mode live` is the canonical live path for project-defined agents. `live-trade` still exists for legacy runtime YAML workflows and does not read `config/project.yaml`.
-
 ## Install In 2 Minutes
 
 QuantTradeAI requires Python `3.11+`.
@@ -394,8 +388,8 @@ poetry run quanttradeai runs list --type agent --mode live --scoreboard --sort-b
 
 - [Configuration Overview](docs/configuration.md)
 - [Project YAML](docs/configuration/project-yaml.md)
-- [Runtime and Live Trading Configs](docs/configuration/live-runtime-files.md)
-- [Legacy Config Compatibility](docs/configuration/legacy-configs.md)
+- [Generated Runtime Files](docs/configuration/live-runtime-files.md)
+- [Legacy Command Migration](docs/configuration/legacy-configs.md)
 
 ### Reference
 
@@ -406,25 +400,15 @@ poetry run quanttradeai runs list --type agent --mode live --scoreboard --sort-b
 
 - [Roadmap](roadmap.md)
 
-## Legacy Compatibility
+## Standalone Utilities
 
-`config/project.yaml` is the recommended path for new work. Legacy workflows remain available for compatibility, especially for saved-model backtests and the older live trading loop.
+The product happy path is `config/project.yaml`, but a few lower-level commands remain for utility workflows that do not yet have a project-based replacement:
 
 ```bash
 poetry run quanttradeai fetch-data -c config/model_config.yaml
-poetry run quanttradeai train -c config/model_config.yaml
 poetry run quanttradeai evaluate -m <model_dir> -c config/model_config.yaml
-poetry run quanttradeai backtest-model -m <model_dir> -c config/model_config.yaml -b config/backtest_config.yaml
-poetry run quanttradeai live-trade -m <model_dir> -c config/model_config.yaml -s config/streaming.yaml
-poetry run quanttradeai validate-config
+poetry run quanttradeai backtest -c config/backtest_config.yaml
 ```
-
-Important boundary:
-
-- `agent run --mode paper` for project-defined agents uses replay from `config/project.yaml` when `data.streaming.replay.enabled: true`
-- `agent run --mode live` for project-defined `rule`, `model`, `llm`, and `hybrid` agents compiles runtime config from `config/project.yaml`
-- `deploy --target docker-compose --mode paper|live` generates Docker Compose bundles for promoted paper or live agents; paper bundles disable replay in the emitted deployment config
-- `live-trade` still uses the legacy runtime YAML files directly
 
 ## Development
 
