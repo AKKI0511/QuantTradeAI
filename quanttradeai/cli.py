@@ -1398,7 +1398,7 @@ def cmd_deploy(
     mode: Optional[str] = typer.Option(
         None,
         "--mode",
-        help="Deployment mode. Defaults to deployment.mode from project config; only paper is supported in this release.",
+        help="Deployment mode. Defaults to deployment.mode from project config; docker-compose supports paper and live.",
     ),
     output: Optional[str] = typer.Option(
         None,

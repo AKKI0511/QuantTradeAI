@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -19,6 +20,26 @@ def _init_template(tmp_path: Path, monkeypatch, template: str) -> Path:
     )
     assert result.exit_code == 0, result.stdout
     return config_path
+
+
+def _read_yaml(path: Path) -> dict:
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def _write_yaml(path: Path, payload: dict) -> None:
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
+def _configure_live_deploy(
+    config_path: Path,
+    *,
+    deployment_mode: str = "live",
+) -> dict:
+    payload = _read_yaml(config_path)
+    payload["agents"][0]["mode"] = "live"
+    payload["deployment"]["mode"] = deployment_mode
+    _write_yaml(config_path, payload)
+    return payload
 
 
 def _deploy_agent(
@@ -42,7 +63,18 @@ def _deploy_agent(
     return runner.invoke(app, args)
 
 
-def test_rule_agent_deploy_writes_bundle_and_preserves_project_config(
+def _load_deploy_bundle(output_dir: Path) -> tuple[str, str, str, dict, dict]:
+    compose_text = (output_dir / "docker-compose.yml").read_text(encoding="utf-8")
+    env_example = (output_dir / ".env.example").read_text(encoding="utf-8")
+    readme = (output_dir / "README.md").read_text(encoding="utf-8")
+    manifest = json.loads(
+        (output_dir / "deployment_manifest.json").read_text(encoding="utf-8")
+    )
+    resolved_project = _read_yaml(output_dir / "resolved_project_config.yaml")
+    return compose_text, env_example, readme, manifest, resolved_project
+
+
+def test_rule_agent_deploy_writes_paper_bundle_and_preserves_project_config(
     tmp_path: Path, monkeypatch
 ):
     config_path = _init_template(tmp_path, monkeypatch, "rule-agent")
@@ -57,8 +89,9 @@ def test_rule_agent_deploy_writes_bundle_and_preserves_project_config(
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     output_dir = Path(payload["output_dir"])
-    compose_text = (output_dir / "docker-compose.yml").read_text(encoding="utf-8")
-    env_example = (output_dir / ".env.example").read_text(encoding="utf-8")
+    compose_text, env_example, readme, manifest, resolved_project = _load_deploy_bundle(
+        output_dir
+    )
 
     assert payload["status"] == "success"
     assert payload["target"] == "docker-compose"
@@ -77,38 +110,111 @@ def test_rule_agent_deploy_writes_bundle_and_preserves_project_config(
     assert "ALPACA_API_KEY" in env_example
     assert "ALPACA_API_SECRET" in env_example
     assert "OPENAI_API_KEY" not in env_example
+    assert "in `paper` mode" in readme
+    assert manifest["agent_name"] == "rsi_reversion"
+    assert manifest["mode"] == "paper"
+    assert manifest["target"] == "docker-compose"
+    assert manifest["command"][-1] == "paper"
+    assert manifest["safety_requirements"] == []
+    assert resolved_project["data"]["streaming"]["replay"]["enabled"] is False
 
 
-def test_llm_agent_deploy_includes_llm_and_streaming_env_vars(
+def test_rule_agent_live_deploy_uses_config_default_mode_and_preserves_project_config(
     tmp_path: Path, monkeypatch
 ):
-    config_path = _init_template(tmp_path, monkeypatch, "llm-agent")
+    config_path = _init_template(tmp_path, monkeypatch, "rule-agent")
+    _configure_live_deploy(config_path, deployment_mode="live")
     original_config = config_path.read_text(encoding="utf-8")
 
     result = _deploy_agent(
-        agent_name="breakout_gpt",
+        agent_name="rsi_reversion",
         config_path=config_path,
-        output_dir="deployments/llm",
+        output_dir="deployments/rule-live",
     )
 
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     output_dir = Path(payload["output_dir"])
-    compose_text = (output_dir / "docker-compose.yml").read_text(encoding="utf-8")
-    env_example = (output_dir / ".env.example").read_text(encoding="utf-8")
-    manifest = json.loads(
-        (output_dir / "deployment_manifest.json").read_text(encoding="utf-8")
+    compose_text, env_example, readme, manifest, resolved_project = _load_deploy_bundle(
+        output_dir
+    )
+
+    assert payload["status"] == "success"
+    assert payload["mode"] == "live"
+    assert config_path.read_text(encoding="utf-8") == original_config
+    assert manifest["mode"] == "live"
+    assert manifest["command"][-1] == "live"
+    assert manifest["safety_requirements"]
+    assert "--mode" in compose_text
+    assert "live" in compose_text
+    assert ":/app/data" in compose_text
+    assert ":/app/reports" in compose_text
+    assert ":/app/runs" in compose_text
+    assert "ALPACA_API_KEY" in env_example
+    assert "ALPACA_API_SECRET" in env_example
+    assert "in `live` mode" in readme
+    assert "Safety Requirements" in readme
+    assert "`mode: live`" in readme
+    assert not any(
+        "replay was disabled in the generated bundle" in warning.lower()
+        for warning in payload["warnings"]
+    )
+    assert resolved_project["data"]["streaming"]["replay"]["enabled"] is True
+
+
+@pytest.mark.parametrize(
+    ("template", "agent_name", "expect_openai_env", "expect_prompt_mount", "expect_models_mount"),
+    [
+        ("llm-agent", "breakout_gpt", True, True, False),
+        ("model-agent", "paper_momentum", False, False, True),
+        ("hybrid", "hybrid_swing_agent", True, True, True),
+    ],
+)
+def test_live_deploy_supports_llm_model_and_hybrid_agents(
+    tmp_path: Path,
+    monkeypatch,
+    template: str,
+    agent_name: str,
+    expect_openai_env: bool,
+    expect_prompt_mount: bool,
+    expect_models_mount: bool,
+):
+    config_path = _init_template(tmp_path, monkeypatch, template)
+    _configure_live_deploy(config_path, deployment_mode="paper")
+    original_config = config_path.read_text(encoding="utf-8")
+
+    result = _deploy_agent(
+        agent_name=agent_name,
+        config_path=config_path,
+        output_dir=f"deployments/{template}-live",
+        extra_args=["--mode", "live"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    output_dir = Path(payload["output_dir"])
+    compose_text, env_example, readme, manifest, _resolved_project = _load_deploy_bundle(
+        output_dir
     )
 
     assert config_path.read_text(encoding="utf-8") == original_config
-    assert "OPENAI_API_KEY" in env_example
+    assert payload["status"] == "success"
+    assert payload["mode"] == "live"
+    assert manifest["agent_name"] == agent_name
+    assert manifest["mode"] == "live"
+    assert manifest["command"][-1] == "live"
+    assert manifest["safety_requirements"]
     assert "ALPACA_API_KEY" in env_example
     assert "ALPACA_API_SECRET" in env_example
-    assert ":/app/prompts:ro" in compose_text
-    assert manifest["agent_name"] == "breakout_gpt"
-    assert manifest["mode"] == "paper"
-    assert manifest["target"] == "docker-compose"
-    assert manifest["command"][-1] == "paper"
+    assert ("OPENAI_API_KEY" in env_example) is expect_openai_env
+    assert (":/app/prompts:ro" in compose_text) is expect_prompt_mount
+    assert (":/app/models" in compose_text) is expect_models_mount
+    assert "in `live` mode" in readme
+    assert "Safety Requirements" in readme
+    assert not any(
+        "replay was disabled in the generated bundle" in warning.lower()
+        for warning in payload["warnings"]
+    )
 
 
 def test_deploy_normalizes_streaming_provider_env_var_prefix(
@@ -130,46 +236,16 @@ def test_deploy_normalizes_streaming_provider_env_var_prefix(
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     output_dir = Path(payload["output_dir"])
-    env_example = (output_dir / ".env.example").read_text(encoding="utf-8")
+    _compose_text, env_example, _readme, _manifest, _resolved_project = _load_deploy_bundle(
+        output_dir
+    )
 
     assert "FOO_BAR_API_KEY" in env_example
     assert "FOO_BAR_API_SECRET" in env_example
     assert "FOO-BAR_API_KEY" not in env_example
 
 
-def test_model_agent_deploy_writes_manifest_and_models_mount(
-    tmp_path: Path, monkeypatch
-):
-    config_path = _init_template(tmp_path, monkeypatch, "model-agent")
-    original_config = config_path.read_text(encoding="utf-8")
-
-    result = _deploy_agent(
-        agent_name="paper_momentum",
-        config_path=config_path,
-        output_dir="deployments/model",
-    )
-
-    assert result.exit_code == 0, result.stdout
-    payload = json.loads(result.stdout)
-    output_dir = Path(payload["output_dir"])
-    compose_text = (output_dir / "docker-compose.yml").read_text(encoding="utf-8")
-    env_example = (output_dir / ".env.example").read_text(encoding="utf-8")
-    manifest = json.loads(
-        (output_dir / "deployment_manifest.json").read_text(encoding="utf-8")
-    )
-
-    assert config_path.read_text(encoding="utf-8") == original_config
-    assert ":/app/models" in compose_text
-    assert "OPENAI_API_KEY" not in env_example
-    assert "ALPACA_API_KEY" in env_example
-    assert payload["artifacts"]["resolved_project_config"].endswith(
-        "resolved_project_config.yaml"
-    )
-    assert payload["artifacts"]["manifest"].endswith("deployment_manifest.json")
-    assert manifest["agent_kind"] == "model"
-
-
-def test_deploy_disables_replay_in_generated_bundle_and_warns(
+def test_deploy_disables_replay_in_generated_paper_bundle_and_warns(
     tmp_path: Path, monkeypatch
 ):
     config_path = _init_template(tmp_path, monkeypatch, "rule-agent")
@@ -183,8 +259,8 @@ def test_deploy_disables_replay_in_generated_bundle_and_warns(
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     output_dir = Path(payload["output_dir"])
-    resolved_project = yaml.safe_load(
-        (output_dir / "resolved_project_config.yaml").read_text(encoding="utf-8")
+    _compose_text, _env_example, _readme, _manifest, resolved_project = _load_deploy_bundle(
+        output_dir
     )
 
     assert config_path.read_text(encoding="utf-8") != ""
@@ -199,13 +275,10 @@ def test_deploy_rejects_replay_only_project_without_realtime_streaming_fields(
     tmp_path: Path, monkeypatch
 ):
     config_path = _init_template(tmp_path, monkeypatch, "rule-agent")
-    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload = _read_yaml(config_path)
     config_payload["data"]["streaming"].pop("provider")
     config_payload["data"]["streaming"].pop("websocket_url")
-    config_path.write_text(
-        yaml.safe_dump(config_payload, sort_keys=False),
-        encoding="utf-8",
-    )
+    _write_yaml(config_path, config_payload)
 
     result = _deploy_agent(
         agent_name="rsi_reversion",
@@ -216,6 +289,93 @@ def test_deploy_rejects_replay_only_project_without_realtime_streaming_fields(
     assert result.exit_code == 1
     combined_output = f"{result.stdout}\n{result.stderr}"
     assert "data.streaming.provider must be configured" in combined_output
+
+
+def test_live_deploy_requires_agent_to_be_configured_live(
+    tmp_path: Path, monkeypatch
+):
+    config_path = _init_template(tmp_path, monkeypatch, "llm-agent")
+    original_config = config_path.read_text(encoding="utf-8")
+
+    result = _deploy_agent(
+        agent_name="breakout_gpt",
+        config_path=config_path,
+        output_dir="deployments/live-not-configured",
+        extra_args=["--mode", "live"],
+    )
+
+    assert result.exit_code == 1
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert "must be configured with mode=live" in combined_output
+    assert config_path.read_text(encoding="utf-8") == original_config
+
+
+@pytest.mark.parametrize(
+    ("field_name", "expected_error"),
+    [
+        ("provider", "data.streaming.provider is required"),
+        ("websocket_url", "data.streaming.websocket_url is required"),
+        ("channels", "data.streaming requires channels"),
+    ],
+)
+def test_live_deploy_rejects_missing_realtime_streaming_fields(
+    tmp_path: Path,
+    monkeypatch,
+    field_name: str,
+    expected_error: str,
+):
+    config_path = _init_template(tmp_path, monkeypatch, "rule-agent")
+    payload = _configure_live_deploy(config_path)
+    payload["data"]["streaming"].pop(field_name)
+    _write_yaml(config_path, payload)
+    original_config = config_path.read_text(encoding="utf-8")
+
+    result = _deploy_agent(
+        agent_name="rsi_reversion",
+        config_path=config_path,
+        output_dir=f"deployments/live-missing-{field_name}",
+        extra_args=["--mode", "live"],
+    )
+
+    assert result.exit_code == 1
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert expected_error in combined_output
+    assert config_path.read_text(encoding="utf-8") == original_config
+
+
+@pytest.mark.parametrize(
+    ("field_name", "expected_error"),
+    [
+        ("risk", "risk is required when an agent is configured with mode=live."),
+        (
+            "position_manager",
+            "position_manager is required when an agent is configured with mode=live.",
+        ),
+    ],
+)
+def test_live_deploy_requires_top_level_live_safety_sections(
+    tmp_path: Path,
+    monkeypatch,
+    field_name: str,
+    expected_error: str,
+):
+    config_path = _init_template(tmp_path, monkeypatch, "rule-agent")
+    payload = _configure_live_deploy(config_path)
+    payload.pop(field_name)
+    _write_yaml(config_path, payload)
+    original_config = config_path.read_text(encoding="utf-8")
+
+    result = _deploy_agent(
+        agent_name="rsi_reversion",
+        config_path=config_path,
+        output_dir=f"deployments/live-missing-{field_name}",
+        extra_args=["--mode", "live"],
+    )
+
+    assert result.exit_code == 1
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert expected_error in combined_output
+    assert config_path.read_text(encoding="utf-8") == original_config
 
 
 def test_deploy_failure_cases(
@@ -253,20 +413,6 @@ def test_deploy_failure_cases(
                 "deployments/k8s",
             ],
             "Unsupported deployment target",
-        ),
-        (
-            [
-                "deploy",
-                "--agent",
-                "breakout_gpt",
-                "--config",
-                str(config_path),
-                "--mode",
-                "live",
-                "--output",
-                "deployments/live",
-            ],
-            "Only deploy --mode paper is supported",
         ),
         (
             [

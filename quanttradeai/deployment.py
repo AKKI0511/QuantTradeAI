@@ -16,7 +16,12 @@ import yaml
 
 from quanttradeai.streaming.env_vars import provider_env_var_prefix
 from quanttradeai.utils.config_validator import validate_project_config
-from quanttradeai.utils.project_config import compile_paper_streaming_runtime_config
+from quanttradeai.utils.project_config import (
+    compile_live_position_manager_runtime_config,
+    compile_live_risk_runtime_config,
+    compile_live_streaming_runtime_config,
+    compile_paper_streaming_runtime_config,
+)
 from quanttradeai.utils.project_paths import infer_project_root, resolve_project_path
 
 
@@ -26,7 +31,7 @@ DEFAULT_LLM_API_KEY_ENV_VARS = {
     "huggingface": "HUGGINGFACE_API_KEY",
 }
 SUPPORTED_DEPLOY_TARGETS = {"docker-compose"}
-SUPPORTED_DEPLOY_MODES = {"paper"}
+SUPPORTED_DEPLOY_MODES = {"paper", "live"}
 SUPPORTED_AGENT_KINDS = {"rule", "model", "llm", "hybrid"}
 
 
@@ -105,7 +110,7 @@ def _compose_environment(env_vars: list[tuple[str, str]]) -> dict[str, str]:
 def _render_env_example(env_vars: list[tuple[str, str]]) -> str:
     lines = [
         "# QuantTradeAI docker-compose deployment environment",
-        "# Fill the values needed by this paper-agent bundle before running docker compose.",
+        "# Fill the values needed by this deployment bundle before running docker compose.",
         "",
     ]
     if not env_vars:
@@ -143,18 +148,24 @@ def _render_bundle_readme(
     *,
     agent_name: str,
     agent_kind: str,
+    mode: str,
     service_name: str,
     next_command: str,
     env_vars: list[tuple[str, str]],
+    safety_requirements: list[str],
 ) -> str:
     lines = [
         "# QuantTradeAI Deployment Bundle",
         "",
-        f"This bundle deploys the `{agent_name}` `{agent_kind}` agent in `paper` mode with Docker Compose.",
+        f"This bundle deploys the `{agent_name}` `{agent_kind}` agent in `{mode}` mode with Docker Compose.",
+        "",
+        "## Mode",
+        "",
+        f"- `mode: {mode}`",
         "",
         "## Files",
         "",
-        "- `docker-compose.yml`: runs the paper agent with the resolved project config mounted at `/app/config/project.yaml`.",
+        f"- `docker-compose.yml`: runs the {mode} agent with the resolved project config mounted at `/app/config/project.yaml`.",
         "- `Dockerfile`: builds a minimal QuantTradeAI runtime image from the project source.",
         "- `.env.example`: provider environment variables inferred from the project config.",
         "- `resolved_project_config.yaml`: exact project config snapshot used for deployment generation.",
@@ -170,6 +181,16 @@ def _render_bundle_readme(
         "",
         "The compose service mounts project `data/`, `runs/`, and `reports/` read-write so runtime artifacts stay on the host.",
     ]
+
+    if safety_requirements:
+        lines.extend(
+            [
+                "",
+                "## Safety Requirements",
+                "",
+            ]
+        )
+        lines.extend([f"- {requirement}" for requirement in safety_requirements])
 
     if env_vars:
         lines.extend(
@@ -219,6 +240,18 @@ def _disable_replay_for_deployment(project_config: dict[str, Any]) -> dict[str, 
         streaming_cfg["replay"] = replay_cfg
         deployment_project.setdefault("data", {})["streaming"] = streaming_cfg
     return deployment_project
+
+
+def _deployment_safety_requirements(mode: str) -> list[str]:
+    if mode != "live":
+        return []
+
+    return [
+        "The agent must already be configured with `mode: live` in `config/project.yaml`.",
+        "Real-time streaming settings must include `data.streaming.provider`, `data.streaming.websocket_url`, and `data.streaming.channels`.",
+        "Top-level `risk` must be present and pass live-runtime validation.",
+        "Top-level `position_manager` must be present and pass live-runtime validation.",
+    ]
 
 
 def _resolve_agent_config(
@@ -374,16 +407,7 @@ def deploy_project_agent(
             config_path=config_path,
             destination=temp_resolved_project_path,
         )
-    deployment_project = _disable_replay_for_deployment(resolved_project)
-    if (
-        ((resolved_project.get("data") or {}).get("streaming") or {}).get("replay")
-        or {}
-    ).get("enabled") is True:
-        warnings.append(
-            "Paper deployment bundles always use real-time streaming; replay was disabled in the generated bundle."
-        )
-
-    deployment_cfg = dict(deployment_project.get("deployment") or {})
+    deployment_cfg = dict((resolved_project.get("deployment") or {}))
     resolved_target = str(target or deployment_cfg.get("target") or "docker-compose")
     resolved_target = resolved_target.strip().lower()
     if resolved_target not in SUPPORTED_DEPLOY_TARGETS:
@@ -395,26 +419,48 @@ def deploy_project_agent(
     resolved_mode = str(mode or deployment_cfg.get("mode") or "paper")
     resolved_mode = resolved_mode.strip().lower()
     if resolved_mode not in SUPPORTED_DEPLOY_MODES:
+        supported = ", ".join(sorted(SUPPORTED_DEPLOY_MODES))
         raise ValueError(
-            "Only deploy --mode paper is supported in this release. "
-            "Live deployment and promotion remain future work."
+            f"Unsupported deployment mode '{resolved_mode}'. Supported modes: {supported}."
         )
-    compile_paper_streaming_runtime_config(
-        deployment_project,
-        require_realtime=True,
-    )
+
+    deployment_project = copy.deepcopy(resolved_project)
+    if resolved_mode == "paper":
+        deployment_project = _disable_replay_for_deployment(deployment_project)
+        if (
+            ((resolved_project.get("data") or {}).get("streaming") or {}).get("replay")
+            or {}
+        ).get("enabled") is True:
+            warnings.append(
+                "Paper deployment bundles always use real-time streaming; replay was disabled in the generated bundle."
+            )
 
     agent_config = _resolve_agent_config(
         project_config=deployment_project,
         agent_name=agent_name,
     )
     configured_mode = str(agent_config.get("mode") or "").strip().lower()
-    if configured_mode and configured_mode != resolved_mode:
+    if resolved_mode == "live" and configured_mode != "live":
+        raise ValueError(
+            f"Agent '{agent_name}' must be configured with mode=live before generating a live deployment bundle."
+        )
+    if resolved_mode != "live" and configured_mode and configured_mode != resolved_mode:
         warnings.append(
             f"Agent '{agent_name}' is configured with mode={configured_mode} but deployment mode={resolved_mode}; continuing with deployment mode."
         )
 
+    if resolved_mode == "paper":
+        compile_paper_streaming_runtime_config(
+            deployment_project,
+            require_realtime=True,
+        )
+    else:
+        compile_live_streaming_runtime_config(deployment_project)
+        compile_live_risk_runtime_config(deployment_project)
+        compile_live_position_manager_runtime_config(deployment_project)
+
     service_name = _slugify(f"{agent_name}-{resolved_mode}")
+    safety_requirements = _deployment_safety_requirements(resolved_mode)
     env_vars = _required_env_vars(
         agent_config=agent_config,
         project_config=deployment_project,
@@ -491,9 +537,11 @@ def deploy_project_agent(
         _render_bundle_readme(
             agent_name=agent_name,
             agent_kind=str(agent_config.get("kind") or ""),
+            mode=resolved_mode,
             service_name=service_name,
             next_command=next_command,
             env_vars=env_vars,
+            safety_requirements=safety_requirements,
         ),
         encoding="utf-8",
     )
@@ -508,6 +556,7 @@ def deploy_project_agent(
         "project_root": project_root.as_posix(),
         "source_config": config_path.as_posix(),
         "command": compose_command,
+        "safety_requirements": safety_requirements,
         "environment_variables": [name for name, _ in env_vars],
         "volumes": [
             {
