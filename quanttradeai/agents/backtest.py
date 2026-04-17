@@ -28,7 +28,12 @@ from quanttradeai.utils.project_paths import resolve_project_path
 from quanttradeai.utils.run_records import apply_required_run_fields, create_run_dir
 
 from .base import AgentSimulationState, action_to_target, signal_to_action
-from .context import build_context_payload
+from .context import (
+    attach_prompt_context_history_columns,
+    build_context_payload,
+    load_agent_notes_payload,
+    strip_prompt_context_history_columns,
+)
 from .factory import build_strategy
 
 logger = logging.getLogger(__name__)
@@ -229,6 +234,14 @@ def run_agent_backtest(
             project_config_path=project_config_path,
         )
         include_prompt_artifacts = agent_config.get("kind") in {"llm", "hybrid"}
+        notes_payload = (
+            load_agent_notes_payload(
+                agent_config=agent_config,
+                project_config_path=project_config_path,
+            )
+            if include_prompt_artifacts
+            else None
+        )
 
         model_cfg, features_cfg, backtest_cfg = compile_research_runtime_configs(
             project_config,
@@ -288,10 +301,17 @@ def run_agent_backtest(
 
         prepared_data: dict[str, pd.DataFrame] = {}
         decision_records: list[dict[str, Any]] = []
+        execution_records: list[dict[str, Any]] = []
         prompt_samples: list[dict[str, Any]] = []
 
         for symbol, df in data_dict.items():
-            features_df = processor.generate_features(df)
+            features_df = processor.generate_features(
+                strip_prompt_context_history_columns(df)
+            )
+            features_df = attach_prompt_context_history_columns(
+                features_df,
+                source_history=df,
+            )
             _, test_df, coverage = time_aware_split(features_df, model_cfg)
             symbol_dir = run_dir / "symbols" / symbol
             symbol_dir.mkdir(parents=True, exist_ok=True)
@@ -316,6 +336,9 @@ def run_agent_backtest(
                     current_row=current_row,
                     model_signals=model_signals,
                     state=state,
+                    decision_history=decision_records,
+                    execution_history=execution_records,
+                    notes_payload=notes_payload,
                 )
                 decision = strategy.decide(
                     agent_name=agent_name,
@@ -324,20 +347,38 @@ def run_agent_backtest(
                     context=context,
                     tools=list(agent_config.get("tools") or []),
                 )
+                target_before = state.target_position
                 target_position = action_to_target(
                     state.target_position, decision.action
                 )
+                target_delta = target_position - target_before
+                execution_status = "simulated" if target_delta != 0 else "no_change"
                 state.target_position = target_position
                 state.last_action = decision.action
                 state.last_reason = decision.reason
                 state.decision_count += 1
                 target_labels.append(target_position)
 
+                if target_delta != 0:
+                    execution_records.append(
+                        {
+                            "symbol": symbol,
+                            "timestamp": bar_timestamp,
+                            "action": decision.action,
+                            "qty": abs(target_delta),
+                            "price": _safe_float(current_row.get("Close"), 0.0),
+                            "status": "simulated",
+                        }
+                    )
+
                 decision_record = {
                     "symbol": symbol,
                     "timestamp": bar_timestamp,
                     "action": decision.action,
+                    "target_position_before": target_before,
                     "target_position": target_position,
+                    "target_position_after": target_position,
+                    "execution_status": execution_status,
                     "reason": decision.reason,
                     "context": context,
                     "model_signals": {

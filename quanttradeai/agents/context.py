@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
+from quanttradeai.utils.project_paths import infer_project_root, resolve_project_path
+
 from .base import AgentSimulationState, target_position_label
+
+PROMPT_CONTEXT_HISTORY_COLUMNS = ("text",)
 
 
 def _serialize_scalar(value: Any) -> Any:
@@ -83,6 +88,167 @@ def _infer_feature_columns(
     return []
 
 
+def resolve_context_block(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        resolved = dict(value)
+        resolved.setdefault("enabled", True)
+        return resolved
+    if value is True:
+        return {"enabled": True}
+    return {"enabled": False}
+
+
+def context_block_enabled(value: Any) -> bool:
+    return bool(resolve_context_block(value).get("enabled", False))
+
+
+def resolve_agent_notes_path(
+    *,
+    agent_config: dict[str, Any],
+    project_config_path: str | Path,
+) -> Path | None:
+    context_cfg = dict(agent_config.get("context") or {})
+    notes_cfg = resolve_context_block(context_cfg.get("notes"))
+    if not notes_cfg.get("enabled", False):
+        return None
+
+    agent_name = str(agent_config.get("name") or "agent").strip() or "agent"
+    notes_file = str(notes_cfg.get("file") or f"notes/{agent_name}.md").strip()
+    return resolve_project_path(project_config_path, notes_file)
+
+
+def load_agent_notes_payload(
+    *,
+    agent_config: dict[str, Any],
+    project_config_path: str | Path,
+) -> dict[str, Any] | None:
+    notes_path = resolve_agent_notes_path(
+        agent_config=agent_config,
+        project_config_path=project_config_path,
+    )
+    if notes_path is None:
+        return None
+    if not notes_path.is_file():
+        raise ValueError(f"Agent notes file does not exist: {notes_path}")
+
+    content = notes_path.read_text(encoding="utf-8").strip()
+    if not content:
+        raise ValueError(f"Agent notes file is empty: {notes_path}")
+
+    project_root = infer_project_root(project_config_path).resolve()
+    try:
+        display_path = notes_path.resolve().relative_to(project_root).as_posix()
+    except ValueError:
+        display_path = str(notes_path)
+
+    return {"path": display_path, "content": content}
+
+
+def _recent_execution_records(
+    *,
+    symbol: str | None,
+    execution_history: list[dict[str, Any]] | None,
+    max_entries: int,
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for record in reversed(execution_history or []):
+        if symbol and record.get("symbol") != symbol:
+            continue
+        items.append(
+            {
+                "timestamp": _serialize_scalar(record.get("timestamp")),
+                "action": record.get("action"),
+                "qty": _serialize_scalar(record.get("qty")),
+                "price": _serialize_scalar(record.get("price")),
+                "status": record.get("status") or record.get("execution_status"),
+            }
+        )
+        if len(items) >= max_entries:
+            break
+    return items
+
+
+def _recent_decision_records(
+    *,
+    symbol: str | None,
+    decision_history: list[dict[str, Any]] | None,
+    max_entries: int,
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for record in reversed(decision_history or []):
+        if symbol and record.get("symbol") != symbol:
+            continue
+        items.append(
+            {
+                "timestamp": _serialize_scalar(record.get("timestamp")),
+                "action": record.get("action"),
+                "reason": record.get("reason"),
+                "execution_status": record.get("execution_status"),
+                "target_position_after": _serialize_scalar(
+                    record.get(
+                        "target_position_after",
+                        record.get("position_after", record.get("target_position")),
+                    )
+                ),
+            }
+        )
+        if len(items) >= max_entries:
+            break
+    return items
+
+
+def _recent_news_items(
+    *,
+    history: pd.DataFrame,
+    max_items: int,
+) -> list[dict[str, Any]]:
+    if "text" not in history.columns:
+        return []
+
+    items: list[dict[str, Any]] = []
+    seen_text: set[str] = set()
+    for timestamp, value in reversed(list(history["text"].items())):
+        if pd.isna(value):
+            continue
+        text = str(value or "").strip()
+        if not text or text in seen_text:
+            continue
+        seen_text.add(text)
+        items.append(
+            {
+                "timestamp": _serialize_scalar(timestamp),
+                "text": text,
+            }
+        )
+        if len(items) >= max_items:
+            break
+    return items
+
+
+def strip_prompt_context_history_columns(history: pd.DataFrame) -> pd.DataFrame:
+    return history.drop(
+        columns=[
+            column
+            for column in PROMPT_CONTEXT_HISTORY_COLUMNS
+            if column in history.columns
+        ],
+        errors="ignore",
+    )
+
+
+def attach_prompt_context_history_columns(
+    featured_history: pd.DataFrame,
+    *,
+    source_history: pd.DataFrame,
+) -> pd.DataFrame:
+    restored = featured_history.copy()
+    for column in PROMPT_CONTEXT_HISTORY_COLUMNS:
+        if column not in source_history.columns:
+            continue
+        restored[column] = source_history.reindex(restored.index)[column]
+    return restored
+
+
 def build_context_payload(
     *,
     feature_definitions: list[dict[str, Any]],
@@ -91,6 +257,9 @@ def build_context_payload(
     current_row: pd.Series,
     model_signals: dict[str, int],
     state: AgentSimulationState,
+    decision_history: list[dict[str, Any]] | None = None,
+    execution_history: list[dict[str, Any]] | None = None,
+    notes_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble deterministic prompt context for the current bar."""
 
@@ -176,5 +345,43 @@ def build_context_payload(
             "current_direction": target_position_label(state.target_position),
             "risk_limits": dict(agent_config.get("risk") or {}),
         }
+
+    if agent_config.get("kind") not in {"llm", "hybrid"}:
+        return payload
+
+    current_symbol = agent_config.get("_current_symbol")
+
+    orders_cfg = resolve_context_block(context_cfg.get("orders"))
+    if orders_cfg.get("enabled", False):
+        payload["orders"] = {
+            "recent_orders": _recent_execution_records(
+                symbol=current_symbol,
+                execution_history=execution_history,
+                max_entries=int(orders_cfg.get("max_entries", 5)),
+            )
+        }
+
+    memory_cfg = resolve_context_block(context_cfg.get("memory"))
+    if memory_cfg.get("enabled", False):
+        payload["memory"] = {
+            "recent_decisions": _recent_decision_records(
+                symbol=current_symbol,
+                decision_history=decision_history,
+                max_entries=int(memory_cfg.get("max_entries", 5)),
+            )
+        }
+
+    news_cfg = resolve_context_block(context_cfg.get("news"))
+    if news_cfg.get("enabled", False):
+        payload["news"] = {
+            "headlines": _recent_news_items(
+                history=history,
+                max_items=int(news_cfg.get("max_items", 5)),
+            )
+        }
+
+    notes_cfg = resolve_context_block(context_cfg.get("notes"))
+    if notes_cfg.get("enabled", False) and notes_payload is not None:
+        payload["notes"] = dict(notes_payload)
 
     return payload
