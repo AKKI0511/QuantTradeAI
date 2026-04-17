@@ -36,7 +36,7 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 | Run a hybrid agent | `init --template hybrid` -> `research run` -> `promote --run research/<run_id>` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Model signals plus LLM reasoning in one project, with research outputs promoted into a stable path before the agent is promoted through environments |
 | Run every project agent together | `agent run --all --mode backtest|paper --max-concurrency 4` | A local multi-agent batch that preserves normal child runs plus batch-level manifests and scoreboards |
 | Sweep one agent across parameter variants | `agent run --sweep rsi_threshold_grid --mode backtest --max-concurrency 4` | A local sweep batch that expands one agent into many backtest variants, preserves normal child runs, and ranks them with the same scoreboard flow |
-| Generate a Docker Compose deployment bundle | `deploy --agent <name> --target docker-compose` | A real-time paper-agent bundle with compose, Dockerfile, env placeholders, and resolved config |
+| Generate a Docker Compose deployment bundle | `deploy --agent <name> --target docker-compose --mode paper|live` | A Docker Compose bundle for a promoted paper or live agent with compose, Dockerfile, env placeholders, and resolved config |
 | Keep using the older live loop | `live-trade` with runtime YAML files | Legacy compatibility for existing setups |
 
 ## How It Fits Together
@@ -81,7 +81,7 @@ QuantTradeAI is one framework with two connected tracks:
 | `agent run --all --mode backtest` from `project.yaml` | Supported |
 | `agent run --all --mode paper` from `project.yaml` | Supported |
 | `agent run --sweep <name> --mode backtest` from `project.yaml` | Supported |
-| `deploy --target docker-compose` for paper agents | Supported |
+| `deploy --target docker-compose` for paper or live agents | Supported |
 | `live-trade` legacy runtime YAML workflow | Supported for compatibility |
 
 > [!NOTE]
@@ -285,12 +285,13 @@ This writes batch artifacts under `runs/agent/batches/<timestamp>_<project>_<swe
 
 Sweep child runs are intentionally not promotable. Copy the winning parameters into `config/project.yaml`, rerun that agent normally, and then promote the non-sweep run.
 
-### Deploy A Paper Agent
+### Deploy A Paper Or Live Agent
 
-Use this if you want a generated Docker Compose bundle for a project-defined paper agent.
+Use this if you want a generated Docker Compose bundle for a project-defined paper or live agent.
 
 ```bash
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose --mode live
 ```
 
 This writes a deployment bundle under `reports/deployments/<agent>/<timestamp>/` with:
@@ -302,7 +303,14 @@ This writes a deployment bundle under `reports/deployments/<agent>/<timestamp>/`
 - `resolved_project_config.yaml`
 - `deployment_manifest.json`
 
-Generated deployment bundles always disable replay in the emitted resolved project config and expect real-time streaming credentials. Local replay-backed paper runs stay unchanged in your source `config/project.yaml`.
+Paper bundles always disable replay in the emitted resolved project config and expect real-time streaming credentials. Local replay-backed paper runs stay unchanged in your source `config/project.yaml`.
+
+Live bundles keep the emitted replay settings unchanged, but they require all live safety prerequisites to already be configured in `config/project.yaml`:
+
+- the agent must already be set to `mode: live`
+- `data.streaming` must include `provider`, `websocket_url`, and `channels`
+- top-level `risk` must be present and valid
+- top-level `position_manager` must be present and valid
 
 ## What A Project Looks Like
 
@@ -415,7 +423,7 @@ Important boundary:
 
 - `agent run --mode paper` for project-defined agents uses replay from `config/project.yaml` when `data.streaming.replay.enabled: true`
 - `agent run --mode live` for project-defined `rule`, `model`, `llm`, and `hybrid` agents compiles runtime config from `config/project.yaml`
-- `deploy --target docker-compose` generates a real-time paper bundle and disables replay in the emitted deployment config
+- `deploy --target docker-compose --mode paper|live` generates Docker Compose bundles for promoted paper or live agents; paper bundles disable replay in the emitted deployment config
 - `live-trade` still uses the legacy runtime YAML files directly
 
 ## Development
