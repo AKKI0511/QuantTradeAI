@@ -38,6 +38,8 @@ poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
 poetry run quanttradeai runs list
 poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
+poetry run quanttradeai runs list --compare research/<run_id_a> --compare research/<run_id_b>
+poetry run quanttradeai runs list --compare agent/backtest/<run_id_a> --compare agent/backtest/<run_id_b> --sort-by net_sharpe
 
 # Run a YAML-defined llm or hybrid agent
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
@@ -323,7 +325,7 @@ Quick decision rule:
 
 - Use `config/project.yaml` for `validate`, `research run`, `agent run`, and `agent run --sweep`
 - Use `data.streaming.replay` for deterministic local paper runs; keep provider/websocket fields in place for later deployment or live promotion
-- Use `quanttradeai runs list --scoreboard` to compare local research and agent runs by metrics
+- Use `quanttradeai runs list --scoreboard` to rank local runs, then `quanttradeai runs list --compare ...` to inspect shortlisted runs by metrics and config deltas
 - Use the runtime YAML files for `live-trade`, `backtest-model`, and operational streaming setup
 
 ## Time-Aware Splitting

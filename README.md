@@ -114,6 +114,7 @@ poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai runs list
 poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
+poetry run quanttradeai runs list --compare research/<run_id_a> --compare research/<run_id_b>
 ```
 
 This path gives you:
@@ -123,6 +124,7 @@ This path gives you:
 - a research run with metrics and artifacts
 - standardized outputs under `runs/research/...`
 - a quick scoreboard view for ranking local runs by the metrics that matter
+- an artifact-backed compare flow for inspecting meaningful config deltas between shortlisted runs
 
 To make a winning research artifact available to model or hybrid agents through a stable path:
 
@@ -254,7 +256,7 @@ This writes batch artifacts under `runs/agent/batches/<timestamp>_<project>_back
 - `scoreboard.json`
 - `scoreboard.txt`
 
-Each child agent still writes its normal run under `runs/agent/backtest/...` or `runs/agent/paper/...`, so `quanttradeai runs list --scoreboard` continues to work without a separate comparison path. Backtest batches rank by `net_sharpe`; paper batches rank by `total_pnl`.
+Each child agent still writes its normal run under `runs/agent/backtest/...` or `runs/agent/paper/...`, so `quanttradeai runs list --scoreboard` continues to work for ranking and `quanttradeai runs list --compare ...` can inspect shortlisted runs in detail. Backtest batches rank by `net_sharpe`; paper batches rank by `total_pnl`.
 
 ### Sweep One Agent
 
@@ -361,13 +363,15 @@ Sweep batch artifacts:
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.txt`
 
-This makes it easier to compare runs, audit what actually executed, and reuse winning configurations.
+This makes it easier to rank runs, inspect what actually changed, and reuse winning configurations.
 
-To compare local runs directly from the CLI, use the metrics-aware scoreboard:
+To rank and compare local runs directly from the CLI, use the scoreboard first and then compare explicit run ids:
 
 ```bash
 poetry run quanttradeai runs list --scoreboard
 poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
+poetry run quanttradeai runs list --compare research/<run_id_a> --compare research/<run_id_b>
+poetry run quanttradeai runs list --compare agent/backtest/<run_id_a> --compare agent/backtest/<run_id_b> --sort-by net_sharpe
 poetry run quanttradeai runs list --type agent --mode live --scoreboard --sort-by total_pnl
 ```
 

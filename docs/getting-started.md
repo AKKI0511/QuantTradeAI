@@ -17,6 +17,8 @@ poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai runs list
+poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
+poetry run quanttradeai runs list --compare research/<run_id_a> --compare research/<run_id_b>
 ```
 
 This path gives you:
@@ -25,6 +27,7 @@ This path gives you:
 - resolved-config validation output
 - a full research run with metrics and artifacts
 - standardized run records under `runs/research/...`
+- a scoreboard for ranking local runs and a compare flow for inspecting the shortlisted winners
 
 To promote a successful research run into the stable model path used by the `model-agent` and `hybrid` templates:
 
