@@ -1,13 +1,28 @@
 # Execution Costs Example
 
-Run a simple backtest with and without execution costs and slippage.
+Run a model agent backtest from `config/project.yaml`, then compare it with a second run after increasing `research.backtest.costs.bps`.
 
 ```bash
-poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> \
-  -c config/model_config.yaml -b config/backtest_config.yaml
-poetry run quanttradeai backtest-model -m models/experiments/<timestamp>/<SYMBOL> \
-  -c config/model_config.yaml -b config/backtest_config.yaml \
-  --cost-bps 5 --slippage-bps 10
+poetry run quanttradeai init --template model-agent -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
 ```
 
-The second command applies 5 bps transaction costs and 10 bps slippage, producing lower Sharpe ratio and PnL compared to the gross run.
+To increase execution costs, edit `config/project.yaml` and raise:
+
+```yaml
+research:
+  backtest:
+    costs:
+      enabled: true
+      bps: 10
+```
+
+Then rerun the same backtest and compare the two runs:
+
+```bash
+poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
+poetry run quanttradeai runs list --compare agent/backtest/<run_id_a> --compare agent/backtest/<run_id_b>
+```
+
+Higher costs should reduce net Sharpe, total PnL, or both.

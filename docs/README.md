@@ -5,9 +5,10 @@ Welcome to the QuantTradeAI documentation! This comprehensive machine learning f
 ## 📚 Documentation Index
 
 ### Core Documentation
-- **[Configuration Overview](configuration.md)** - Choose the right config file for research, agents, live trading, and migration
-- **[Project Config (`project.yaml`)](configuration/project-yaml.md)** - Canonical research and agent backtest configuration
-- **[Runtime and Live Trading Configs](configuration/live-runtime-files.md)** - Streaming, live-trading, backtest, and risk runtime YAMLs
+- **[Configuration Overview](configuration.md)** - Choose the right config file for research, agents, and utility workflows
+- **[Project Config (`project.yaml`)](configuration/project-yaml.md)** - Canonical research, promotion, and agent configuration
+- **[Generated Runtime Files](configuration/live-runtime-files.md)** - Runtime YAML snapshots emitted from `config/project.yaml`
+- **[Legacy Command Migration](configuration/legacy-configs.md)** - Replacement paths for removed legacy commands
 - **[API Documentation](api/)** - Comprehensive reference for all public APIs, functions, and components
 - **[Quick Reference Guide](quick-reference.md)** - Common usage patterns and examples
 - **[LLM Sentiment Analysis](llm-sentiment.md)** - Configure LLM-based sentiment scoring
@@ -40,18 +41,11 @@ poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 poetry run quanttradeai agent run --all -c config/project.yaml --mode paper
 
-# Import an existing legacy config/ directory into the canonical workflow
-poetry run quanttradeai validate --legacy-config-dir config
-poetry run quanttradeai research run --legacy-config-dir config
-
-# Legacy multi-file workflow remains supported
+# Lower-level utility commands that still exist
 poetry run quanttradeai fetch-data -c config/model_config.yaml
-poetry run quanttradeai train -c config/model_config.yaml
 poetry run quanttradeai evaluate -c config/model_config.yaml -m models/experiments/<timestamp>/<SYMBOL>
+poetry run quanttradeai backtest -c config/backtest_config.yaml
 ```
-
-`train` saves models under `models/experiments/<timestamp>/<SYMBOL>/`, which is
-the expected path shape for `evaluate --model-path`.
 
 Canonical research runs also persist resolved configs and compiled runtime YAMLs
 under `runs/research/<timestamp>_<project>/`.
@@ -70,7 +64,7 @@ The [API Documentation](api/) provides comprehensive coverage of:
 - **Backtesting Framework** - Trade simulation and performance metrics
 - **Trading Utilities** - Risk management, position sizing, real-time position control
 - **Utility Functions** - Metrics, visualization, and configuration schemas
-- **Configuration** - Canonical `project.yaml`, runtime YAMLs, and migration guidance
+- **Configuration** - Canonical `project.yaml`, generated runtime YAMLs, and migration guidance
 
 ### 2. Quick Reference Guide
 The [Quick Reference Guide](quick-reference.md) includes:
@@ -82,7 +76,7 @@ The [Quick Reference Guide](quick-reference.md) includes:
 - **Risk Management** - Stop-loss, take-profit, drawdown guard, and position sizing
 - **Performance Metrics** - Classification and trading metrics
 - **Visualization** - Price charts and performance plots
-- **Configuration Guides** - Purpose-built pages for project, live, and legacy config layouts
+- **Configuration Guides** - Purpose-built pages for project, generated runtime, and migration guidance
 - **Error Handling** - Common error patterns and solutions
 - **Best Practices** - Recommended approaches for each component
 - **Troubleshooting** - Solutions for common issues

@@ -403,7 +403,7 @@ def run_pipeline(
 
     Example
     -------
-    >>> # CLI equivalent: `poetry run quanttradeai train -c config/model_config.yaml`
+    >>> # Used by `poetry run quanttradeai research run -c config/project.yaml`
     >>> results = run_pipeline("config/model_config.yaml")
     >>> sorted(results.keys())  # doctest: +ELLIPSIS
     ...

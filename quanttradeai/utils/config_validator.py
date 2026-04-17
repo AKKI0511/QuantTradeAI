@@ -470,35 +470,20 @@ def validate_project_config(
     config_path: Path | str = "config/project.yaml",
     *,
     output_dir: Path | str = "reports/config_validation",
-    legacy_config_dir: Path | str | None = None,
     project_config_override: dict[str, Any] | None = None,
     timestamp_subdir: bool = True,
 ) -> Dict:
-    if project_config_override is not None and legacy_config_dir is not None:
-        raise ValueError(
-            "project_config_override cannot be used with legacy_config_dir."
-        )
-
     if project_config_override is not None:
         raw, compatibility_warnings = normalize_live_risk_compatibility(
             deepcopy(project_config_override)
         )
         path = Path(config_path)
-        loaded_source = "canonical"
         loaded_source_path = str(path)
         loaded_warnings = list(compatibility_warnings)
     else:
-        loaded = load_project_config(
-            config_path=config_path,
-            legacy_config_dir=legacy_config_dir,
-        )
+        loaded = load_project_config(config_path=config_path)
         raw = loaded.raw
-        path = (
-            Path(config_path)
-            if loaded.source == "canonical"
-            else Path(legacy_config_dir or Path(config_path).parent) / "project.yaml"
-        )
-        loaded_source = loaded.source
+        path = Path(config_path)
         loaded_source_path = loaded.source_path
         loaded_warnings = list(loaded.warnings)
 
@@ -553,18 +538,11 @@ def validate_project_config(
         "all_passed": True,
         "summary": summary,
         "warnings": warnings,
-        "source": loaded_source,
         "artifacts": {
             "resolved_config": str(resolved_path),
             "summary": str(summary_path),
         },
     }
-
-    if loaded_source == "legacy":
-        migrated_path = run_dir / "migrated_project_config.yaml"
-        with migrated_path.open("w", encoding="utf-8") as f:
-            yaml.safe_dump(resolved, f, sort_keys=False)
-        result["artifacts"]["migrated_project_config"] = str(migrated_path)
 
     return result
 

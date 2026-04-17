@@ -13,56 +13,6 @@ from quanttradeai.utils.project_config import compile_research_runtime_configs
 runner = CliRunner()
 
 
-def write_legacy_config_bundle(config_dir: Path) -> None:
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "model_config.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "data": {
-                    "symbols": ["AAPL"],
-                    "start_date": "2020-01-01",
-                    "end_date": "2020-12-31",
-                    "timeframe": "1d",
-                    "test_start": "2020-09-01",
-                    "test_end": "2020-12-31",
-                    "use_cache": False,
-                },
-                "training": {"test_size": 0.25, "cv_folds": 3},
-                "trading": {"transaction_cost": 0.001},
-            },
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
-    (config_dir / "features_config.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "pipeline": {"steps": []},
-                "price_features": ["close_to_open"],
-                "momentum_features": {"rsi_period": 7},
-                "custom_features": [{"price_momentum": {"periods": [5]}}],
-            },
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
-    (config_dir / "backtest_config.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "execution": {
-                    "transaction_costs": {
-                        "enabled": True,
-                        "mode": "bps",
-                        "value": 7,
-                    }
-                }
-            },
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
-
-
 def test_project_to_runtime_configs_maps_custom_features_to_supported_keys():
     project_cfg = yaml.safe_load(
         yaml.safe_dump(PROJECT_TEMPLATES["hybrid"], sort_keys=False)
@@ -198,6 +148,31 @@ def test_validate_writes_resolved_artifacts(tmp_path: Path, monkeypatch):
     assert resolved_path.is_file()
     assert summary_path.is_file()
     assert resolved_path.parent.parent.name == "config_validation"
+    assert "source" not in payload
+    assert "migrated_project_config" not in payload["artifacts"]
+
+
+def test_validate_rejects_removed_legacy_config_flag(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False), encoding="utf-8"
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "validate",
+            "--config",
+            str(cfg_path),
+            "--legacy-config-dir",
+            "legacy_config",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "No such option" in result.output
 
 
 def test_validate_reports_sweep_count_for_valid_project(tmp_path: Path, monkeypatch):
@@ -1330,24 +1305,6 @@ def test_validate_preserves_unknown_fields_in_resolved_artifact(
     assert resolved["data"]["streaming"]["channels"] == ["trades"]
 
 
-def test_validate_can_import_legacy_config_bundle(tmp_path: Path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    legacy_dir = Path("legacy_config")
-    write_legacy_config_bundle(legacy_dir)
-
-    result = runner.invoke(app, ["validate", "--legacy-config-dir", str(legacy_dir)])
-    assert result.exit_code == 0, result.stdout
-
-    payload = json.loads(result.stdout[result.stdout.index("{") :])
-    migrated_path = Path(payload["artifacts"]["migrated_project_config"])
-    resolved = yaml.safe_load(migrated_path.read_text(encoding="utf-8"))
-
-    assert payload["source"] == "legacy"
-    assert migrated_path.is_file()
-    assert resolved["project"]["profile"] == "research"
-    assert resolved["research"]["backtest"]["costs"]["bps"] == 7.0
-
-
 def test_research_run_happy_path_writes_run_artifacts(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg_path = Path("config/project.yaml")
@@ -1418,8 +1375,33 @@ def test_research_run_happy_path_writes_run_artifacts(tmp_path: Path, monkeypatc
         == PROJECT_TEMPLATES["research"]["project"]["name"]
     )
     assert Path(summary_payload["artifacts"]["resolved_project_config"]).is_file()
+    assert "migrated_project_config" not in summary_payload["artifacts"]
     assert metrics_payload["status"] == "available"
     assert metrics_payload["backtest_metrics_by_symbol"]["AAPL"]["net_sharpe"] == 1.2
+
+
+def test_research_run_rejects_removed_legacy_config_flag(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False), encoding="utf-8"
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "research",
+            "run",
+            "--config",
+            str(cfg_path),
+            "--legacy-config-dir",
+            "legacy_config",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "No such option" in result.output
 
 
 def test_research_run_marks_placeholder_when_backtests_have_no_metrics(

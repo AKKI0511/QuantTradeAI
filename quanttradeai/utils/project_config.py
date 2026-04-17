@@ -15,23 +15,6 @@ from quanttradeai.utils.config_schemas import (
 from quanttradeai.streaming.history import ReplayWindow, parse_iso_date
 
 
-LEGACY_CONFIG_FILES = {
-    "model_config": "model_config.yaml",
-    "features_config": "features_config.yaml",
-    "backtest_config": "backtest_config.yaml",
-    "risk_config": "risk_config.yaml",
-    "streaming_config": "streaming.yaml",
-    "position_manager_config": "position_manager.yaml",
-}
-
-
-DEFAULT_PROFILES = {
-    "research": {"mode": "research"},
-    "paper": {"mode": "paper"},
-    "live": {"mode": "live"},
-}
-
-
 def paper_replay_enabled(project_config: dict[str, Any]) -> bool:
     streaming_cfg = dict((project_config.get("data") or {}).get("streaming") or {})
     replay_cfg = dict(streaming_cfg.get("replay") or {})
@@ -90,7 +73,6 @@ def resolve_paper_replay_window(project_config: dict[str, Any]) -> ReplayWindow 
 @dataclass
 class LoadedProjectConfig:
     raw: dict[str, Any]
-    source: str
     source_path: str
     warnings: list[str]
 
@@ -137,17 +119,6 @@ def _load_yaml_mapping(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"Config file must contain a mapping at root: {path}")
     return payload
-
-
-def _load_optional_yaml(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    return _load_yaml_mapping(path)
-
-
-def _default_project_name(config_dir: Path) -> str:
-    candidate = config_dir.resolve().parent.name.strip()
-    return candidate.lower().replace(" ", "_") if candidate else "migrated_project"
 
 
 def _as_int_list(raw_value: Any) -> list[int]:
@@ -202,223 +173,16 @@ def _strip_position_manager_risk_management(
     return sanitized
 
 
-def import_legacy_project_config(
-    config_dir: Path | str = "config",
-) -> tuple[dict[str, Any], list[str]]:
-    """Synthesize a canonical project config from legacy YAML files."""
-
-    config_root = Path(config_dir)
-    model_cfg = _load_yaml_mapping(config_root / LEGACY_CONFIG_FILES["model_config"])
-    features_cfg = _load_optional_yaml(
-        config_root / LEGACY_CONFIG_FILES["features_config"]
-    )
-    backtest_cfg = _load_optional_yaml(
-        config_root / LEGACY_CONFIG_FILES["backtest_config"]
-    )
-    risk_cfg = _load_optional_yaml(config_root / LEGACY_CONFIG_FILES["risk_config"])
-    streaming_cfg = _load_optional_yaml(
-        config_root / LEGACY_CONFIG_FILES["streaming_config"]
-    )
-    position_manager_cfg = _load_optional_yaml(
-        config_root / LEGACY_CONFIG_FILES["position_manager_config"]
-    )
-
-    warnings: list[str] = [
-        "Using legacy config import. Review the migrated project config and commit it as config/project.yaml for the canonical happy path."
-    ]
-
-    feature_definitions: list[dict[str, Any]] = []
-    legacy_price_features = features_cfg.get("price_features") or []
-    legacy_momentum = features_cfg.get("momentum_features") or {}
-    legacy_volatility = features_cfg.get("volatility_features") or []
-    legacy_custom = features_cfg.get("custom_features") or []
-    legacy_sentiment = features_cfg.get("sentiment") or {}
-
-    if features_cfg:
-        technical_params: dict[str, Any] = {}
-        if legacy_price_features:
-            technical_params["price_features"] = list(legacy_price_features)
-        if isinstance(legacy_momentum, dict):
-            if "rsi_period" in legacy_momentum:
-                technical_params["rsi_period"] = legacy_momentum["rsi_period"]
-            if "macd_params" in legacy_momentum:
-                technical_params["macd_params"] = legacy_momentum["macd_params"]
-            if "stoch_params" in legacy_momentum:
-                technical_params["stoch_params"] = legacy_momentum["stoch_params"]
-        for entry in legacy_volatility if isinstance(legacy_volatility, list) else []:
-            if not isinstance(entry, dict):
-                continue
-            if "atr_periods" in entry:
-                technical_params["atr_periods"] = entry["atr_periods"]
-            if "bollinger_bands" in entry:
-                technical_params["bollinger_bands"] = entry["bollinger_bands"]
-            if "keltner_channels" in entry:
-                technical_params["keltner_channels"] = entry["keltner_channels"]
-
-        if technical_params:
-            feature_definitions.append(
-                {
-                    "name": "technical_core",
-                    "type": "technical",
-                    "params": technical_params,
-                }
-            )
-
-        for entry in legacy_custom if isinstance(legacy_custom, list) else []:
-            if not isinstance(entry, dict):
-                continue
-            for key, value in entry.items():
-                params = {"kind": key}
-                if isinstance(value, dict):
-                    params.update(value)
-                elif isinstance(value, list):
-                    params["periods"] = value
-                feature_definitions.append(
-                    {
-                        "name": key,
-                        "type": "custom",
-                        "params": params,
-                    }
-                )
-
-    if legacy_sentiment.get("enabled"):
-        warnings.append(
-            "Legacy sentiment settings were preserved as compatibility data but are not migrated into canonical research feature definitions."
-        )
-
-    data_cfg = dict(model_cfg.get("data") or {})
-    research_backtest_costs = {"enabled": False, "bps": 0.0}
-    transaction_costs = (backtest_cfg.get("execution") or {}).get(
-        "transaction_costs"
-    ) or {}
-    if (
-        transaction_costs.get("enabled")
-        and transaction_costs.get("mode", "bps") == "bps"
-    ):
-        research_backtest_costs = {
-            "enabled": True,
-            "bps": float(transaction_costs.get("value", 0.0)),
-        }
-    else:
-        legacy_tx_cost = float(
-            (model_cfg.get("trading") or {}).get("transaction_cost", 0.0)
-        )
-        if legacy_tx_cost > 0:
-            research_backtest_costs = {
-                "enabled": True,
-                "bps": legacy_tx_cost * 10000.0,
-            }
-        elif transaction_costs.get("enabled"):
-            warnings.append(
-                "Legacy backtest transaction costs were enabled in a non-bps mode and were not migrated into research.backtest.costs."
-            )
-
-    project_cfg: dict[str, Any] = {
-        "project": {
-            "name": _default_project_name(config_root),
-            "profile": "research",
-        },
-        "profiles": dict(DEFAULT_PROFILES),
-        "data": {
-            "symbols": data_cfg.get("symbols", []),
-            "start_date": data_cfg.get("start_date"),
-            "end_date": data_cfg.get("end_date"),
-            "timeframe": data_cfg.get("timeframe", "1d"),
-            "test_start": data_cfg.get("test_start"),
-            "test_end": data_cfg.get("test_end"),
-            "cache_dir": data_cfg.get("cache_dir"),
-            "cache_path": data_cfg.get("cache_path"),
-            "cache_expiration_days": data_cfg.get("cache_expiration_days"),
-            "use_cache": data_cfg.get("use_cache", True),
-            "refresh": data_cfg.get("refresh", False),
-            "max_workers": data_cfg.get("max_workers", 1),
-        },
-        "features": {"definitions": feature_definitions},
-        "research": {
-            "enabled": True,
-            "labels": {
-                "type": "forward_return",
-                "horizon": 5,
-                "buy_threshold": 0.01,
-                "sell_threshold": -0.01,
-            },
-            "model": {
-                "kind": "classifier",
-                "family": "voting",
-                "tuning": {"enabled": True, "trials": 50},
-            },
-            "evaluation": {
-                "split": "time_aware",
-                "use_configured_test_window": bool(data_cfg.get("test_start")),
-            },
-            "backtest": {"costs": research_backtest_costs},
-        },
-        "agents": [],
-        "deployment": {"target": "docker-compose", "mode": "paper"},
-    }
-
-    if model_cfg.get("news"):
-        project_cfg["news"] = model_cfg["news"]
-    if model_cfg.get("training"):
-        project_cfg["training"] = model_cfg["training"]
-    if model_cfg.get("trading"):
-        project_cfg["trading"] = model_cfg["trading"]
-    if model_cfg.get("models"):
-        project_cfg["models"] = model_cfg["models"]
-    if backtest_cfg.get("execution") or {}:
-        project_cfg["execution"] = backtest_cfg["execution"]
-    imported_risk_cfg = (
-        risk_cfg.get("risk_management", risk_cfg) if risk_cfg else {}
-    ) or {}
-    imported_position_manager_cfg = (
-        position_manager_cfg.get("position_manager", position_manager_cfg)
-        if position_manager_cfg
-        else {}
-    ) or {}
-
-    nested_position_risk_cfg = dict(
-        imported_position_manager_cfg.get("risk_management") or {}
-    )
-    if imported_risk_cfg:
-        project_cfg["risk"] = imported_risk_cfg
-    elif nested_position_risk_cfg:
-        project_cfg["risk"] = nested_position_risk_cfg
-        warnings.append(
-            "Legacy position_manager.risk_management was migrated into the canonical top-level risk section."
-        )
-
-    if streaming_cfg:
-        project_cfg["data"]["streaming"] = streaming_cfg.get("streaming", streaming_cfg)
-    if imported_position_manager_cfg:
-        project_cfg["position_manager"] = _strip_position_manager_risk_management(
-            imported_position_manager_cfg
-        )
-
-    return project_cfg, warnings
-
-
 def load_project_config(
     config_path: Path | str = "config/project.yaml",
-    *,
-    legacy_config_dir: Path | str | None = None,
 ) -> LoadedProjectConfig:
-    if legacy_config_dir is not None:
-        raw, warnings = import_legacy_project_config(legacy_config_dir)
-        return LoadedProjectConfig(
-            raw=raw,
-            source="legacy",
-            source_path=str(Path(legacy_config_dir)),
-            warnings=warnings,
-        )
-
     path = Path(config_path)
     raw = _load_yaml_mapping(path)
-    normalized_raw, _warnings = normalize_live_risk_compatibility(raw)
+    normalized_raw, warnings = normalize_live_risk_compatibility(raw)
     return LoadedProjectConfig(
         raw=normalized_raw,
-        source="canonical",
         source_path=str(path),
-        warnings=[],
+        warnings=warnings,
     )
 
 
