@@ -12,6 +12,11 @@ from typing import Any
 import pandas as pd
 import yaml
 
+from quanttradeai.brokers import (
+    BrokerExecutionRuntime,
+    create_broker_client_for_agent,
+    resolve_execution_backend,
+)
 from quanttradeai.backtest.backtester import compute_metrics, simulate_trades
 from quanttradeai.data.loader import DataLoader
 from quanttradeai.data.processor import DataProcessor
@@ -515,7 +520,11 @@ def _streaming_metrics(engine: LiveTradingEngine) -> dict[str, Any]:
         "cash": engine.portfolio.cash,
         "portfolio_value": portfolio_value,
         "open_positions": positions,
+        "execution_backend": getattr(engine, "execution_backend", "simulated"),
     }
+    broker_provider = getattr(engine, "broker_provider", None)
+    if broker_provider:
+        payload["broker_provider"] = broker_provider
     risk_manager = getattr(engine, "risk_manager", None)
     if risk_manager is not None:
         try:
@@ -636,6 +645,7 @@ def _run_model_agent_streaming(
             max_risk_per_trade,
             max_portfolio_risk,
         ) = _resolve_risk_settings(agent_config, model_cfg)
+        execution_backend = resolve_execution_backend(agent_config)
         gateway: ReplayGateway | None = None
         bootstrap_history_frames: dict[str, pd.DataFrame] | None = None
         paper_source = "realtime"
@@ -661,6 +671,11 @@ def _run_model_agent_streaming(
             artifacts["replay_manifest"] = str(replay_manifest_path)
             paper_source = "replay"
 
+        broker_client = create_broker_client_for_agent(
+            agent_config,
+            mode=mode,
+        )
+
         engine = LiveTradingEngine(
             model_config=str(runtime_model_path),
             model_path=str(model_path),
@@ -678,7 +693,15 @@ def _run_model_agent_streaming(
             stop_loss_pct=stop_loss_pct,
             gateway=gateway,
             bootstrap_history_frames=bootstrap_history_frames,
+            execution_backend=execution_backend,
         )
+        if broker_client is not None:
+            engine.broker_runtime = BrokerExecutionRuntime(
+                broker_client=broker_client,
+                portfolio=engine.portfolio,
+                position_manager=engine.position_manager,
+                stop_loss_pct=stop_loss_pct,
+            )
         asyncio.run(engine.start())
 
         decision_records = _model_decision_records_from_engine(engine)
@@ -696,6 +719,36 @@ def _run_model_agent_streaming(
         }
         if decision_records:
             artifacts["decisions"] = str(run_dir / "decisions.jsonl")
+        broker_runtime = getattr(engine, "broker_runtime", None)
+        if broker_runtime is not None:
+            broker_account_start_path = run_dir / "broker_account_start.json"
+            broker_account_end_path = run_dir / "broker_account_end.json"
+            broker_positions_start_path = run_dir / "broker_positions_start.json"
+            broker_positions_end_path = run_dir / "broker_positions_end.json"
+            _write_json(
+                broker_account_start_path,
+                broker_runtime.start_account or {},
+            )
+            _write_json(
+                broker_account_end_path,
+                broker_runtime.end_account or {},
+            )
+            _write_json(
+                broker_positions_start_path,
+                broker_runtime.start_positions or [],
+            )
+            _write_json(
+                broker_positions_end_path,
+                broker_runtime.end_positions or [],
+            )
+            artifacts.update(
+                {
+                    "broker_account_start": str(broker_account_start_path),
+                    "broker_account_end": str(broker_account_end_path),
+                    "broker_positions_start": str(broker_positions_start_path),
+                    "broker_positions_end": str(broker_positions_end_path),
+                }
+            )
         summary.update(
             {
                 "status": "success",
@@ -710,6 +763,8 @@ def _run_model_agent_streaming(
                 ),
                 "decision_count": len(decision_records),
                 "execution_count": len(engine.execution_log),
+                "execution_backend": execution_backend,
+                "broker_provider": getattr(engine, "broker_provider", None),
                 "artifacts": artifacts,
                 "metrics": metrics_payload,
             }

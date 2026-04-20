@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -203,6 +204,11 @@ def _validate_agent_project_sections(
     for agent in resolved.get("agents") or []:
         agent_name = agent.get("name", "<unknown>")
         agent_kind = agent.get("kind")
+        agent_mode = str(agent.get("mode") or "").strip().lower()
+        execution_cfg = dict(agent.get("execution") or {})
+        execution_backend = (
+            str(execution_cfg.get("backend") or "simulated").strip().lower()
+        )
         context_cfg = dict(agent.get("context") or {})
         llm_cfg = agent.get("llm") or {}
         model_cfg = agent.get("model") or {}
@@ -215,12 +221,44 @@ def _validate_agent_project_sections(
                 errors.append(
                     f"Agent '{agent_name}' prompt file does not exist: {prompt_path}"
                 )
-        if agent.get("mode") == "paper" and not data_streaming_cfg.get(
-            "enabled", False
-        ):
+        if agent_mode == "paper" and not data_streaming_cfg.get("enabled", False):
             errors.append(
                 f"Agent '{agent_name}' is configured for paper mode but data.streaming.enabled is not true."
             )
+
+        if execution_backend == "alpaca":
+            if agent_mode not in {"paper", "live"}:
+                errors.append(
+                    f"Agent '{agent_name}' execution.backend=alpaca is only supported for agents configured with mode=paper or mode=live."
+                )
+            if not data_streaming_cfg.get("enabled", False):
+                errors.append(
+                    f"Agent '{agent_name}' execution.backend=alpaca requires data.streaming.enabled to be true."
+                )
+            if (
+                str(data_streaming_cfg.get("provider") or "").strip().lower()
+                != "alpaca"
+            ):
+                errors.append(
+                    f"Agent '{agent_name}' execution.backend=alpaca requires data.streaming.provider=alpaca."
+                )
+            replay_enabled = bool(
+                dict(data_streaming_cfg.get("replay") or {}).get("enabled", False)
+            )
+            if agent_mode == "paper" and replay_enabled:
+                errors.append(
+                    f"Agent '{agent_name}' execution.backend=alpaca does not support replay-backed paper mode."
+                )
+            missing_credentials = [
+                env_var
+                for env_var in ("ALPACA_API_KEY", "ALPACA_API_SECRET")
+                if not str(os.environ.get(env_var) or "").strip()
+            ]
+            if missing_credentials:
+                warnings.append(
+                    f"Agent '{agent_name}' execution.backend=alpaca is configured but the following environment variables are not set in the current environment: "
+                    + ", ".join(missing_credentials)
+                )
 
         if agent_kind == "model":
             model_path_raw = str(model_cfg.get("path", "")).strip()

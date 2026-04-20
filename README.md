@@ -98,6 +98,8 @@ If you prefer a package install, `pip install .` also works.
 
 Local `agent run --mode paper` now defaults to deterministic historical replay through `data.streaming.replay`. If you do not set explicit replay dates, QuantTradeAI uses `data.test_start` and `data.test_end`, then falls back to `data.start_date` and `data.end_date`.
 
+If you want real broker submission for happy-path paper or live runs, set `agents[].execution.backend: alpaca`. That switches execution from local simulated fills to Alpaca-backed market orders, requires real-time Alpaca streaming, and writes broker account and position snapshots into the run directory.
+
 ### Research In 4 Commands
 
 Use this if you want the simplest end-to-end quant workflow.
@@ -147,6 +149,8 @@ agents:
   - name: "rsi_reversion"
     kind: "rule"
     mode: "paper"
+    execution:
+      backend: "simulated"
     rule:
       preset: "rsi_threshold"
       feature: "rsi_14"
@@ -217,6 +221,8 @@ agents:
   - name: "breakout_gpt"
     kind: "llm"
     mode: "paper"
+    execution:
+      backend: "simulated"
     llm:
       provider: "openai"
       model: "gpt-5.3"
@@ -299,6 +305,8 @@ This writes a deployment bundle under `reports/deployments/<agent>/<timestamp>/`
 
 Paper bundles always disable replay in the emitted resolved project config and expect real-time streaming credentials. Local replay-backed paper runs stay unchanged in your source `config/project.yaml`.
 
+If the target agent uses `execution.backend: alpaca`, the generated bundle README and manifest call out that the service will submit real Alpaca paper/live market orders instead of simulated local fills.
+
 Live bundles keep the emitted replay settings unchanged, but they require all live safety prerequisites to already be configured in `config/project.yaml`:
 
 - the agent must already be set to `mode: live`
@@ -343,6 +351,8 @@ agents:
   - name: "paper_momentum"
     kind: "model"
     mode: "paper"
+    execution:
+      backend: "simulated"
     model:
       path: "models/promoted/aapl_daily_classifier"
 ```
@@ -355,8 +365,8 @@ For the full shape, field reference, and supported agent modes, see [Project YAM
 | --- | --- | --- |
 | Research | `runs/research/<timestamp>_<project>/` | `resolved_project_config.yaml`, runtime YAML snapshots, `summary.json`, `metrics.json`, backtest artifacts |
 | Agent backtest | `runs/agent/backtest/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, backtest files |
-| Agent paper | `runs/agent/paper/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime YAML snapshots, and `replay_manifest.json` when replay is enabled |
-| Agent live | `runs/agent/live/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime streaming/risk/position-manager YAML snapshots |
+| Agent paper | `runs/agent/paper/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime YAML snapshots, `replay_manifest.json` when replay is enabled, and broker snapshots when `execution.backend: alpaca` |
+| Agent live | `runs/agent/live/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime streaming/risk/position-manager YAML snapshots, and broker snapshots when `execution.backend: alpaca` |
 
 Sweep batch artifacts:
 

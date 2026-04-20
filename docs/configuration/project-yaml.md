@@ -15,6 +15,8 @@ It drives:
 
 For local project-defined agents, `agent run --mode paper` defaults to deterministic replay when `data.streaming.replay.enabled: true`.
 
+If an agent sets `execution.backend: alpaca`, QuantTradeAI switches paper/live execution from local simulated fills to Alpaca-backed market orders. That happy path requires `data.streaming.enabled: true`, `data.streaming.provider: alpaca`, and a real-time paper/live run instead of replay-backed paper mode.
+
 ## Supported Project Workflows
 
 ### Research
@@ -212,6 +214,8 @@ agents:
   - name: "paper_momentum"
     kind: "model"
     mode: "paper"
+    execution:
+      backend: "simulated"
     model:
       path: "models/promoted/aapl_daily_classifier"
     context:
@@ -265,6 +269,8 @@ agents:
   - name: "rsi_reversion"
     kind: "rule"
     mode: "paper"
+    execution:
+      backend: "simulated"
     rule:
       preset: "rsi_threshold"
       feature: "rsi_14"
@@ -415,6 +421,29 @@ Even when `research.enabled` is `false`, the agent runtime still reuses these de
 
 ### `agents`
 
+Every agent can optionally define:
+
+- `execution.backend`
+
+Current execution backend support:
+
+- `simulated`: default local execution path for backtest, replay-backed paper, and existing live simulations
+- `alpaca`: real broker submission path for happy-path paper/live runs with Alpaca market data and broker credentials
+
+Validation rules for `execution.backend: alpaca`:
+
+- only supported when the agent itself is configured with `mode: paper` or `mode: live`
+- requires `data.streaming.enabled: true`
+- requires `data.streaming.provider: alpaca`
+- rejects replay-backed paper mode
+- warns during `validate` when `ALPACA_API_KEY` or `ALPACA_API_SECRET` are missing from the current environment
+
+Broker-backed paper/live runs add:
+
+- `summary.json` fields: `execution_backend`, `broker_provider`
+- enriched `executions.jsonl` records with broker order IDs, statuses, fill quantities, and fill timestamps
+- `broker_account_start.json`, `broker_account_end.json`, `broker_positions_start.json`, and `broker_positions_end.json`
+
 #### `rule` agents
 
 Required fields:
@@ -452,6 +481,7 @@ Paper mode:
 - evaluates the configured rule on each completed streaming bar
 - writes `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, and `runtime_streaming_config.yaml`
 - writes `replay_manifest.json` and records `paper_source: replay` in `summary.json` when replay is enabled
+- when `execution.backend: alpaca`, also writes broker account and position snapshots plus broker-enriched execution records
 - does not emit `prompt_samples.json`
 
 Live mode:
@@ -460,6 +490,7 @@ Live mode:
 - rejects `--skip-validation`
 - compiles `data.streaming`, top-level `risk`, and top-level `position_manager` into runtime YAML snapshots inside the run directory
 - writes `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, `runtime_streaming_config.yaml`, `runtime_risk_config.yaml`, and `runtime_position_manager_config.yaml`
+- when `execution.backend: alpaca`, also writes broker account and position snapshots plus broker-enriched execution records
 
 #### `model` agents
 

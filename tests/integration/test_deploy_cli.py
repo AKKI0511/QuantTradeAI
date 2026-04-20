@@ -162,6 +162,34 @@ def test_rule_agent_live_deploy_uses_config_default_mode_and_preserves_project_c
     assert resolved_project["data"]["streaming"]["replay"]["enabled"] is True
 
 
+def test_deploy_readme_and_manifest_call_out_alpaca_backed_execution(
+    tmp_path: Path, monkeypatch
+):
+    config_path = _init_template(tmp_path, monkeypatch, "rule-agent")
+    payload = _read_yaml(config_path)
+    payload["data"]["streaming"]["replay"]["enabled"] = False
+    payload["agents"][0]["execution"] = {"backend": "alpaca"}
+    _write_yaml(config_path, payload)
+
+    result = _deploy_agent(
+        agent_name="rsi_reversion",
+        config_path=config_path,
+        output_dir="deployments/rule-broker",
+    )
+
+    assert result.exit_code == 0, result.stdout
+    deploy_payload = json.loads(result.stdout)
+    output_dir = Path(deploy_payload["output_dir"])
+    _compose_text, _env_example, readme, manifest, _resolved_project = _load_deploy_bundle(
+        output_dir
+    )
+
+    assert manifest["execution_backend"] == "alpaca"
+    assert manifest["broker_provider"] == "alpaca"
+    assert "broker-backed execution" in readme
+    assert "submit real `alpaca` market orders" in readme
+
+
 @pytest.mark.parametrize(
     ("template", "agent_name", "expect_openai_env", "expect_prompt_mount", "expect_models_mount"),
     [

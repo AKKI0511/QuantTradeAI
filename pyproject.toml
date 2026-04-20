@@ -52,6 +52,16 @@ pre-commit = "^4.2.0"
 pytest-asyncio = "^1.2.0"
 hypothesis = "^6.140.3"
 
+[tool.pytest.ini_options]
+norecursedirs = [
+    ".git",
+    ".venv",
+    ".pytest_cache",
+    "pytest-cache-files-*",
+    "tmp",
+    "tmp_*",
+]
+
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"

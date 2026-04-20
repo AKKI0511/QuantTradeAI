@@ -7,6 +7,12 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from quanttradeai.brokers.base import (
+    BrokerAccountSnapshot,
+    BrokerOrderResult,
+    BrokerPositionSnapshot,
+)
+from quanttradeai.brokers.runtime import BrokerExecutionRuntime
 from quanttradeai.agents.paper import (
     PaperAgentEngine,
     _build_paper_runtime_model_config,
@@ -72,6 +78,96 @@ class FakeSignalRuntime:
 
     def predict(self, features_frame: pd.DataFrame) -> int:
         return self.signal
+
+
+class FakeBrokerClient:
+    provider = "alpaca"
+
+    def __init__(self, starting_cash: float = 100000.0) -> None:
+        self.cash = starting_cash
+        self.qty = 0
+        self.market_price = 0.0
+        self.avg_entry_price = 0.0
+        self.next_order_id = 1
+        self.last_order = None
+
+    def get_account(self) -> BrokerAccountSnapshot:
+        equity = self.cash + (self.qty * self.market_price)
+        return BrokerAccountSnapshot(
+            account_id="acct-paper",
+            cash=self.cash,
+            equity=equity,
+            buying_power=self.cash,
+        )
+
+    def list_positions(self) -> list[BrokerPositionSnapshot]:
+        if self.qty <= 0:
+            return []
+        return [
+            BrokerPositionSnapshot(
+                symbol="AAPL",
+                qty=self.qty,
+                market_price=self.market_price,
+                avg_entry_price=self.avg_entry_price,
+            )
+        ]
+
+    def submit_market_order(
+        self,
+        *,
+        symbol: str,
+        action: str,
+        qty: int,
+    ) -> BrokerOrderResult:
+        order_id = f"ord-{self.next_order_id}"
+        self.next_order_id += 1
+        self.last_order = {
+            "order_id": order_id,
+            "symbol": symbol,
+            "action": action,
+            "qty": qty,
+        }
+        return BrokerOrderResult(
+            order_id=order_id,
+            symbol=symbol,
+            action=action,
+            qty=qty,
+            status="new",
+        )
+
+    def get_order(self, order_id: str) -> BrokerOrderResult:
+        raise AssertionError("FakeBrokerClient.get_order should not be called directly")
+
+    def wait_for_order(
+        self,
+        order_id: str,
+        *,
+        poll_interval: float | None = None,
+        timeout: float | None = None,
+    ) -> BrokerOrderResult:
+        assert self.last_order is not None
+        qty = int(self.last_order["qty"])
+        action = str(self.last_order["action"])
+        fill_price = 121.0 if action == "buy" else 123.0
+        if action == "buy":
+            self.cash -= qty * fill_price
+            self.qty += qty
+            self.avg_entry_price = fill_price
+            self.market_price = fill_price
+        else:
+            self.cash += qty * fill_price
+            self.qty = 0
+            self.avg_entry_price = 0.0
+            self.market_price = fill_price
+        return BrokerOrderResult(
+            order_id=order_id,
+            symbol=str(self.last_order["symbol"]),
+            action=action,
+            qty=qty,
+            status="filled",
+            filled_qty=qty,
+            filled_avg_price=fill_price,
+        )
 
 
 def _completion_from_actions(actions: list[str]):
@@ -527,3 +623,51 @@ def test_paper_engine_replay_waits_for_completion_signal(
 
     assert len(engine.decision_log) == 6
     assert len(engine.execution_log) == 0
+
+
+def test_paper_engine_broker_runtime_records_broker_metadata(
+    tmp_path: Path, monkeypatch
+):
+    engine = _build_engine(
+        tmp_path,
+        monkeypatch,
+        gateway_messages=[
+            {
+                "symbol": "AAPL",
+                "price": 121.0,
+                "volume": 10,
+                "timestamp": "2024-09-17T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 123.0,
+                "volume": 12,
+                "timestamp": "2024-09-18T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 124.0,
+                "volume": 14,
+                "timestamp": "2024-09-19T00:00:00Z",
+            },
+        ],
+        completion=_completion_from_actions(["buy", "sell"]),
+    )
+    broker_client = FakeBrokerClient()
+    engine.execution_backend = "alpaca"
+    engine.broker_runtime = BrokerExecutionRuntime(
+        broker_client=broker_client,
+        portfolio=engine.portfolio,
+        position_manager=engine.position_manager,
+        stop_loss_pct=engine.stop_loss_pct,
+    )
+
+    asyncio.run(engine.start())
+
+    assert [entry["action"] for entry in engine.execution_log] == ["buy", "sell"]
+    assert engine.execution_log[0]["order_id"] == "ord-1"
+    assert engine.execution_log[0]["status"] == "filled"
+    assert engine.execution_log[0]["broker_provider"] == "alpaca"
+    assert engine.decision_log[0]["execution_status"] == "executed"
+    assert engine.broker_runtime.start_account is not None
+    assert engine.broker_runtime.end_account is not None

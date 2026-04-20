@@ -14,11 +14,12 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import pandas as pd
 import yaml
 
+from quanttradeai.brokers import BrokerExecutionRuntime
 from quanttradeai.data.loader import DataLoader
 from quanttradeai.data.processor import DataProcessor
 from quanttradeai.models.classifier import MomentumClassifier
@@ -111,6 +112,8 @@ class LiveTradingEngine:
     data_processor: DataProcessor | None = None
     model: MomentumClassifier | None = None
     bootstrap_history_frames: Dict[str, pd.DataFrame] | None = None
+    execution_backend: str = "simulated"
+    broker_runtime: BrokerExecutionRuntime | None = None
     _history: Dict[str, pd.DataFrame] = field(default_factory=dict, init=False)
     _consumer: asyncio.Task | None = field(default=None, init=False)
     execution_log: list[dict] = field(default_factory=list, init=False)
@@ -145,6 +148,12 @@ class LiveTradingEngine:
                     self.position_manager.bind_gateway(self.gateway, symbols)
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning("failed_binding_position_manager", error=str(exc))
+
+    @property
+    def broker_provider(self) -> str | None:
+        if self.broker_runtime is None:
+            return None
+        return self.broker_runtime.provider
 
     @property
     def health_monitor(self):
@@ -377,10 +386,45 @@ class LiveTradingEngine:
         price: float,
         signal: int,
         timestamp: pd.Timestamp,
-    ) -> None:
+    ) -> dict[str, Any]:
+        had_position = symbol in self.portfolio.positions
+        position_before = 1 if had_position else 0
+        execution_status = "hold"
+        execution_payload: dict[str, Any] | None = None
+
+        if self.broker_runtime is not None:
+            action = _signal_to_action(signal)
+            if action in {"buy", "sell"}:
+                execution_status, execution_payload = (
+                    self.broker_runtime.execute_action(
+                        symbol=symbol,
+                        action=action,
+                        price=price,
+                        timestamp=timestamp.to_pydatetime(),
+                        extra={"signal": signal},
+                    )
+                )
+                if execution_payload is not None:
+                    self._record_execution(execution_payload)
+            position_after = 1 if symbol in self.portfolio.positions else 0
+            return {
+                "execution_status": execution_status,
+                "execution": execution_payload,
+                "position_before": position_before,
+                "position_after": position_after,
+                "target_position": position_after,
+            }
+
         if signal > 0:
             if symbol in self.portfolio.positions:
-                return
+                execution_status = "already_long"
+                return {
+                    "execution_status": execution_status,
+                    "execution": None,
+                    "position_before": position_before,
+                    "position_after": position_before,
+                    "target_position": position_before,
+                }
             qty = self.portfolio.open_position(
                 symbol, price, stop_loss_pct=self.stop_loss_pct
             )
@@ -393,16 +437,18 @@ class LiveTradingEngine:
                         timestamp=timestamp.to_pydatetime(),
                     )
                     self._sync_position_manager()
-                self._record_execution(
-                    {
-                        "action": "buy",
-                        "symbol": symbol,
-                        "qty": qty,
-                        "price": price,
-                        "timestamp": timestamp,
-                        "signal": signal,
-                    }
-                )
+                execution_payload = {
+                    "action": "buy",
+                    "symbol": symbol,
+                    "qty": qty,
+                    "price": price,
+                    "timestamp": timestamp,
+                    "signal": signal,
+                }
+                self._record_execution(execution_payload)
+                execution_status = "executed"
+            else:
+                execution_status = "blocked"
         elif signal < 0 and symbol in self.portfolio.positions:
             qty = self.portfolio.close_position(symbol, price)
             if qty > 0:
@@ -413,16 +459,29 @@ class LiveTradingEngine:
                         timestamp=timestamp.to_pydatetime(),
                     )
                     self._sync_position_manager()
-                self._record_execution(
-                    {
-                        "action": "sell",
-                        "symbol": symbol,
-                        "qty": qty,
-                        "price": price,
-                        "timestamp": timestamp,
-                        "signal": signal,
-                    }
-                )
+                execution_payload = {
+                    "action": "sell",
+                    "symbol": symbol,
+                    "qty": qty,
+                    "price": price,
+                    "timestamp": timestamp,
+                    "signal": signal,
+                }
+                self._record_execution(execution_payload)
+                execution_status = "executed"
+            else:
+                execution_status = "blocked"
+        elif signal < 0:
+            execution_status = "no_position"
+
+        position_after = 1 if symbol in self.portfolio.positions else 0
+        return {
+            "execution_status": execution_status,
+            "execution": execution_payload,
+            "position_before": position_before,
+            "position_after": position_after,
+            "target_position": position_after,
+        }
 
     async def _consume_buffer(self) -> None:
         while True:
@@ -460,6 +519,7 @@ class LiveTradingEngine:
                 signal = self._predict_signal(features)
                 if signal is None:
                     continue
+                execution_result = self._handle_signal(symbol, price, signal, timestamp)
                 self.decision_log.append(
                     {
                         "symbol": symbol,
@@ -467,9 +527,9 @@ class LiveTradingEngine:
                         "signal": int(signal),
                         "action": _signal_to_action(int(signal)),
                         "source": "model",
+                        **execution_result,
                     }
                 )
-                self._handle_signal(symbol, price, signal, timestamp)
                 self._mark_to_market(symbol, price, timestamp)
             except Exception as exc:  # pragma: no cover - runtime guard
                 logger.error("live_pipeline_error", error=str(exc))
@@ -494,6 +554,8 @@ class LiveTradingEngine:
     async def start(self) -> None:
         """Start streaming and inference concurrently."""
 
+        if self.broker_runtime is not None:
+            self.broker_runtime.start_session()
         self.bootstrap_history()
         self._consumer = asyncio.create_task(self._consume_buffer())
         completed_via_signal = False
@@ -518,3 +580,5 @@ class LiveTradingEngine:
                 self._consumer.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await self._consumer
+            if self.broker_runtime is not None:
+                self.broker_runtime.finish_session()

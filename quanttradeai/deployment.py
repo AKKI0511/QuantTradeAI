@@ -14,6 +14,7 @@ from typing import Any
 
 import yaml
 
+from quanttradeai.brokers import resolve_execution_backend
 from quanttradeai.streaming.env_vars import provider_env_var_prefix
 from quanttradeai.utils.config_validator import validate_project_config
 from quanttradeai.utils.project_config import (
@@ -149,6 +150,8 @@ def _render_bundle_readme(
     agent_name: str,
     agent_kind: str,
     mode: str,
+    execution_backend: str,
+    broker_provider: str | None,
     service_name: str,
     next_command: str,
     env_vars: list[tuple[str, str]],
@@ -162,6 +165,7 @@ def _render_bundle_readme(
         "## Mode",
         "",
         f"- `mode: {mode}`",
+        f"- `execution.backend: {execution_backend}`",
         "",
         "## Files",
         "",
@@ -181,6 +185,15 @@ def _render_bundle_readme(
         "",
         "The compose service mounts project `data/`, `runs/`, and `reports/` read-write so runtime artifacts stay on the host.",
     ]
+
+    if execution_backend == "alpaca" and broker_provider:
+        lines.extend(
+            [
+                "",
+                "This bundle uses broker-backed execution.",
+                f"In `{mode}` mode it will submit real `{broker_provider}` market orders instead of simulated local fills.",
+            ]
+        )
 
     if safety_requirements:
         lines.extend(
@@ -461,6 +474,17 @@ def deploy_project_agent(
 
     service_name = _slugify(f"{agent_name}-{resolved_mode}")
     safety_requirements = _deployment_safety_requirements(resolved_mode)
+    execution_backend = resolve_execution_backend(agent_config)
+    broker_provider = (
+        str(
+            ((deployment_project.get("data") or {}).get("streaming") or {}).get(
+                "provider"
+            )
+            or ""
+        ).strip()
+        if execution_backend == "alpaca"
+        else None
+    )
     env_vars = _required_env_vars(
         agent_config=agent_config,
         project_config=deployment_project,
@@ -538,6 +562,8 @@ def deploy_project_agent(
             agent_name=agent_name,
             agent_kind=str(agent_config.get("kind") or ""),
             mode=resolved_mode,
+            execution_backend=execution_backend,
+            broker_provider=broker_provider,
             service_name=service_name,
             next_command=next_command,
             env_vars=env_vars,
@@ -552,6 +578,8 @@ def deploy_project_agent(
         "agent_kind": agent_config.get("kind"),
         "target": resolved_target,
         "mode": resolved_mode,
+        "execution_backend": execution_backend,
+        "broker_provider": broker_provider,
         "service_name": service_name,
         "project_root": project_root.as_posix(),
         "source_config": config_path.as_posix(),

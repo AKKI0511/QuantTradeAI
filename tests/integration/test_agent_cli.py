@@ -10,6 +10,11 @@ import pandas as pd
 import yaml
 from typer.testing import CliRunner
 
+from quanttradeai.brokers.base import (
+    BrokerAccountSnapshot,
+    BrokerOrderResult,
+    BrokerPositionSnapshot,
+)
 from quanttradeai.cli import app
 
 
@@ -426,6 +431,30 @@ class FakePaperPortfolio:
             position["qty"] * position["price"] for position in self.positions.values()
         )
 
+    def replace_state(
+        self,
+        *,
+        cash: float,
+        positions: dict,
+        initial_capital: float | None = None,
+        realized_pnl: float | None = None,
+    ) -> None:
+        self.cash = float(cash)
+        self.positions = dict(positions)
+        if initial_capital is not None:
+            self.initial_capital = float(initial_capital)
+        if realized_pnl is not None:
+            self.realized_pnl = float(realized_pnl)
+
+    def estimate_open_position_qty(
+        self,
+        price: float,
+        stop_loss_pct: float | None = None,
+        *,
+        check_risk: bool = True,
+    ) -> int:
+        return max(int(self.cash // price), 0)
+
 
 class FakePaperEngine:
     def __init__(self, **kwargs):
@@ -518,6 +547,96 @@ class FakeStreamingGateway:
     async def _start(self) -> None:
         for message in self.messages:
             await self.buffer.put(message)
+
+
+class FakeBrokerClient:
+    provider = "alpaca"
+
+    def __init__(self, starting_cash: float = 100000.0) -> None:
+        self.cash = starting_cash
+        self.qty = 0
+        self.market_price = 0.0
+        self.avg_entry_price = 0.0
+        self.next_order_id = 1
+        self.last_order = None
+
+    def get_account(self) -> BrokerAccountSnapshot:
+        equity = self.cash + (self.qty * self.market_price)
+        return BrokerAccountSnapshot(
+            account_id="acct-integration",
+            cash=self.cash,
+            equity=equity,
+            buying_power=self.cash,
+        )
+
+    def list_positions(self) -> list[BrokerPositionSnapshot]:
+        if self.qty <= 0:
+            return []
+        return [
+            BrokerPositionSnapshot(
+                symbol="AAPL",
+                qty=self.qty,
+                market_price=self.market_price,
+                avg_entry_price=self.avg_entry_price,
+            )
+        ]
+
+    def submit_market_order(
+        self,
+        *,
+        symbol: str,
+        action: str,
+        qty: int,
+    ) -> BrokerOrderResult:
+        order_id = f"ord-{self.next_order_id}"
+        self.next_order_id += 1
+        self.last_order = {
+            "order_id": order_id,
+            "symbol": symbol,
+            "action": action,
+            "qty": qty,
+        }
+        return BrokerOrderResult(
+            order_id=order_id,
+            symbol=symbol,
+            action=action,
+            qty=qty,
+            status="new",
+        )
+
+    def get_order(self, order_id: str) -> BrokerOrderResult:
+        raise AssertionError("FakeBrokerClient.get_order should not be called directly")
+
+    def wait_for_order(
+        self,
+        order_id: str,
+        *,
+        poll_interval: float | None = None,
+        timeout: float | None = None,
+    ) -> BrokerOrderResult:
+        assert self.last_order is not None
+        qty = int(self.last_order["qty"])
+        action = str(self.last_order["action"])
+        fill_price = 121.0 if action == "buy" else 123.0
+        if action == "buy":
+            self.cash -= qty * fill_price
+            self.qty += qty
+            self.avg_entry_price = fill_price
+            self.market_price = fill_price
+        else:
+            self.cash += qty * fill_price
+            self.qty = 0
+            self.avg_entry_price = 0.0
+            self.market_price = fill_price
+        return BrokerOrderResult(
+            order_id=order_id,
+            symbol=str(self.last_order["symbol"]),
+            action=action,
+            qty=qty,
+            status="filled",
+            filled_qty=qty,
+            filled_avg_price=fill_price,
+        )
 
 
 def test_hybrid_agent_run_includes_model_signals(tmp_path: Path, monkeypatch):
@@ -952,6 +1071,110 @@ def test_model_agent_live_run_writes_live_artifacts_and_risk_metrics(
     assert metrics_payload["risk_status"]["status"] == "ok"
 
 
+def test_model_agent_live_run_with_alpaca_backend_writes_broker_artifacts(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _stub_prometheus_client(monkeypatch)
+    _stub_live_trading_module(monkeypatch)
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "model-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["agents"][0]["mode"] = "live"
+    config_payload["agents"][0]["execution"] = {"backend": "alpaca"}
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    class FakeBrokerAwareLiveEngine(FakeLiveEngine):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.position_manager = None
+
+        @property
+        def broker_provider(self):
+            runtime = getattr(self, "broker_runtime", None)
+            return runtime.provider if runtime is not None else None
+
+        async def start(self) -> None:
+            self.decision_log = []
+            self.execution_log = []
+            if getattr(self, "broker_runtime", None) is not None:
+                self.broker_runtime.start_session()
+                execution_status, execution_payload = self.broker_runtime.execute_action(
+                    symbol="AAPL",
+                    action="buy",
+                    price=100.0,
+                    timestamp=pd.Timestamp("2024-01-01T00:00:00Z").to_pydatetime(),
+                    extra={"signal": 1},
+                )
+                self.execution_log = [execution_payload]
+                self.decision_log = [
+                    {
+                        "symbol": "AAPL",
+                        "timestamp": pd.Timestamp("2024-01-01T00:00:00Z"),
+                        "signal": 1,
+                        "action": "buy",
+                        "source": "model",
+                        "execution_status": execution_status,
+                        "execution": execution_payload,
+                        "target_position": 1,
+                    }
+                ]
+                self.broker_runtime.finish_session()
+            else:
+                await super().start()
+
+    with (
+        patch(
+            "quanttradeai.agents.model_agent.LiveTradingEngine",
+            side_effect=lambda **kwargs: FakeBrokerAwareLiveEngine(**kwargs),
+        ),
+        patch(
+            "quanttradeai.agents.model_agent.create_broker_client_for_agent",
+            return_value=FakeBrokerClient(),
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "paper_momentum",
+                "--config",
+                str(config_path),
+                "--mode",
+                "live",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    run_dir = Path(payload["run_dir"])
+    assert payload["execution_backend"] == "alpaca"
+    assert payload["broker_provider"] == "alpaca"
+    assert (run_dir / "broker_account_start.json").is_file()
+    assert (run_dir / "broker_account_end.json").is_file()
+
+    execution_lines = [
+        json.loads(line)
+        for line in (run_dir / "executions.jsonl")
+        .read_text(encoding="utf-8")
+        .strip()
+        .splitlines()
+    ]
+    assert execution_lines[0]["order_id"] == "ord-1"
+    assert execution_lines[0]["status"] == "filled"
+
+
 def test_llm_agent_paper_run_writes_standardized_artifacts(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
@@ -1354,6 +1577,114 @@ def test_rule_agent_paper_run_writes_metrics_and_execution_log(
     metrics_payload = json.loads((run_dir / "metrics.json").read_text("utf-8"))
     assert metrics_payload["decision_count"] == 2
     assert metrics_payload["execution_count"] == 2
+
+
+def test_rule_agent_paper_run_with_alpaca_backend_writes_broker_artifacts(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _stub_streaming_gateway_module(monkeypatch)
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", "config/project.yaml"],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    config_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_payload["data"]["start_date"] = "2024-01-01"
+    config_payload["data"]["end_date"] = "2024-02-09"
+    config_payload["data"]["test_start"] = "2024-02-01"
+    config_payload["data"]["test_end"] = "2024-02-09"
+    config_payload["data"]["streaming"]["replay"]["enabled"] = False
+    config_payload["agents"][0]["execution"] = {"backend": "alpaca"}
+    config_payload["agents"][0]["rule"]["buy_below"] = 50.0
+    config_payload["agents"][0]["rule"]["sell_above"] = 60.0
+    config_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    gateway = FakeStreamingGateway(
+        [
+            {
+                "symbol": "AAPL",
+                "price": 121.0,
+                "volume": 10,
+                "timestamp": "2024-02-10T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 123.0,
+                "volume": 12,
+                "timestamp": "2024-02-11T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 124.0,
+                "volume": 14,
+                "timestamp": "2024-02-12T00:00:00Z",
+            },
+        ]
+    )
+
+    with (
+        patch(
+            "quanttradeai.agents.paper.StreamingGateway",
+            return_value=gateway,
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataLoader.fetch_data",
+            return_value={"AAPL": _mock_history()},
+        ),
+        patch(
+            "quanttradeai.agents.paper.DataProcessor.generate_features",
+            _rule_paper_features,
+        ),
+        patch(
+            "quanttradeai.agents.paper.create_broker_client_for_agent",
+            return_value=FakeBrokerClient(),
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--agent",
+                "rsi_reversion",
+                "--config",
+                str(config_path),
+                "--mode",
+                "paper",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    run_dir = Path(payload["run_dir"])
+    assert payload["execution_backend"] == "alpaca"
+    assert payload["broker_provider"] == "alpaca"
+    assert (run_dir / "broker_account_start.json").is_file()
+    assert (run_dir / "broker_account_end.json").is_file()
+    assert (run_dir / "broker_positions_start.json").is_file()
+    assert (run_dir / "broker_positions_end.json").is_file()
+
+    execution_lines = [
+        json.loads(line)
+        for line in (run_dir / "executions.jsonl")
+        .read_text(encoding="utf-8")
+        .strip()
+        .splitlines()
+    ]
+    assert execution_lines[0]["order_id"] == "ord-1"
+    assert execution_lines[0]["status"] == "filled"
+    assert execution_lines[0]["filled_qty"] > 0
+
+    metrics_payload = json.loads((run_dir / "metrics.json").read_text("utf-8"))
+    assert metrics_payload["execution_backend"] == "alpaca"
+    assert metrics_payload["broker_provider"] == "alpaca"
 
 
 def test_rule_agent_paper_run_uses_replay_without_realtime_streaming(
