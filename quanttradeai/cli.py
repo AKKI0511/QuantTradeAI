@@ -201,6 +201,7 @@ PROJECT_TEMPLATES = {
                 "name": "breakout_gpt",
                 "kind": "llm",
                 "mode": "paper",
+                "execution": {"backend": "simulated"},
                 "llm": {
                     "provider": "openai",
                     "model": "gpt-5.3",
@@ -308,6 +309,7 @@ PROJECT_TEMPLATES = {
                 "name": "hybrid_swing_agent",
                 "kind": "hybrid",
                 "mode": "paper",
+                "execution": {"backend": "simulated"},
                 "model_signal_sources": [
                     {
                         "name": "aapl_daily_classifier",
@@ -411,6 +413,7 @@ PROJECT_TEMPLATES = {
                 "name": "paper_momentum",
                 "kind": "model",
                 "mode": "paper",
+                "execution": {"backend": "simulated"},
                 "model": {"path": "models/promoted/aapl_daily_classifier"},
                 "context": {
                     "features": ["rsi_14"],
@@ -495,6 +498,7 @@ PROJECT_TEMPLATES = {
                 "name": "rsi_reversion",
                 "kind": "rule",
                 "mode": "paper",
+                "execution": {"backend": "simulated"},
                 "rule": {
                     "preset": "rsi_threshold",
                     "feature": "rsi_14",

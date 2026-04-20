@@ -86,17 +86,17 @@ class PortfolioManager:
             p["qty"] * p["price"] * p["stop_loss_pct"] for p in self.positions.values()
         )
 
-    def open_position(
-        self, symbol: str, price: float, stop_loss_pct: float | None = None
+    def estimate_open_position_qty(
+        self,
+        price: float,
+        stop_loss_pct: float | None = None,
+        *,
+        check_risk: bool = True,
     ) -> int:
-        """Open a new position and return the quantity allocated."""
-        if symbol in self.positions:
-            raise ValueError(f"Position for {symbol} already exists")
-
-        if self.risk_manager is not None:
+        """Return the quantity that would be allocated for a new position."""
+        if check_risk and self.risk_manager is not None:
             self.risk_manager.update(self.portfolio_value, datetime.now(UTC))
             if self.risk_manager.should_emergency_liquidate():
-                self.close_all_positions()
                 return 0
             if self.risk_manager.should_halt_trading():
                 return 0
@@ -123,9 +123,32 @@ class PortfolioManager:
 
         qty = int(qty * multiplier)
         qty = min(qty, int(self.cash // price))
+        return max(qty, 0)
+
+    def open_position(
+        self, symbol: str, price: float, stop_loss_pct: float | None = None
+    ) -> int:
+        """Open a new position and return the quantity allocated."""
+        if symbol in self.positions:
+            raise ValueError(f"Position for {symbol} already exists")
+
+        if self.risk_manager is not None:
+            self.risk_manager.update(self.portfolio_value, datetime.now(UTC))
+            if self.risk_manager.should_emergency_liquidate():
+                self.close_all_positions()
+                return 0
+            if self.risk_manager.should_halt_trading():
+                return 0
+
+        qty = self.estimate_open_position_qty(
+            price,
+            stop_loss_pct=stop_loss_pct,
+            check_risk=False,
+        )
         if qty <= 0:
             return 0
 
+        stop_loss = stop_loss_pct if stop_loss_pct and stop_loss_pct > 0 else 0.0
         notional = qty * price
         self.cash -= notional
         self.positions[symbol] = {
@@ -137,6 +160,34 @@ class PortfolioManager:
         if self.risk_manager is not None:
             self.risk_manager.record_trade(notional, datetime.now(UTC))
         return qty
+
+    def replace_state(
+        self,
+        *,
+        cash: float,
+        positions: Dict[str, dict],
+        initial_capital: float | None = None,
+        realized_pnl: float | None = None,
+    ) -> None:
+        """Overwrite the tracked portfolio state from an external source."""
+
+        self.cash = float(cash)
+        self.positions = {
+            str(symbol): {
+                "qty": int(position.get("qty", 0)),
+                "price": float(position.get("price", 0.0)),
+                "entry_price": float(
+                    position.get("entry_price", position.get("price", 0.0))
+                ),
+                "stop_loss_pct": float(position.get("stop_loss_pct", 0.0)),
+            }
+            for symbol, position in positions.items()
+            if int(position.get("qty", 0)) > 0
+        }
+        if initial_capital is not None:
+            self.initial_capital = float(initial_capital)
+        if realized_pnl is not None:
+            self.realized_pnl = float(realized_pnl)
 
     def close_position(self, symbol: str, price: float) -> int:
         """Close an existing position and return quantity closed."""

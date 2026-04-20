@@ -5,6 +5,12 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
+from quanttradeai.brokers.base import (
+    BrokerAccountSnapshot,
+    BrokerOrderResult,
+    BrokerPositionSnapshot,
+)
+from quanttradeai.brokers.runtime import BrokerExecutionRuntime
 from quanttradeai.streaming.replay import ReplayGateway
 from quanttradeai.streaming.live_trading import LiveTradingEngine
 from quanttradeai.streaming.monitoring.health_monitor import StreamingHealthMonitor
@@ -74,6 +80,97 @@ class DummyPreprocessor:
         for column in self.feature_columns:
             out[column] = out[column].astype(float)
         return out
+
+
+class FakeBrokerClient:
+    provider = "alpaca"
+
+    def __init__(self, starting_cash: float = 1000.0) -> None:
+        self.cash = starting_cash
+        self.qty = 0
+        self.market_price = 0.0
+        self.avg_entry_price = 0.0
+        self.next_order_id = 1
+        self.last_order = None
+
+    def get_account(self) -> BrokerAccountSnapshot:
+        equity = self.cash + (self.qty * self.market_price)
+        return BrokerAccountSnapshot(
+            account_id="acct-1",
+            cash=self.cash,
+            equity=equity,
+            buying_power=self.cash,
+        )
+
+    def list_positions(self) -> list[BrokerPositionSnapshot]:
+        if self.qty <= 0:
+            return []
+        return [
+            BrokerPositionSnapshot(
+                symbol="AAPL",
+                qty=self.qty,
+                market_price=self.market_price,
+                avg_entry_price=self.avg_entry_price,
+                side="long",
+            )
+        ]
+
+    def submit_market_order(
+        self,
+        *,
+        symbol: str,
+        action: str,
+        qty: int,
+    ) -> BrokerOrderResult:
+        order_id = f"ord-{self.next_order_id}"
+        self.next_order_id += 1
+        self.last_order = {
+            "order_id": order_id,
+            "symbol": symbol,
+            "action": action,
+            "qty": qty,
+        }
+        return BrokerOrderResult(
+            order_id=order_id,
+            symbol=symbol,
+            action=action,
+            qty=qty,
+            status="new",
+        )
+
+    def get_order(self, order_id: str) -> BrokerOrderResult:
+        raise AssertionError("FakeBrokerClient.get_order should not be called directly")
+
+    def wait_for_order(
+        self,
+        order_id: str,
+        *,
+        poll_interval: float | None = None,
+        timeout: float | None = None,
+    ) -> BrokerOrderResult:
+        assert self.last_order is not None
+        qty = int(self.last_order["qty"])
+        action = str(self.last_order["action"])
+        fill_price = 10.0 if action == "buy" else 11.0
+        if action == "buy":
+            self.cash -= qty * fill_price
+            self.qty += qty
+            self.avg_entry_price = fill_price
+            self.market_price = fill_price
+        else:
+            self.cash += qty * fill_price
+            self.qty = 0
+            self.market_price = fill_price
+            self.avg_entry_price = 0.0
+        return BrokerOrderResult(
+            order_id=order_id,
+            symbol=str(self.last_order["symbol"]),
+            action=action,
+            qty=qty,
+            status="filled",
+            filled_qty=qty,
+            filled_avg_price=fill_price,
+        )
 
 
 @pytest.mark.asyncio
@@ -592,3 +689,60 @@ async def test_live_trading_engine_replay_waits_for_completion_signal():
 
     assert len(engine.decision_log) == 6
     assert len(engine.execution_log) == 1
+
+
+@pytest.mark.asyncio
+async def test_live_trading_engine_broker_runtime_syncs_and_records_broker_orders():
+    gateway = ScriptedGateway(
+        [
+            {
+                "symbol": "AAPL",
+                "price": 10.0,
+                "Open": 10.0,
+                "High": 10.0,
+                "Low": 10.0,
+                "Close": 10.0,
+                "Volume": 100,
+                "timestamp": "2024-01-01T00:00:00Z",
+            },
+            {
+                "symbol": "AAPL",
+                "price": 11.0,
+                "Open": 11.0,
+                "High": 11.0,
+                "Low": 11.0,
+                "Close": 11.0,
+                "Volume": 100,
+                "timestamp": "2024-01-01T00:01:00Z",
+            },
+        ]
+    )
+    engine = LiveTradingEngine(
+        model_config="config/model_config.yaml",
+        model_path="unused",
+        gateway=gateway,
+        data_processor=DummyProcessor(),
+        model=DummyModel(outputs=[1, -1]),
+        min_history_for_features=1,
+        history_window=8,
+        risk_config=None,
+        position_manager_config=None,
+        execution_backend="alpaca",
+    )
+    broker_client = FakeBrokerClient(starting_cash=1000.0)
+    engine.broker_runtime = BrokerExecutionRuntime(
+        broker_client=broker_client,
+        portfolio=engine.portfolio,
+        position_manager=engine.position_manager,
+        stop_loss_pct=engine.stop_loss_pct,
+    )
+
+    await engine.start()
+
+    assert [entry["action"] for entry in engine.execution_log] == ["buy", "sell"]
+    assert engine.execution_log[0]["order_id"] == "ord-1"
+    assert engine.execution_log[0]["status"] == "filled"
+    assert engine.execution_log[0]["filled_qty"] > 0
+    assert engine.broker_runtime.start_account is not None
+    assert engine.broker_runtime.end_account is not None
+    assert engine.portfolio.cash == pytest.approx(broker_client.cash)

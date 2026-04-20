@@ -878,6 +878,100 @@ def test_validate_fails_when_live_agent_streaming_is_disabled(
     assert "data.streaming.enabled must be true" in result.stderr.lower()
 
 
+def test_validate_defaults_agent_execution_backend_to_simulated(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    resolved = yaml.safe_load(
+        Path(payload["artifacts"]["resolved_config"]).read_text(encoding="utf-8")
+    )
+    assert resolved["agents"][0]["execution"]["backend"] == "simulated"
+
+
+def test_validate_fails_when_alpaca_execution_uses_replay_paper(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["agents"][0]["execution"] = {"backend": "alpaca"}
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "does not support replay-backed paper mode" in result.stderr.lower()
+
+
+def test_validate_fails_when_alpaca_execution_uses_non_alpaca_provider(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["agents"][0]["execution"] = {"backend": "alpaca"}
+    config_payload["data"]["streaming"]["provider"] = "polygon"
+    config_payload["data"]["streaming"]["replay"]["enabled"] = False
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "requires data.streaming.provider=alpaca" in result.stderr.lower()
+
+
+def test_validate_warns_when_alpaca_execution_credentials_are_missing(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ALPACA_API_KEY", raising=False)
+    monkeypatch.delenv("ALPACA_API_SECRET", raising=False)
+    cfg_path = Path("config/project.yaml")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    config_payload["agents"][0]["execution"] = {"backend": "alpaca"}
+    config_payload["data"]["streaming"]["replay"]["enabled"] = False
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 0, result.stdout
+    assert "ALPACA_API_KEY" in f"{result.stdout}\n{result.stderr}"
+    assert "ALPACA_API_SECRET" in f"{result.stdout}\n{result.stderr}"
+
+
 def test_validate_fails_when_live_agent_missing_top_level_risk(
     tmp_path: Path, monkeypatch
 ):

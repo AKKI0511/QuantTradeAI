@@ -14,6 +14,11 @@ from typing import Any
 import pandas as pd
 import yaml
 
+from quanttradeai.brokers import (
+    BrokerExecutionRuntime,
+    create_broker_client_for_agent,
+    resolve_execution_backend,
+)
 from quanttradeai.data.loader import DataLoader
 from quanttradeai.data.processor import DataProcessor
 from quanttradeai.streaming.gateway import StreamingGateway
@@ -284,6 +289,8 @@ class PaperAgentEngine:
     history_window: int = 512
     shutdown_drain_timeout: float = 0.5
     prompt_sample_limit: int = PROMPT_SAMPLE_LIMIT
+    execution_backend: str = "simulated"
+    broker_runtime: BrokerExecutionRuntime | None = None
     _consumer: asyncio.Task | None = field(default=None, init=False)
     _history: dict[str, pd.DataFrame] = field(default_factory=dict, init=False)
     _states: dict[str, AgentSimulationState] = field(default_factory=dict, init=False)
@@ -338,6 +345,12 @@ class PaperAgentEngine:
         self.configured_symbols = list(
             (runtime_model.get("data") or {}).get("symbols") or []
         )
+
+    @property
+    def broker_provider(self) -> str | None:
+        if self.broker_runtime is None:
+            return None
+        return self.broker_runtime.provider
 
     def _extract_timestamp(self, message: dict[str, Any]) -> pd.Timestamp:
         ts = (
@@ -624,6 +637,32 @@ class PaperAgentEngine:
         execution_status = "hold"
         execution_payload: dict[str, Any] | None = None
 
+        if self.broker_runtime is not None and decision.action in {"buy", "sell"}:
+            execution_status, execution_payload = self.broker_runtime.execute_action(
+                symbol=symbol,
+                action=decision.action,
+                price=price,
+                timestamp=timestamp.to_pydatetime(),
+                extra={"decision_action": decision.action},
+            )
+            if execution_payload is not None:
+                self.execution_log.append(execution_payload)
+            self._mark_to_market(symbol, price, timestamp=timestamp)
+            position_after = 1 if symbol in self.portfolio.positions else 0
+            state = self._states.setdefault(symbol, AgentSimulationState())
+            state.target_position = position_after
+            state.last_action = decision.action
+            state.last_reason = decision.reason
+            state.decision_count += 1
+            return {
+                "desired_target_position": desired_target,
+                "target_position": position_after,
+                "position_before": position_before,
+                "position_after": position_after,
+                "execution_status": execution_status,
+                "execution": execution_payload,
+            }
+
         if decision.action == "buy":
             if had_position:
                 execution_status = "already_long"
@@ -830,6 +869,8 @@ class PaperAgentEngine:
                 logger.error("paper_agent_error", exc_info=exc)
 
     async def start(self) -> None:
+        if self.broker_runtime is not None:
+            self.broker_runtime.start_session()
         self.bootstrap_history()
         self._consumer = asyncio.create_task(self._consume_buffer())
         completed_via_signal = False
@@ -857,6 +898,8 @@ class PaperAgentEngine:
                 self._consumer.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await self._consumer
+            if self.broker_runtime is not None:
+                self.broker_runtime.finish_session()
 
 
 def run_agent_paper(
@@ -959,6 +1002,7 @@ def _run_agent_streaming(
             raise ValueError(
                 f"Agent '{agent_name}' is kind={agent_config.get('kind')}; expected kind=rule, kind=llm, or kind=hybrid."
             )
+        execution_backend = resolve_execution_backend(agent_config)
         if (
             mode == "live"
             and str(agent_config.get("mode") or "").strip().lower() != "live"
@@ -1087,6 +1131,11 @@ def _run_agent_streaming(
             artifacts["replay_manifest"] = str(replay_manifest_path)
             paper_source = "replay"
 
+        broker_client = create_broker_client_for_agent(
+            agent_config,
+            mode=mode,
+        )
+
         engine = PaperAgentEngine(
             project_config_path=project_config_path,
             agent_config=agent_config,
@@ -1112,7 +1161,15 @@ def _run_agent_streaming(
             max_portfolio_risk=max_portfolio_risk,
             stop_loss_pct=stop_loss_pct,
             history_window=history_window,
+            execution_backend=execution_backend,
         )
+        if broker_client is not None:
+            engine.broker_runtime = BrokerExecutionRuntime(
+                broker_client=broker_client,
+                portfolio=engine.portfolio,
+                position_manager=engine.position_manager,
+                stop_loss_pct=stop_loss_pct,
+            )
         asyncio.run(engine.start())
 
         _write_jsonl(run_dir / "decisions.jsonl", engine.decision_log)
@@ -1122,6 +1179,9 @@ def _run_agent_streaming(
             engine.execution_log,
             risk_manager=engine.risk_manager,
         )
+        metrics_payload["execution_backend"] = execution_backend
+        if engine.broker_provider:
+            metrics_payload["broker_provider"] = engine.broker_provider
         metrics_payload["decision_count"] = len(engine.decision_log)
         _write_json(run_dir / "metrics.json", metrics_payload)
 
@@ -1134,6 +1194,35 @@ def _run_agent_streaming(
         if engine.include_prompt_artifacts:
             _write_json(run_dir / "prompt_samples.json", engine.prompt_samples)
             artifacts["prompt_samples"] = str(run_dir / "prompt_samples.json")
+        if engine.broker_runtime is not None:
+            broker_account_start_path = run_dir / "broker_account_start.json"
+            broker_account_end_path = run_dir / "broker_account_end.json"
+            broker_positions_start_path = run_dir / "broker_positions_start.json"
+            broker_positions_end_path = run_dir / "broker_positions_end.json"
+            _write_json(
+                broker_account_start_path,
+                engine.broker_runtime.start_account or {},
+            )
+            _write_json(
+                broker_account_end_path,
+                engine.broker_runtime.end_account or {},
+            )
+            _write_json(
+                broker_positions_start_path,
+                engine.broker_runtime.start_positions or [],
+            )
+            _write_json(
+                broker_positions_end_path,
+                engine.broker_runtime.end_positions or [],
+            )
+            artifacts.update(
+                {
+                    "broker_account_start": str(broker_account_start_path),
+                    "broker_account_end": str(broker_account_end_path),
+                    "broker_positions_start": str(broker_positions_start_path),
+                    "broker_positions_end": str(broker_positions_end_path),
+                }
+            )
         summary.update(
             {
                 "status": "success",
@@ -1145,6 +1234,8 @@ def _run_agent_streaming(
                 ),
                 "decision_count": len(engine.decision_log),
                 "execution_count": len(engine.execution_log),
+                "execution_backend": execution_backend,
+                "broker_provider": engine.broker_provider,
                 "artifacts": artifacts,
                 "metrics": metrics_payload,
             }

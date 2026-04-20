@@ -291,3 +291,25 @@ class PositionManager:
             total_impact = sum(e.impact_cost for e in self._executions)
             trades = len(self._executions)
         return {"trades": trades, "total_impact_cost": total_impact}
+
+    def replace_state(
+        self, *, cash: float, positions: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """Overwrite in-memory positions from an external broker/account snapshot."""
+
+        with self._lock:
+            self.cash = float(cash)
+            self._positions = {}
+            for symbol, payload in positions.items():
+                qty = int(payload.get("qty", 0))
+                if qty <= 0:
+                    continue
+                self._positions[str(symbol)] = Position(
+                    qty=qty,
+                    avg_price=float(
+                        payload.get("avg_price", payload.get("market_price", 0.0))
+                    ),
+                    market_price=float(
+                        payload.get("market_price", payload.get("avg_price", 0.0))
+                    ),
+                )

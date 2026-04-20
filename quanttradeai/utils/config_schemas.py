@@ -772,6 +772,10 @@ class ProjectAgentContextConfig(BaseModel):
     notes: bool | ProjectAgentNotesContext = False
 
 
+class ProjectAgentExecutionConfig(BaseModel):
+    backend: Literal["simulated", "alpaca"] = "simulated"
+
+
 class ProjectAgentConfig(BaseModel):
     name: str
     kind: Literal["rule", "model", "llm", "hybrid"]
@@ -779,6 +783,9 @@ class ProjectAgentConfig(BaseModel):
     rule: Optional[ProjectAgentRuleConfig] = None
     llm: Optional[ProjectAgentLLMConfig] = None
     model: Optional[ProjectAgentModelConfig] = None
+    execution: ProjectAgentExecutionConfig = Field(
+        default_factory=ProjectAgentExecutionConfig
+    )
     context: ProjectAgentContextConfig = Field(
         default_factory=ProjectAgentContextConfig
     )

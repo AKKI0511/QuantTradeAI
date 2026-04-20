@@ -1,6 +1,6 @@
 # QuantTradeAI Roadmap
 
-Last updated: 2026-04-12
+Last updated: 2026-04-17
 
 This document is the product source of truth for QuantTradeAI.
 It is written for both human contributors and coding agents.
@@ -155,6 +155,8 @@ agents:
   - name: "breakout_gpt"
     kind: "llm"
     mode: "paper"
+    execution:
+      backend: "simulated"
     llm:
       provider: "openai"
       model: "gpt-5.3"
@@ -177,6 +179,8 @@ agents:
   - name: "hybrid_swing_agent"
     kind: "hybrid"
     mode: "paper"
+    execution:
+      backend: "simulated"
     model_signal_sources:
       - name: "aapl_daily_classifier"
         path: "models/promoted/aapl_daily_classifier"
@@ -203,6 +207,7 @@ An agent should be configurable through YAML with:
 
 - Strategy kind: `rule`, `model`, `llm`, or `hybrid`.
 - Execution mode: `backtest`, `paper`, or `live`.
+- Execution backend: simulated by default, broker-backed when explicitly enabled.
 - LLM provider/model settings when applicable.
 - Prompt template file or inline prompt.
 - Tool list.
@@ -333,6 +338,7 @@ Status on 2026-04-17:
 - `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest|paper` is implemented for `model` agents.
 - `quanttradeai agent run --agent <name> -c config/project.yaml --mode backtest|paper` is implemented for `rule` agents.
 - `quanttradeai agent run --agent <name> -c config/project.yaml --mode live` is implemented for `rule`, `model`, `llm`, and `hybrid` agents.
+- `agents[].execution.backend: alpaca` is implemented for happy-path paper/live runs, with broker-backed Alpaca market orders, broker state reconciliation, and broker snapshot artifacts under each run directory.
 - Agent templates now write the referenced prompt markdown assets.
 - Agent backtest runs now persist resolved config, runtime YAML snapshots, metrics, equity curve, ledger, decisions, sampled prompt/response payloads where applicable, and standardized run metadata under `runs/agent/backtest/...`.
 - Project-defined paper runs now support deterministic OHLCV replay through `data.streaming.replay`, resolving the replay window from replay dates, then test dates, then data dates.
@@ -346,7 +352,7 @@ Status on 2026-04-17:
 - `quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml` is implemented for successful agent backtest-to-paper promotion.
 - `quanttradeai promote --run agent/paper/<run_id> --to live --acknowledge-live <agent_name>` is implemented for successful paper-to-live promotion with an explicit safety acknowledgement.
 - Top-level `risk` and `position_manager` are now the canonical live safety/runtime sections in `config/project.yaml`.
-- `quanttradeai deploy --agent <name> -c config/project.yaml --target docker-compose` now generates a real-time paper-agent deployment bundle with compose, Dockerfile, env placeholders, resolved config, and a deployment manifest. Replay is disabled in the emitted bundle config.
+- `quanttradeai deploy --agent <name> -c config/project.yaml --target docker-compose` now generates paper and live deployment bundles with compose, Dockerfile, env placeholders, resolved config, and a deployment manifest. Paper bundles still disable replay in the emitted config, and Alpaca-backed agents are called out explicitly in the generated bundle README and manifest.
 - Replaced legacy paths have been removed from the primary CLI surface: `train`, `backtest-model`, `live-trade`, `validate-config`, and the `--legacy-config-dir` import flags are gone. `fetch-data`, `evaluate`, and standalone `backtest` remain as utility commands outside the primary product workflow.
 
 ### Stage 2: Multi-Agent Lab
@@ -459,7 +465,7 @@ quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode 
 ```
 
 Current implementation note:
-`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. Local paper mode defaults to replay-backed execution through `data.streaming.replay`, including `agent run --all --mode paper`. Backtest-only parameter sweeps are supported through the optional `sweeps:` section in `config/project.yaml`. `deploy --target docker-compose` still generates real-time paper bundles only.
+`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. Local paper mode defaults to replay-backed execution through `data.streaming.replay`, including `agent run --all --mode paper`. Agents can also opt into `execution.backend: alpaca` for happy-path real-time paper/live broker submission with broker-synced account and position snapshots. Backtest-only parameter sweeps are supported through the optional `sweeps:` section in `config/project.yaml`. `deploy --target docker-compose` supports both simulated and Alpaca-backed paper/live agent bundles.
 
 ### Hybrid track
 

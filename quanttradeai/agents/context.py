@@ -154,15 +154,24 @@ def _recent_execution_records(
     for record in reversed(execution_history or []):
         if symbol and record.get("symbol") != symbol:
             continue
-        items.append(
-            {
-                "timestamp": _serialize_scalar(record.get("timestamp")),
-                "action": record.get("action"),
-                "qty": _serialize_scalar(record.get("qty")),
-                "price": _serialize_scalar(record.get("price")),
-                "status": record.get("status") or record.get("execution_status"),
-            }
-        )
+        item = {
+            "timestamp": _serialize_scalar(record.get("timestamp")),
+            "action": record.get("action"),
+            "qty": _serialize_scalar(record.get("qty")),
+            "price": _serialize_scalar(record.get("price")),
+            "status": record.get("status") or record.get("execution_status"),
+        }
+        for key in (
+            "order_id",
+            "filled_qty",
+            "filled_avg_price",
+            "submitted_at",
+            "filled_at",
+            "broker_provider",
+        ):
+            if key in record and record.get(key) is not None:
+                item[key] = _serialize_scalar(record.get(key))
+        items.append(item)
         if len(items) >= max_entries:
             break
     return items
@@ -178,20 +187,34 @@ def _recent_decision_records(
     for record in reversed(decision_history or []):
         if symbol and record.get("symbol") != symbol:
             continue
-        items.append(
-            {
-                "timestamp": _serialize_scalar(record.get("timestamp")),
-                "action": record.get("action"),
-                "reason": record.get("reason"),
-                "execution_status": record.get("execution_status"),
-                "target_position_after": _serialize_scalar(
-                    record.get(
-                        "target_position_after",
-                        record.get("position_after", record.get("target_position")),
-                    )
-                ),
-            }
-        )
+        item = {
+            "timestamp": _serialize_scalar(record.get("timestamp")),
+            "action": record.get("action"),
+            "reason": record.get("reason"),
+            "execution_status": record.get("execution_status"),
+            "target_position_after": _serialize_scalar(
+                record.get(
+                    "target_position_after",
+                    record.get("position_after", record.get("target_position")),
+                )
+            ),
+        }
+        execution_payload = record.get("execution")
+        if isinstance(execution_payload, dict):
+            keys = [
+                "order_id",
+                "filled_qty",
+                "filled_avg_price",
+                "submitted_at",
+                "filled_at",
+                "broker_provider",
+            ]
+            if execution_payload.get("order_id") is not None:
+                keys.append("status")
+            for key in keys:
+                if key in execution_payload and execution_payload.get(key) is not None:
+                    item[key] = _serialize_scalar(execution_payload.get(key))
+        items.append(item)
         if len(items) >= max_entries:
             break
     return items
