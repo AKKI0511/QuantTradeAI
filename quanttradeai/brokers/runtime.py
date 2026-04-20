@@ -75,6 +75,44 @@ class BrokerExecutionRuntime:
     ) -> list[dict[str, Any]]:
         return [position.to_dict() for position in positions]
 
+    def _record_filled_trade(
+        self,
+        *,
+        action: str,
+        current_position: dict[str, Any],
+        order: BrokerOrderResult,
+        fallback_timestamp: datetime,
+    ) -> None:
+        filled_qty = max(int(order.filled_qty or 0), 0)
+        if filled_qty <= 0:
+            return
+
+        filled_avg_price = order.filled_avg_price
+        if filled_avg_price is None:
+            return
+
+        fill_timestamp = order.filled_at or fallback_timestamp
+        notional = filled_qty * filled_avg_price
+        risk_manager = getattr(self.portfolio, "risk_manager", None)
+        if risk_manager is not None:
+            risk_manager.record_trade(notional, fill_timestamp)
+
+        if action != "sell":
+            return
+
+        position_qty = max(int(current_position.get("qty", 0)), 0)
+        if position_qty <= 0:
+            return
+
+        closed_qty = min(filled_qty, position_qty)
+        entry_price = float(
+            current_position.get(
+                "entry_price",
+                current_position.get("price", filled_avg_price),
+            )
+        )
+        self.portfolio.realized_pnl += closed_qty * (filled_avg_price - entry_price)
+
     def _apply_snapshots(
         self,
         *,
@@ -110,6 +148,7 @@ class BrokerExecutionRuntime:
             cash=account.cash,
             positions=portfolio_positions,
             initial_capital=self.starting_equity,
+            realized_pnl=self.portfolio.realized_pnl,
         )
         if self.position_manager is not None:
             self.position_manager.replace_state(
@@ -174,6 +213,12 @@ class BrokerExecutionRuntime:
             qty=qty,
         )
         order = self.broker_client.wait_for_order(initial_order.order_id)
+        self._record_filled_trade(
+            action=normalized_action,
+            current_position=current_position,
+            order=order,
+            fallback_timestamp=timestamp,
+        )
         self.sync_from_broker()
 
         payload = {
