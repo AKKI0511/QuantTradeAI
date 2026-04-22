@@ -61,8 +61,9 @@ poetry run quanttradeai agent run --all -c config/project.yaml --mode paper --ma
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
 
-# Generate a Docker Compose bundle for the paper agent
+# Generate deployment bundles for the paper agent
 # Generated bundles disable replay and expect real-time streaming settings
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target local
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
 
 # Lower-level utility commands that still exist
@@ -106,7 +107,14 @@ Canonical agent paper artifacts:
 - `runs/agent/paper/<timestamp>_<agent>/prompt_samples.json` for `llm` and `hybrid`
 - `runs/agent/paper/<timestamp>_<agent>/replay_manifest.json` when replay is enabled
 
-Canonical deployment bundle artifacts:
+Canonical local deployment bundle artifacts:
+- `reports/deployments/<agent>/<timestamp>/run.py`
+- `reports/deployments/<agent>/<timestamp>/.env.example`
+- `reports/deployments/<agent>/<timestamp>/README.md`
+- `reports/deployments/<agent>/<timestamp>/resolved_project_config.yaml`
+- `reports/deployments/<agent>/<timestamp>/deployment_manifest.json`
+
+Canonical Docker Compose deployment bundle artifacts:
 - `reports/deployments/<agent>/<timestamp>/docker-compose.yml`
 - `reports/deployments/<agent>/<timestamp>/Dockerfile`
 - `reports/deployments/<agent>/<timestamp>/.env.example`

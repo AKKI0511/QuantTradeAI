@@ -8,6 +8,7 @@ import os
 import re
 import tempfile
 from collections import OrderedDict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -31,9 +32,26 @@ DEFAULT_LLM_API_KEY_ENV_VARS = {
     "anthropic": "ANTHROPIC_API_KEY",
     "huggingface": "HUGGINGFACE_API_KEY",
 }
-SUPPORTED_DEPLOY_TARGETS = {"docker-compose"}
+SUPPORTED_DEPLOY_TARGETS = {"docker-compose", "local"}
 SUPPORTED_DEPLOY_MODES = {"paper", "live"}
 SUPPORTED_AGENT_KINDS = {"rule", "model", "llm", "hybrid"}
+
+
+@dataclass
+class PreparedDeployment:
+    config_path: Path
+    project_root: Path
+    output_path: Path
+    project_config: dict[str, Any]
+    warnings: list[str]
+    target: str
+    mode: str
+    agent_config: dict[str, Any]
+    service_name: str
+    safety_requirements: list[str]
+    execution_backend: str
+    broker_provider: str | None
+    env_vars: list[tuple[str, str]]
 
 
 def _slugify(value: str) -> str:
@@ -108,10 +126,10 @@ def _compose_environment(env_vars: list[tuple[str, str]]) -> dict[str, str]:
     return {name: f"${{{name}:-}}" for name, _ in env_vars}
 
 
-def _render_env_example(env_vars: list[tuple[str, str]]) -> str:
+def _render_env_example(env_vars: list[tuple[str, str]], *, target_label: str) -> str:
     lines = [
-        "# QuantTradeAI docker-compose deployment environment",
-        "# Fill the values needed by this deployment bundle before running docker compose.",
+        f"# QuantTradeAI {target_label} deployment environment",
+        "# Fill the values needed by this deployment bundle before running it.",
         "",
     ]
     if not env_vars:
@@ -218,6 +236,142 @@ def _render_bundle_readme(
     return "\n".join(lines) + "\n"
 
 
+def _render_local_runner_script(
+    *,
+    agent_name: str,
+    mode: str,
+    project_root: Path,
+) -> str:
+    project_root_literal = json.dumps(project_root.as_posix())
+    agent_name_literal = json.dumps(agent_name)
+    mode_literal = json.dumps(mode)
+    return f'''"""Run a QuantTradeAI agent from this local deployment bundle."""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+BUNDLE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = Path({project_root_literal})
+CONFIG_PATH = BUNDLE_DIR / "resolved_project_config.yaml"
+AGENT_NAME = {agent_name_literal}
+MODE = {mode_literal}
+
+
+def _strip_simple_quotes(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {{"'", '"'}}:
+        return value[1:-1]
+    return value
+
+
+def _load_env_file(path: Path) -> None:
+    if not path.is_file():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = _strip_simple_quotes(value.strip())
+        if not key or not value:
+            continue
+        os.environ.setdefault(key, value)
+
+
+def main() -> int:
+    _load_env_file(BUNDLE_DIR / ".env")
+    command = [
+        sys.executable,
+        "-m",
+        "quanttradeai.cli",
+        "agent",
+        "run",
+        "--agent",
+        AGENT_NAME,
+        "-c",
+        str(CONFIG_PATH),
+        "--mode",
+        MODE,
+    ]
+    return subprocess.call(command, cwd=str(PROJECT_ROOT))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+
+def _render_local_bundle_readme(
+    *,
+    agent_name: str,
+    agent_kind: str,
+    mode: str,
+    execution_backend: str,
+    broker_provider: str | None,
+    next_command: str,
+    env_vars: list[tuple[str, str]],
+    safety_requirements: list[str],
+) -> str:
+    lines = [
+        "# QuantTradeAI Local Deployment Bundle",
+        "",
+        f"This bundle runs the `{agent_name}` `{agent_kind}` agent in `{mode}` mode on the local machine.",
+        "",
+        "## Mode",
+        "",
+        f"- `mode: {mode}`",
+        f"- `execution.backend: {execution_backend}`",
+        "",
+        "## Files",
+        "",
+        "- `run.py`: starts the agent with the resolved project config in this bundle.",
+        "- `.env.example`: provider environment variables inferred from the project config.",
+        "- `resolved_project_config.yaml`: exact project config snapshot used for deployment generation.",
+        "- `deployment_manifest.json`: machine-readable summary of the generated bundle.",
+        "",
+        "## Run",
+        "",
+        "From the project environment:",
+        "",
+        "```bash",
+        next_command,
+        "```",
+        "",
+        "The runner executes from the original project root so `data/`, `runs/`, and `reports/` stay in the project.",
+    ]
+
+    if execution_backend == "alpaca" and broker_provider:
+        lines.extend(
+            [
+                "",
+                "This bundle uses broker-backed execution.",
+                f"In `{mode}` mode it will submit real `{broker_provider}` market orders instead of simulated local fills.",
+            ]
+        )
+
+    if safety_requirements:
+        lines.extend(["", "## Safety Requirements", ""])
+        lines.extend([f"- {requirement}" for requirement in safety_requirements])
+
+    if env_vars:
+        lines.extend(
+            [
+                "",
+                "## Environment",
+                "",
+                "Create a `.env` file next to `run.py` with the variables listed in `.env.example`, or export them before starting the runner.",
+            ]
+        )
+
+    return "\n".join(lines) + "\n"
+
+
 def _copy_resolved_project_config(
     *,
     config_path: Path | str,
@@ -253,6 +407,60 @@ def _disable_replay_for_deployment(project_config: dict[str, Any]) -> dict[str, 
         streaming_cfg["replay"] = replay_cfg
         deployment_project.setdefault("data", {})["streaming"] = streaming_cfg
     return deployment_project
+
+
+def _absolute_project_path(config_path: Path, candidate: Any) -> str:
+    if candidate is None:
+        return ""
+    candidate_text = str(candidate).strip()
+    if not candidate_text:
+        return candidate_text
+    return resolve_project_path(config_path, candidate_text).resolve().as_posix()
+
+
+def _absolutize_local_project_paths(
+    *,
+    project_config: dict[str, Any],
+    config_path: Path,
+) -> dict[str, Any]:
+    """Make bundle config asset paths independent from the bundle location."""
+
+    local_project = copy.deepcopy(project_config)
+    for agent in local_project.get("agents") or []:
+        if not isinstance(agent, dict):
+            continue
+
+        llm_cfg = agent.get("llm")
+        if isinstance(llm_cfg, dict) and llm_cfg.get("prompt_file"):
+            llm_cfg["prompt_file"] = _absolute_project_path(
+                config_path, llm_cfg["prompt_file"]
+            )
+
+        model_cfg = agent.get("model")
+        if isinstance(model_cfg, dict) and model_cfg.get("path"):
+            model_cfg["path"] = _absolute_project_path(config_path, model_cfg["path"])
+
+        for source in agent.get("model_signal_sources") or []:
+            if isinstance(source, dict) and source.get("path"):
+                source["path"] = _absolute_project_path(config_path, source["path"])
+
+        context_cfg = agent.get("context")
+        if not isinstance(context_cfg, dict):
+            continue
+
+        notes_cfg = context_cfg.get("notes")
+        agent_name = str(agent.get("name") or "agent").strip() or "agent"
+        if notes_cfg is True:
+            context_cfg["notes"] = {
+                "enabled": True,
+                "file": _absolute_project_path(config_path, f"notes/{agent_name}.md"),
+            }
+        elif isinstance(notes_cfg, dict) and notes_cfg.get("enabled", True):
+            notes_cfg["file"] = _absolute_project_path(
+                config_path, notes_cfg.get("file") or f"notes/{agent_name}.md"
+            )
+
+    return local_project
 
 
 def _deployment_safety_requirements(mode: str) -> list[str]:
@@ -384,17 +592,15 @@ def _required_mounts(
     return deduped
 
 
-def deploy_project_agent(
+def _prepare_deployment(
     *,
     agent_name: str,
-    config_path: Path | str = "config/project.yaml",
-    target: str | None = None,
-    mode: str | None = None,
-    output_dir: Path | str | None = None,
-    force: bool = False,
-) -> dict[str, Any]:
-    """Generate a docker-compose deployment bundle for a project-defined agent."""
-
+    config_path: Path | str,
+    target: str | None,
+    mode: str | None,
+    output_dir: Path | str | None,
+    force: bool,
+) -> PreparedDeployment:
     config_path = Path(config_path).resolve()
     project_root = infer_project_root(config_path)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -420,6 +626,7 @@ def deploy_project_agent(
             config_path=config_path,
             destination=temp_resolved_project_path,
         )
+
     deployment_cfg = dict((resolved_project.get("deployment") or {}))
     resolved_target = str(target or deployment_cfg.get("target") or "docker-compose")
     resolved_target = resolved_target.strip().lower()
@@ -448,6 +655,12 @@ def deploy_project_agent(
                 "Paper deployment bundles always use real-time streaming; replay was disabled in the generated bundle."
             )
 
+    if resolved_target == "local":
+        deployment_project = _absolutize_local_project_paths(
+            project_config=deployment_project,
+            config_path=config_path,
+        )
+
     agent_config = _resolve_agent_config(
         project_config=deployment_project,
         agent_name=agent_name,
@@ -472,8 +685,6 @@ def deploy_project_agent(
         compile_live_risk_runtime_config(deployment_project)
         compile_live_position_manager_runtime_config(deployment_project)
 
-    service_name = _slugify(f"{agent_name}-{resolved_mode}")
-    safety_requirements = _deployment_safety_requirements(resolved_mode)
     execution_backend = resolve_execution_backend(agent_config)
     broker_provider = (
         str(
@@ -485,14 +696,37 @@ def deploy_project_agent(
         if execution_backend == "alpaca"
         else None
     )
-    env_vars = _required_env_vars(
-        agent_config=agent_config,
-        project_config=deployment_project,
-    )
-    mounts = _required_mounts(
-        project_root=project_root,
+
+    return PreparedDeployment(
         config_path=config_path,
+        project_root=project_root,
+        output_path=output_path,
+        project_config=deployment_project,
+        warnings=warnings,
+        target=resolved_target,
+        mode=resolved_mode,
         agent_config=agent_config,
+        service_name=_slugify(f"{agent_name}-{resolved_mode}"),
+        safety_requirements=_deployment_safety_requirements(resolved_mode),
+        execution_backend=execution_backend,
+        broker_provider=broker_provider,
+        env_vars=_required_env_vars(
+            agent_config=agent_config,
+            project_config=deployment_project,
+        ),
+    )
+
+
+def _write_docker_compose_bundle(
+    prepared: PreparedDeployment,
+    *,
+    agent_name: str,
+) -> dict[str, Any]:
+    output_path = prepared.output_path
+    mounts = _required_mounts(
+        project_root=prepared.project_root,
+        config_path=prepared.config_path,
+        agent_config=prepared.agent_config,
         output_dir=output_path,
     )
 
@@ -505,14 +739,14 @@ def deploy_project_agent(
         "-c",
         "config/project.yaml",
         "--mode",
-        resolved_mode,
+        prepared.mode,
     ]
 
-    build_context = _relative_posix(project_root, output_path)
-    dockerfile_rel = _relative_posix(output_path / "Dockerfile", project_root)
+    build_context = _relative_posix(prepared.project_root, output_path)
+    dockerfile_rel = _relative_posix(output_path / "Dockerfile", prepared.project_root)
     compose_payload = {
         "services": {
-            service_name: {
+            prepared.service_name: {
                 "build": {
                     "context": build_context,
                     "dockerfile": dockerfile_rel,
@@ -520,7 +754,7 @@ def deploy_project_agent(
                 "working_dir": "/app",
                 "command": compose_command,
                 "restart": "unless-stopped",
-                "environment": _compose_environment(env_vars),
+                "environment": _compose_environment(prepared.env_vars),
                 "volumes": [
                     (
                         f"{_relative_posix(Path(mount['host']), output_path)}:"
@@ -537,7 +771,7 @@ def deploy_project_agent(
 
     resolved_project_path = output_path / "resolved_project_config.yaml"
     resolved_project_path.write_text(
-        yaml.safe_dump(deployment_project, sort_keys=False),
+        yaml.safe_dump(prepared.project_config, sort_keys=False),
         encoding="utf-8",
     )
 
@@ -551,41 +785,49 @@ def deploy_project_agent(
     )
 
     env_example_path = output_path / ".env.example"
-    env_example_path.write_text(_render_env_example(env_vars), encoding="utf-8")
-
-    next_command = (
-        f"docker compose -f {compose_path.as_posix()} up --build {service_name}"
+    env_example_path.write_text(
+        _render_env_example(prepared.env_vars, target_label="docker-compose"),
+        encoding="utf-8",
     )
+
+    next_command = f"docker compose -f {compose_path.as_posix()} up --build {prepared.service_name}"
     bundle_readme_path = output_path / "README.md"
     bundle_readme_path.write_text(
         _render_bundle_readme(
             agent_name=agent_name,
-            agent_kind=str(agent_config.get("kind") or ""),
-            mode=resolved_mode,
-            execution_backend=execution_backend,
-            broker_provider=broker_provider,
-            service_name=service_name,
+            agent_kind=str(prepared.agent_config.get("kind") or ""),
+            mode=prepared.mode,
+            execution_backend=prepared.execution_backend,
+            broker_provider=prepared.broker_provider,
+            service_name=prepared.service_name,
             next_command=next_command,
-            env_vars=env_vars,
-            safety_requirements=safety_requirements,
+            env_vars=prepared.env_vars,
+            safety_requirements=prepared.safety_requirements,
         ),
         encoding="utf-8",
     )
 
+    artifacts = {
+        "compose": compose_path.as_posix(),
+        "dockerfile": dockerfile_path.as_posix(),
+        "env_example": env_example_path.as_posix(),
+        "readme": bundle_readme_path.as_posix(),
+        "resolved_project_config": resolved_project_path.as_posix(),
+    }
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "agent_name": agent_name,
-        "agent_kind": agent_config.get("kind"),
-        "target": resolved_target,
-        "mode": resolved_mode,
-        "execution_backend": execution_backend,
-        "broker_provider": broker_provider,
-        "service_name": service_name,
-        "project_root": project_root.as_posix(),
-        "source_config": config_path.as_posix(),
+        "agent_kind": prepared.agent_config.get("kind"),
+        "target": prepared.target,
+        "mode": prepared.mode,
+        "execution_backend": prepared.execution_backend,
+        "broker_provider": prepared.broker_provider,
+        "service_name": prepared.service_name,
+        "project_root": prepared.project_root.as_posix(),
+        "source_config": prepared.config_path.as_posix(),
         "command": compose_command,
-        "safety_requirements": safety_requirements,
-        "environment_variables": [name for name, _ in env_vars],
+        "safety_requirements": prepared.safety_requirements,
+        "environment_variables": [name for name, _ in prepared.env_vars],
         "volumes": [
             {
                 "host": _path_to_posix(Path(mount["host"])),
@@ -594,17 +836,117 @@ def deploy_project_agent(
             }
             for mount in mounts
         ],
-        "artifacts": {
-            "compose": compose_path.as_posix(),
-            "dockerfile": dockerfile_path.as_posix(),
-            "env_example": env_example_path.as_posix(),
-            "readme": bundle_readme_path.as_posix(),
-            "resolved_project_config": resolved_project_path.as_posix(),
-        },
-        "warnings": warnings,
+        "artifacts": artifacts,
+        "warnings": prepared.warnings,
         "next_command": next_command,
     }
-    manifest_path = output_path / "deployment_manifest.json"
+    return _write_manifest_and_result(
+        prepared=prepared,
+        manifest=manifest,
+        artifacts=artifacts,
+        next_command=next_command,
+    )
+
+
+def _write_local_bundle(
+    prepared: PreparedDeployment,
+    *,
+    agent_name: str,
+) -> dict[str, Any]:
+    output_path = prepared.output_path
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    resolved_project_path = output_path / "resolved_project_config.yaml"
+    resolved_project_path.write_text(
+        yaml.safe_dump(prepared.project_config, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    runner_path = output_path / "run.py"
+    runner_path.write_text(
+        _render_local_runner_script(
+            agent_name=agent_name,
+            mode=prepared.mode,
+            project_root=prepared.project_root,
+        ),
+        encoding="utf-8",
+    )
+
+    env_example_path = output_path / ".env.example"
+    env_example_path.write_text(
+        _render_env_example(prepared.env_vars, target_label="local"),
+        encoding="utf-8",
+    )
+
+    next_command = f"python {runner_path.as_posix()}"
+    bundle_readme_path = output_path / "README.md"
+    bundle_readme_path.write_text(
+        _render_local_bundle_readme(
+            agent_name=agent_name,
+            agent_kind=str(prepared.agent_config.get("kind") or ""),
+            mode=prepared.mode,
+            execution_backend=prepared.execution_backend,
+            broker_provider=prepared.broker_provider,
+            next_command=next_command,
+            env_vars=prepared.env_vars,
+            safety_requirements=prepared.safety_requirements,
+        ),
+        encoding="utf-8",
+    )
+
+    artifacts = {
+        "runner": runner_path.as_posix(),
+        "env_example": env_example_path.as_posix(),
+        "readme": bundle_readme_path.as_posix(),
+        "resolved_project_config": resolved_project_path.as_posix(),
+    }
+    manifest = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "agent_name": agent_name,
+        "agent_kind": prepared.agent_config.get("kind"),
+        "target": prepared.target,
+        "mode": prepared.mode,
+        "execution_backend": prepared.execution_backend,
+        "broker_provider": prepared.broker_provider,
+        "service_name": prepared.service_name,
+        "project_root": prepared.project_root.as_posix(),
+        "source_config": prepared.config_path.as_posix(),
+        "command": ["python", runner_path.as_posix()],
+        "agent_command": [
+            "python",
+            "-m",
+            "quanttradeai.cli",
+            "agent",
+            "run",
+            "--agent",
+            agent_name,
+            "-c",
+            resolved_project_path.as_posix(),
+            "--mode",
+            prepared.mode,
+        ],
+        "safety_requirements": prepared.safety_requirements,
+        "environment_variables": [name for name, _ in prepared.env_vars],
+        "artifacts": artifacts,
+        "warnings": prepared.warnings,
+        "next_command": next_command,
+    }
+    return _write_manifest_and_result(
+        prepared=prepared,
+        manifest=manifest,
+        artifacts=artifacts,
+        next_command=next_command,
+    )
+
+
+def _write_manifest_and_result(
+    *,
+    prepared: PreparedDeployment,
+    manifest: dict[str, Any],
+    artifacts: dict[str, str],
+    next_command: str,
+) -> dict[str, Any]:
+    manifest_path = prepared.output_path / "deployment_manifest.json"
     manifest_path.write_text(
         json.dumps(manifest, indent=2, default=_json_default),
         encoding="utf-8",
@@ -612,14 +954,45 @@ def deploy_project_agent(
 
     return {
         "status": "success",
-        "agent_name": agent_name,
-        "target": resolved_target,
-        "mode": resolved_mode,
-        "output_dir": output_path.as_posix(),
+        "agent_name": manifest["agent_name"],
+        "target": prepared.target,
+        "mode": prepared.mode,
+        "output_dir": prepared.output_path.as_posix(),
         "artifacts": {
-            **manifest["artifacts"],
+            **artifacts,
             "manifest": manifest_path.as_posix(),
         },
-        "warnings": warnings,
+        "warnings": prepared.warnings,
         "next_command": next_command,
     }
+
+
+def deploy_project_agent(
+    *,
+    agent_name: str,
+    config_path: Path | str = "config/project.yaml",
+    target: str | None = None,
+    mode: str | None = None,
+    output_dir: Path | str | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Generate a deployment bundle for a project-defined agent."""
+
+    prepared = _prepare_deployment(
+        agent_name=agent_name,
+        config_path=config_path,
+        target=target,
+        mode=mode,
+        output_dir=output_dir,
+        force=force,
+    )
+
+    if prepared.target == "docker-compose":
+        return _write_docker_compose_bundle(prepared, agent_name=agent_name)
+    if prepared.target == "local":
+        return _write_local_bundle(prepared, agent_name=agent_name)
+
+    supported = ", ".join(sorted(SUPPORTED_DEPLOY_TARGETS))
+    raise ValueError(
+        f"Unsupported deployment target '{prepared.target}'. Supported targets: {supported}."
+    )

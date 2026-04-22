@@ -36,7 +36,7 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 | Run a hybrid agent | `init --template hybrid` -> `research run` -> `promote --run research/<run_id>` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Model signals plus LLM reasoning in one project, with research outputs promoted into a stable path before the agent is promoted through environments |
 | Run every project agent together | `agent run --all --mode backtest|paper --max-concurrency 4` | A local multi-agent batch that preserves normal child runs plus batch-level manifests and scoreboards |
 | Sweep one agent across parameter variants | `agent run --sweep rsi_threshold_grid --mode backtest --max-concurrency 4` | A local sweep batch that expands one agent into many backtest variants, preserves normal child runs, and ranks them with the same scoreboard flow |
-| Generate a Docker Compose deployment bundle | `deploy --agent <name> --target docker-compose --mode paper|live` | A Docker Compose bundle for a promoted paper or live agent with compose, Dockerfile, env placeholders, and resolved config |
+| Generate a QuantTradeAI deployment bundle | `deploy --agent <name> --target local|docker-compose --mode paper|live` | A local runner or Docker Compose bundle for a promoted paper or live agent with env placeholders and resolved config |
 
 ## How It Fits Together
 
@@ -80,6 +80,7 @@ QuantTradeAI is one framework with two connected tracks:
 | `agent run --all --mode backtest` from `project.yaml` | Supported |
 | `agent run --all --mode paper` from `project.yaml` | Supported |
 | `agent run --sweep <name> --mode backtest` from `project.yaml` | Supported |
+| `deploy --target local` for paper or live agents | Supported |
 | `deploy --target docker-compose` for paper or live agents | Supported |
 ## Install In 2 Minutes
 
@@ -287,23 +288,26 @@ Sweep child runs are intentionally not promotable. Copy the winning parameters i
 
 ### Deploy A Paper Or Live Agent
 
-Use this if you want a generated Docker Compose bundle for a project-defined paper or live agent.
+Use this if you want a generated local runner or Docker Compose bundle for a project-defined paper or live agent.
 
 ```bash
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target local
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target local --mode live
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose --mode live
 ```
 
 This writes a deployment bundle under `reports/deployments/<agent>/<timestamp>/` with:
 
-- `docker-compose.yml`
-- `Dockerfile`
+- `run.py` for local bundles, or `docker-compose.yml` and `Dockerfile` for Docker Compose bundles
 - `.env.example`
 - `README.md`
 - `resolved_project_config.yaml`
 - `deployment_manifest.json`
 
 Paper bundles always disable replay in the emitted resolved project config and expect real-time streaming credentials. Local replay-backed paper runs stay unchanged in your source `config/project.yaml`.
+
+Local bundles run `python <bundle>/run.py` from your project environment. The runner uses the bundle's resolved config, loads an optional `.env` file next to `run.py`, and writes runtime artifacts back under the project `runs/` and `reports/` directories.
 
 If the target agent uses `execution.backend: alpaca`, the generated bundle README and manifest call out that the service will submit real Alpaca paper/live market orders instead of simulated local fills.
 
