@@ -73,13 +73,14 @@ poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yam
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode live
 ```
 
-### Generate A Docker Compose Bundle
+### Generate A Deployment Bundle
 
 ```bash
+poetry run quanttradeai deploy --agent paper_momentum -c config/project.yaml --target local
 poetry run quanttradeai deploy --agent paper_momentum -c config/project.yaml --target docker-compose
 ```
 
-Generated deployment bundles are still real-time paper deployments. QuantTradeAI disables replay in the emitted `resolved_project_config.yaml` and requires the normal provider and websocket settings to be present in the source project config.
+Generated local and Docker Compose deployment bundles are still real-time paper deployments. QuantTradeAI disables replay in the emitted `resolved_project_config.yaml` and requires the normal provider and websocket settings to be present in the source project config.
 
 Paper and live runs write standardized artifacts under `runs/agent/paper/...` and `runs/agent/live/...`, including:
 
@@ -122,7 +123,7 @@ poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.y
 
 The hybrid template already points `model_signal_sources` at `models/promoted/aapl_daily_classifier`, so the happy path does not require editing timestamped experiment directories by hand.
 
-Deployment bundles for project-defined paper agents are written under `reports/deployments/<agent>/<timestamp>/`.
+Deployment bundles for project-defined paper agents are written under `reports/deployments/<agent>/<timestamp>/`. Use `--target local` for a Python runner bundle or `--target docker-compose` for a Compose bundle.
 
 ## Workflow 4: Multi-Agent Batches
 

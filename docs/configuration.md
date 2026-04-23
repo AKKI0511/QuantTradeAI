@@ -50,10 +50,11 @@ poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.
 ### Agent Deployment
 
 ```bash
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target local
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
 ```
 
-Deployment bundles are generated from `config/project.yaml`. Paper bundles disable replay in the emitted deployment config and expect valid real-time provider settings.
+Deployment bundles are generated from `config/project.yaml`. Use `--target local` for a Python runner bundle or `--target docker-compose` for a Compose bundle. Paper bundles disable replay in the emitted deployment config and expect valid real-time provider settings.
 
 ## Important Boundaries
 
