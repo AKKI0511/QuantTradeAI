@@ -1214,7 +1214,7 @@ def cmd_agent_run(
     run_all: bool = typer.Option(
         False,
         "--all",
-        help="Run every project-defined agent. Supports backtest and paper modes in this release.",
+        help="Run every project-defined agent. Supports backtest, paper, and live modes.",
     ),
     sweep: Optional[str] = typer.Option(
         None,
@@ -1240,6 +1240,11 @@ def cmd_agent_run(
         min=1,
         help="Maximum concurrent child runs when using --all or --sweep.",
     ),
+    acknowledge_live: Optional[str] = typer.Option(
+        None,
+        "--acknowledge-live",
+        help="Required for --all --mode live. Must exactly match project.name.",
+    ),
 ):
     """Run a first-class project agent in backtest, paper, or live mode."""
 
@@ -1251,16 +1256,19 @@ def cmd_agent_run(
         raise typer.BadParameter("Choose exactly one of --agent, --all, or --sweep.")
 
     try:
+        normalized_mode = mode.strip().lower()
+        if acknowledge_live is not None and not (run_all and normalized_mode == "live"):
+            raise ValueError(
+                "--acknowledge-live is only supported with --all --mode live."
+            )
+
         if run_all:
-            if mode == "live":
-                raise ValueError(
-                    "--all currently supports only --mode backtest or --mode paper."
-                )
             batch_result = run_agent_batch(
                 project_config_path=config,
-                mode=mode,
+                mode=normalized_mode,
                 skip_validation=skip_validation,
                 max_concurrency=max_concurrency,
+                acknowledge_live_project_name=acknowledge_live,
             )
             typer.echo(f"Agent batch completed: {batch_result['run_dir']}")
             typer.echo(json.dumps(batch_result, indent=2))
@@ -1269,11 +1277,11 @@ def cmd_agent_run(
             return
 
         if sweep:
-            if mode != "backtest":
+            if normalized_mode != "backtest":
                 raise ValueError("--sweep currently supports only --mode backtest.")
             batch_result = run_agent_batch(
                 project_config_path=config,
-                mode=mode,
+                mode=normalized_mode,
                 skip_validation=skip_validation,
                 max_concurrency=max_concurrency,
                 sweep_name=sweep,
@@ -1288,7 +1296,7 @@ def cmd_agent_run(
         summary, warnings = run_project_agent(
             project_config_path=config,
             agent_name=agent,
-            mode=mode,
+            mode=normalized_mode,
             skip_validation=skip_validation,
         )
         for warning in warnings:

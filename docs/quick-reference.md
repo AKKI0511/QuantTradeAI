@@ -56,6 +56,8 @@ poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest -
 # Replay-backed paper batch across every configured project agent
 poetry run quanttradeai agent run --all -c config/project.yaml --mode paper
 poetry run quanttradeai agent run --all -c config/project.yaml --mode paper --max-concurrency 4
+# Acknowledged live batch across every live-configured project agent
+poetry run quanttradeai agent run --all -c config/project.yaml --mode live --acknowledge-live <project_name>
 
 # Backtest one sweep of agent parameter variants
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest

@@ -73,7 +73,7 @@ LLM and hybrid live runs also write `prompt_samples.json`.
 - `scoreboard.json`
 - `scoreboard.txt`
 
-Child runs keep their normal per-run runtime YAML snapshots inside their own run directories.
+Child runs keep their normal per-run runtime YAML snapshots inside their own run directories. Live batches require `--acknowledge-live <project.name>` and preserve normal child runs under `runs/agent/live/...`.
 
 ## Deployment Bundles
 

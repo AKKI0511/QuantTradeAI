@@ -8,7 +8,7 @@ It drives:
 - `quanttradeai validate`
 - `quanttradeai research run`
 - `quanttradeai agent run` for project-defined agents in `backtest`, `paper`, and `live`
-- `quanttradeai agent run --all` for multi-agent batches in `backtest` and `paper`
+- `quanttradeai agent run --all` for multi-agent batches in `backtest`, `paper`, and `live`
 - `quanttradeai agent run --sweep <name>` for backtest-only parameter sweeps
 - `quanttradeai promote` for research-model promotion plus agent backtest-to-paper and paper-to-live promotion
 - `quanttradeai deploy` for docker-compose paper and live agent bundles
@@ -84,16 +84,18 @@ poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.y
 
 The default hybrid template already points `model_signal_sources` at `models/promoted/aapl_daily_classifier`, so the happy path does not require editing timestamped experiment directories.
 
-### Multi-Agent Paper Batches
+### Multi-Agent Batches
 
 ```bash
+poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest
 poetry run quanttradeai agent run --all -c config/project.yaml --mode paper
 poetry run quanttradeai agent run --all -c config/project.yaml --mode paper --max-concurrency 4
+poetry run quanttradeai agent run --all -c config/project.yaml --mode live --acknowledge-live <project_name>
 ```
 
-Multi-agent paper batches preserve the normal child runs under `runs/agent/paper/...` and write batch artifacts under `runs/agent/batches/<timestamp>_<project>_paper/`.
+Multi-agent batches preserve the normal child runs under `runs/agent/backtest/...`, `runs/agent/paper/...`, or `runs/agent/live/...` and write batch artifacts under `runs/agent/batches/<timestamp>_<project>_<mode>/`.
 
-Paper batches rank the batch scoreboard by `total_pnl`.
+Backtest batches rank by `net_sharpe`. Paper and live batches rank by `total_pnl`. Live batches require every configured agent to already have `mode: live` and require `--acknowledge-live` to match `project.name`.
 
 ### Backtest Sweeps
 
@@ -763,6 +765,14 @@ When replay is enabled, the run directory also includes `replay_manifest.json`, 
 Writes a batch directory under `runs/agent/batches/<timestamp>_<project>_paper/` and one normal child paper run under `runs/agent/paper/...` for each enumerated agent.
 
 Batch scoreboards for paper mode sort by `total_pnl`.
+
+### `quanttradeai agent run --all --mode live`
+
+Writes a batch directory under `runs/agent/batches/<timestamp>_<project>_live/` and one normal child live run under `runs/agent/live/...` for each enumerated agent.
+
+Live batches require `--acknowledge-live <project.name>`, reject `--skip-validation`, and fail fast unless every configured agent already has `mode: live`.
+
+Batch scoreboards for live mode sort by `total_pnl`.
 
 ### `quanttradeai agent run --mode live`
 

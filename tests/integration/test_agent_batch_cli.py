@@ -57,6 +57,18 @@ def _seed_agent_assets(tmp_path: Path) -> Path:
     return config_path
 
 
+def _set_all_agents_live(config_path: Path) -> dict:
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    payload["project"]["name"] = "multi_agent_lab"
+    for agent in payload["agents"]:
+        agent["mode"] = "live"
+    config_path.write_text(
+        yaml.safe_dump(payload, sort_keys=False),
+        encoding="utf-8",
+    )
+    return payload
+
+
 def _seed_sweep_assets(tmp_path: Path) -> Path:
     config_path = tmp_path / "config" / "project.yaml"
 
@@ -137,11 +149,14 @@ def test_agent_run_rejects_mixing_agent_and_sweep(tmp_path: Path, monkeypatch):
     assert "--sweep" in combined
 
 
-def test_agent_run_all_rejects_live_mode(tmp_path: Path, monkeypatch):
+def test_agent_run_all_live_requires_matching_project_acknowledgement(
+    tmp_path: Path, monkeypatch
+):
     monkeypatch.chdir(tmp_path)
     config_path = _seed_agent_assets(tmp_path)
+    _set_all_agents_live(config_path)
 
-    result = runner.invoke(
+    missing = runner.invoke(
         app,
         [
             "agent",
@@ -154,9 +169,114 @@ def test_agent_run_all_rejects_live_mode(tmp_path: Path, monkeypatch):
         ],
     )
 
+    assert missing.exit_code == 1
+    missing_output = f"{missing.stdout}\n{missing.stderr}"
+    assert "requires --acknowledge-live multi_agent_lab" in missing_output
+
+    wrong = runner.invoke(
+        app,
+        [
+            "agent",
+            "run",
+            "--all",
+            "--config",
+            str(config_path),
+            "--mode",
+            "live",
+            "--acknowledge-live",
+            "wrong_project",
+        ],
+    )
+
+    assert wrong.exit_code == 1
+    wrong_output = f"{wrong.stdout}\n{wrong.stderr}"
+    assert "requires --acknowledge-live multi_agent_lab" in wrong_output
+
+
+def test_agent_run_rejects_acknowledge_live_outside_all_live(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = _seed_agent_assets(tmp_path)
+
+    result = runner.invoke(
+        app,
+        [
+            "agent",
+            "run",
+            "--agent",
+            "rsi_reversion",
+            "--config",
+            str(config_path),
+            "--mode",
+            "paper",
+            "--acknowledge-live",
+            "multi_agent_lab",
+        ],
+    )
+
     assert result.exit_code == 1
     combined = f"{result.stdout}\n{result.stderr}"
-    assert "--all currently supports only --mode backtest or --mode paper" in combined
+    assert "--acknowledge-live is only supported with --all --mode live" in combined
+
+
+def test_agent_run_all_live_rejects_skip_validation(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config_path = _seed_agent_assets(tmp_path)
+    _set_all_agents_live(config_path)
+
+    result = runner.invoke(
+        app,
+        [
+            "agent",
+            "run",
+            "--all",
+            "--config",
+            str(config_path),
+            "--mode",
+            "live",
+            "--acknowledge-live",
+            "multi_agent_lab",
+            "--skip-validation",
+        ],
+    )
+
+    assert result.exit_code == 1
+    combined = f"{result.stdout}\n{result.stderr}"
+    assert "--skip-validation is not supported for live agent batches" in combined
+
+
+def test_agent_run_all_live_requires_every_agent_configured_live(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = _seed_agent_assets(tmp_path)
+    payload = _set_all_agents_live(config_path)
+    payload["agents"][1]["mode"] = "paper"
+    config_path.write_text(
+        yaml.safe_dump(payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "agent",
+            "run",
+            "--all",
+            "--config",
+            str(config_path),
+            "--mode",
+            "live",
+            "--acknowledge-live",
+            "multi_agent_lab",
+        ],
+    )
+
+    assert result.exit_code == 1
+    combined = f"{result.stdout}\n{result.stderr}"
+    assert "All agents must be configured with mode=live" in combined
+    assert "paper_momentum(paper)" in combined
 
 
 def test_agent_run_sweep_rejects_non_backtest_modes(tmp_path: Path, monkeypatch):
@@ -570,6 +690,283 @@ def test_agent_run_all_paper_preserves_child_failures_and_logs(
     assert failed_entry["status"] == "failed"
     assert failed_entry["warnings"] == ["child warning"]
     assert failed_entry["run_id"].startswith("agent/paper/")
+    assert Path(failed_entry["stderr_log"]).read_text("utf-8")
+    successful_names = {
+        item["agent_name"] for item in payload["results"] if item["status"] == "success"
+    }
+    assert successful_names == {"breakout_gpt", "paper_momentum", "rsi_reversion"}
+
+
+def test_agent_run_all_live_writes_batch_artifacts_and_sorts_by_total_pnl(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = _seed_agent_assets(tmp_path)
+    _set_all_agents_live(config_path)
+
+    def _fake_run_project_agent(
+        *,
+        project_config_path: str,
+        agent_name: str,
+        mode: str,
+        skip_validation: bool,
+        project_config_override: dict | None = None,
+        run_timestamp: str | None = None,
+    ):
+        assert mode == "live"
+        assert skip_validation is False
+        assert run_timestamp is not None
+        assert Path(project_config_path).resolve() == config_path.resolve()
+        assert project_config_override is None
+        run_dir = (
+            Path("runs") / "agent" / "live" / f"{run_timestamp}_{agent_name.lower()}"
+        )
+        run_dir.mkdir(parents=True, exist_ok=True)
+        pnl_by_agent = {
+            "rsi_reversion": 80.0,
+            "paper_momentum": 120.0,
+            "breakout_gpt": 240.0,
+            "hybrid_swing_agent": 170.0,
+        }
+        backend_by_agent = {
+            "rsi_reversion": "simulated",
+            "paper_momentum": "alpaca",
+            "breakout_gpt": "simulated",
+            "hybrid_swing_agent": "simulated",
+        }
+        metrics_path = run_dir / "metrics.json"
+        metrics_path.write_text(
+            json.dumps(
+                {
+                    "status": "available",
+                    "total_pnl": pnl_by_agent[agent_name],
+                    "portfolio_value": 100000.0 + pnl_by_agent[agent_name],
+                    "execution_count": int(pnl_by_agent[agent_name] / 10.0),
+                    "decision_count": int(pnl_by_agent[agent_name] / 5.0),
+                    "risk_status": "ok",
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        summary = {
+            "run_id": f"agent/live/{run_dir.name}",
+            "run_type": "agent",
+            "mode": "live",
+            "name": agent_name,
+            "status": "success",
+            "timestamps": {"started_at": "2026-01-01T00:00:00+00:00"},
+            "symbols": ["AAPL"],
+            "warnings": [],
+            "artifacts": {"metrics": str(metrics_path)},
+            "execution_backend": backend_by_agent[agent_name],
+            "broker_provider": (
+                "alpaca" if backend_by_agent[agent_name] == "alpaca" else None
+            ),
+            "run_dir": str(run_dir),
+        }
+        (run_dir / "summary.json").write_text(
+            json.dumps(summary, indent=2),
+            encoding="utf-8",
+        )
+        return summary, []
+
+    with patch(
+        "quanttradeai.agents.batch.run_project_agent",
+        side_effect=_fake_run_project_agent,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--all",
+                "--config",
+                str(config_path),
+                "--mode",
+                "live",
+                "--acknowledge-live",
+                "multi_agent_lab",
+                "--max-concurrency",
+                "2",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    batch_dir = Path(payload["run_dir"])
+
+    assert payload["status"] == "success"
+    assert payload["mode"] == "live"
+    assert batch_dir.name.endswith("_live")
+    assert (batch_dir / "batch_manifest.json").is_file()
+    assert (batch_dir / "results.json").is_file()
+    assert (batch_dir / "scoreboard.json").is_file()
+    assert (batch_dir / "scoreboard.txt").is_file()
+
+    results_payload = json.loads((batch_dir / "results.json").read_text("utf-8"))
+    assert results_payload["mode"] == "live"
+    assert results_payload["scoreboard_sort_by"] == "total_pnl"
+    assert [item["agent_name"] for item in results_payload["results"]] == [
+        "breakout_gpt",
+        "hybrid_swing_agent",
+        "paper_momentum",
+        "rsi_reversion",
+    ]
+    assert all(
+        item["run_id"].startswith("agent/live/") for item in results_payload["results"]
+    )
+    assert all(
+        Path(item["run_dir"]).parts[:3] == ("runs", "agent", "live")
+        for item in results_payload["results"]
+    )
+    paper_momentum = next(
+        item
+        for item in results_payload["results"]
+        if item["agent_name"] == "paper_momentum"
+    )
+    assert paper_momentum["execution_backend"] == "alpaca"
+    assert paper_momentum["broker_provider"] == "alpaca"
+
+    manifest = json.loads((batch_dir / "batch_manifest.json").read_text("utf-8"))
+    manifest_paper_momentum = next(
+        item for item in manifest["agents"] if item["agent_name"] == "paper_momentum"
+    )
+    assert manifest_paper_momentum["execution_backend"] == "alpaca"
+    assert manifest_paper_momentum["broker_provider"] == "alpaca"
+
+    scoreboard_payload = json.loads((batch_dir / "scoreboard.json").read_text("utf-8"))
+    assert scoreboard_payload["sort_by"] == "total_pnl"
+    assert [record["name"] for record in scoreboard_payload["records"]] == [
+        "breakout_gpt",
+        "hybrid_swing_agent",
+        "paper_momentum",
+        "rsi_reversion",
+    ]
+    scoreboard_text = (batch_dir / "scoreboard.txt").read_text("utf-8")
+    assert "TOTAL_PNL" in scoreboard_text
+    assert "RISK" in scoreboard_text
+
+
+def test_agent_run_all_live_preserves_child_failures_and_logs(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = _seed_agent_assets(tmp_path)
+    _set_all_agents_live(config_path)
+
+    def _fake_run_project_agent(
+        *,
+        project_config_path: str,
+        agent_name: str,
+        mode: str,
+        skip_validation: bool,
+        project_config_override: dict | None = None,
+        run_timestamp: str | None = None,
+    ):
+        assert mode == "live"
+        assert run_timestamp is not None
+        assert Path(project_config_path).resolve() == config_path.resolve()
+        assert project_config_override is None
+        run_dir = (
+            Path("runs") / "agent" / "live" / f"{run_timestamp}_{agent_name.lower()}"
+        )
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        if agent_name == "hybrid_swing_agent":
+            child_summary = {
+                "run_id": f"agent/live/{run_dir.name}",
+                "run_type": "agent",
+                "mode": "live",
+                "name": agent_name,
+                "status": "failed",
+                "timestamps": {"started_at": "2026-01-01T00:00:00+00:00"},
+                "symbols": ["AAPL"],
+                "warnings": ["child warning"],
+                "artifacts": {},
+                "run_dir": str(run_dir),
+                "error": "live child failed",
+            }
+            (run_dir / "summary.json").write_text(
+                json.dumps(child_summary, indent=2),
+                encoding="utf-8",
+            )
+            raise RuntimeError("simulated live failure")
+
+        pnl_by_agent = {
+            "rsi_reversion": 80.0,
+            "paper_momentum": 120.0,
+            "breakout_gpt": 240.0,
+        }
+        metrics_path = run_dir / "metrics.json"
+        metrics_path.write_text(
+            json.dumps(
+                {
+                    "total_pnl": pnl_by_agent[agent_name],
+                    "portfolio_value": 100000.0 + pnl_by_agent[agent_name],
+                    "execution_count": int(pnl_by_agent[agent_name] / 10.0),
+                    "decision_count": int(pnl_by_agent[agent_name] / 5.0),
+                    "risk_status": "ok",
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        summary = {
+            "run_id": f"agent/live/{run_dir.name}",
+            "run_type": "agent",
+            "mode": "live",
+            "name": agent_name,
+            "status": "success",
+            "timestamps": {"started_at": "2026-01-01T00:00:00+00:00"},
+            "symbols": ["AAPL"],
+            "warnings": [],
+            "artifacts": {"metrics": str(metrics_path)},
+            "execution_backend": "simulated",
+            "broker_provider": None,
+            "run_dir": str(run_dir),
+        }
+        (run_dir / "summary.json").write_text(
+            json.dumps(summary, indent=2),
+            encoding="utf-8",
+        )
+        return summary, []
+
+    with patch(
+        "quanttradeai.agents.batch.run_project_agent",
+        side_effect=_fake_run_project_agent,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--all",
+                "--config",
+                str(config_path),
+                "--mode",
+                "live",
+                "--acknowledge-live",
+                "multi_agent_lab",
+                "--max-concurrency",
+                "2",
+            ],
+        )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    assert payload["status"] == "failed"
+    assert payload["failure_count"] == 1
+    assert payload["success_count"] == 3
+
+    failed_entry = next(
+        item
+        for item in payload["results"]
+        if item["agent_name"] == "hybrid_swing_agent"
+    )
+    assert failed_entry["status"] == "failed"
+    assert failed_entry["warnings"] == ["child warning"]
+    assert failed_entry["run_id"].startswith("agent/live/")
     assert Path(failed_entry["stderr_log"]).read_text("utf-8")
     successful_names = {
         item["agent_name"] for item in payload["results"] if item["status"] == "success"
