@@ -134,14 +134,15 @@ poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest
 poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest --max-concurrency 4
 poetry run quanttradeai agent run --all -c config/project.yaml --mode paper
 poetry run quanttradeai agent run --all -c config/project.yaml --mode paper --max-concurrency 4
+poetry run quanttradeai agent run --all -c config/project.yaml --mode live --acknowledge-live <project_name>
 ```
 
 This workflow:
 
 - validates the project before enumeration
-- runs every configured agent through the existing backtest or paper path
-- preserves the normal child runs under `runs/agent/backtest/...` or `runs/agent/paper/...`
-- adds batch-level artifacts under `runs/agent/batches/<timestamp>_<project>_backtest/` or `runs/agent/batches/<timestamp>_<project>_paper/`
+- runs every configured agent through the existing backtest, paper, or live path
+- preserves the normal child runs under `runs/agent/backtest/...`, `runs/agent/paper/...`, or `runs/agent/live/...`
+- adds batch-level artifacts under `runs/agent/batches/<timestamp>_<project>_<mode>/`
 
 Batch artifacts include:
 
@@ -150,7 +151,7 @@ Batch artifacts include:
 - `scoreboard.json`
 - `scoreboard.txt`
 
-Backtest batches rank by `net_sharpe`. Paper batches rank by `total_pnl`. Live still runs one agent at a time.
+Backtest batches rank by `net_sharpe`. Paper and live batches rank by `total_pnl`. Live batches require every configured agent to already have `mode: live` and require `--acknowledge-live` to match `project.name`.
 
 ## Standalone Utility Commands
 

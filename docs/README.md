@@ -40,6 +40,7 @@ poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 poetry run quanttradeai agent run --all -c config/project.yaml --mode paper
+poetry run quanttradeai agent run --all -c config/project.yaml --mode live --acknowledge-live <project_name>
 
 # Lower-level utility commands that still exist
 poetry run quanttradeai fetch-data -c config/model_config.yaml

@@ -14,6 +14,9 @@ import yaml
 
 from quanttradeai.utils.config_validator import validate_project_config
 from quanttradeai.utils.project_config import (
+    compile_live_position_manager_runtime_config,
+    compile_live_risk_runtime_config,
+    compile_live_streaming_runtime_config,
     compile_paper_streaming_runtime_config,
     load_project_config,
 )
@@ -27,10 +30,11 @@ from quanttradeai.utils.sweeps import expand_agent_backtest_sweep, sweep_summary
 from .runner import run_project_agent
 
 
-SUPPORTED_BATCH_MODES = {"backtest", "paper"}
+SUPPORTED_BATCH_MODES = {"backtest", "paper", "live"}
 BATCH_SCOREBOARD_SORT_FIELDS = {
     "backtest": "net_sharpe",
     "paper": "total_pnl",
+    "live": "total_pnl",
 }
 
 
@@ -171,7 +175,7 @@ def _sort_result_entries(
     scoreboard_order: list[str],
     mode: str,
 ) -> list[dict[str, Any]]:
-    if mode != "paper":
+    if mode not in {"paper", "live"}:
         return entries
 
     order_index = {run_id: index for index, run_id in enumerate(scoreboard_order)}
@@ -256,9 +260,11 @@ def run_agent_batch(
     skip_validation: bool = False,
     max_concurrency: int = 1,
     sweep_name: str | None = None,
+    acknowledge_live_project_name: str | None = None,
 ) -> dict[str, Any]:
     """Run every configured agent or sweep variant through a supported batch path."""
 
+    mode = mode.strip().lower()
     if max_concurrency < 1:
         raise ValueError("--max-concurrency must be at least 1.")
     if mode not in SUPPORTED_BATCH_MODES:
@@ -266,6 +272,10 @@ def run_agent_batch(
         raise ValueError(
             f"Unsupported batch mode '{mode}'. Supported modes: {supported}."
         )
+    if acknowledge_live_project_name is not None and mode != "live":
+        raise ValueError("--acknowledge-live is only supported with --all --mode live.")
+    if mode == "live" and skip_validation:
+        raise ValueError("--skip-validation is not supported for live agent batches.")
     if sweep_name is not None and mode != "backtest":
         raise ValueError("--sweep currently supports only --mode backtest.")
 
@@ -275,6 +285,10 @@ def run_agent_batch(
     project_name = (loaded_project.raw.get("project") or {}).get("name") or Path(
         original_project_path
     ).stem
+    if mode == "live" and acknowledge_live_project_name != str(project_name):
+        raise ValueError(
+            f"Running all live agents requires --acknowledge-live {project_name}."
+        )
     batch_name = (
         f"{timestamp}_{_slugify(project_name)}_{_slugify(sweep_name)}_{mode}"
         if sweep_name
@@ -297,6 +311,25 @@ def run_agent_batch(
     if mode == "paper":
         # Fail fast for project-wide paper prerequisites before launching child runs.
         compile_paper_streaming_runtime_config(resolved_project)
+    elif mode == "live":
+        agents = [dict(agent) for agent in resolved_project.get("agents") or []]
+        if not agents:
+            raise ValueError("Project config defines no agents to run with --all.")
+        non_live_agents = [
+            f"{agent.get('name') or '<unnamed>'}({agent.get('mode') or '<blank>'})"
+            for agent in agents
+            if str(agent.get("mode") or "").strip().lower() != "live"
+        ]
+        if non_live_agents:
+            raise ValueError(
+                "All agents must be configured with mode=live before running "
+                "--all --mode live. Non-live agents: " + ", ".join(non_live_agents)
+            )
+
+        # Fail fast for project-wide live prerequisites before launching child runs.
+        compile_live_streaming_runtime_config(resolved_project)
+        compile_live_risk_runtime_config(resolved_project)
+        compile_live_position_manager_runtime_config(resolved_project)
 
     if sweep_name:
         sweep_payload, agent_specs = _build_sweep_specs(
@@ -403,6 +436,8 @@ def run_agent_batch(
             "error": item.get("error"),
             "parameters": item.get("parameters"),
             "paper_source": item["summary"].get("paper_source"),
+            "execution_backend": item["summary"].get("execution_backend"),
+            "broker_provider": item["summary"].get("broker_provider"),
             "run_timestamp": item["run_timestamp"],
             "run_id": item["summary"].get("run_id"),
             "run_dir": item["summary"].get("run_dir"),
@@ -492,6 +527,8 @@ def run_agent_batch(
                     "configured_mode",
                     "status",
                     "paper_source",
+                    "execution_backend",
+                    "broker_provider",
                     "run_timestamp",
                     "run_id",
                     "run_dir",

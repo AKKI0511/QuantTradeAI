@@ -367,7 +367,7 @@ Status on 2026-04-17:
 - `quanttradeai agent run --all -c config/project.yaml --mode backtest` is implemented for local multi-agent backtest batches, with bounded concurrency, preserved child runs, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
 - `quanttradeai agent run --all -c config/project.yaml --mode paper` is implemented for local multi-agent paper batches, reusing the existing replay-backed paper path, preserving child runs under `runs/agent/paper/...`, and writing batch-level manifests plus scoreboards under `runs/agent/batches/...`.
 - `quanttradeai agent run --sweep <name> -c config/project.yaml --mode backtest` is implemented for backtest-only parameter sweeps defined under `sweeps:` in `config/project.yaml`, with deterministic variant expansion, preserved child runs, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
-- Live multi-agent orchestration remains future Stage 2 work.
+- `quanttradeai agent run --all -c config/project.yaml --mode live --acknowledge-live <project_name>` is implemented for local multi-agent live batches, requiring an explicit project-name acknowledgement, live-mode agent configs, live runtime prerequisites, preserved child runs under `runs/agent/live/...`, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
 
 Deliverables:
 

@@ -47,6 +47,16 @@ poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
 ```
 
+### Multi-Agent Runs
+
+```bash
+poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest
+poetry run quanttradeai agent run --all -c config/project.yaml --mode paper
+poetry run quanttradeai agent run --all -c config/project.yaml --mode live --acknowledge-live <project_name>
+```
+
+Live batches require every configured agent to already have `mode: live` and require the acknowledgement value to match `project.name`.
+
 ### Agent Deployment
 
 ```bash
