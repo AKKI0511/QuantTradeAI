@@ -62,6 +62,9 @@ poetry run quanttradeai agent run --all -c config/project.yaml --mode live --ack
 # Backtest one sweep of agent parameter variants
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
+poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
+poetry run quanttradeai promote --run agent/backtest/<winner_run_id> -c config/project.yaml
+poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode paper
 
 # Generate deployment bundles for the paper agent
 # Generated bundles disable replay and expect real-time streaming settings
@@ -317,6 +320,7 @@ Quick decision rule:
 - Use `config/project.yaml` for `validate`, `research run`, `agent run`, and `agent run --sweep`
 - Use `data.streaming.replay` for deterministic local paper runs; keep provider/websocket fields in place for later deployment or live promotion
 - Use `quanttradeai runs list --scoreboard` to rank local runs, then `quanttradeai runs list --compare ...` to inspect shortlisted runs by metrics and config deltas
+- For sweeps, use the `promote_command` in batch `results.json` or `quanttradeai promote --run agent/backtest/<winner_run_id> -c config/project.yaml` to materialize the winner into the base agent before paper mode
 - Use the generated runtime YAML snapshots under each run directory to inspect what actually executed
 
 ## Time-Aware Splitting

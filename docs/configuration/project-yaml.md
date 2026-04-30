@@ -10,7 +10,7 @@ It drives:
 - `quanttradeai agent run` for project-defined agents in `backtest`, `paper`, and `live`
 - `quanttradeai agent run --all` for multi-agent batches in `backtest`, `paper`, and `live`
 - `quanttradeai agent run --sweep <name>` for backtest-only parameter sweeps
-- `quanttradeai promote` for research-model promotion plus agent backtest-to-paper and paper-to-live promotion
+- `quanttradeai promote` for research-model promotion, sweep winner materialization, and agent backtest-to-paper/paper-to-live promotion
 - `quanttradeai deploy` for docker-compose paper and live agent bundles
 
 For local project-defined agents, `agent run --mode paper` defaults to deterministic replay when `data.streaming.replay.enabled: true`.
@@ -102,9 +102,13 @@ Backtest batches rank by `net_sharpe`. Paper and live batches rank by `total_pnl
 ```bash
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
+poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
+poetry run quanttradeai promote --run agent/backtest/<winner_run_id> -c config/project.yaml
+poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode paper
 ```
 
 Sweeps expand one project-defined agent into many backtest variants without mutating the checked-in `config/project.yaml`.
+Promoting a winning sweep child applies that child's scalar parameters to the base agent, keeps the base agent name unchanged, and promotes the base agent to paper mode.
 
 Current support:
 
@@ -682,7 +686,9 @@ Rules:
 - each path must resolve to an existing scalar leaf
 - sweeps may not modify `name`, `kind`, or `mode`
 - variants expand as a Cartesian product in the order parameters are declared
-- sweep child runs are not promotable; copy the winning values into `config/project.yaml`, rerun the agent normally, and promote that non-sweep run
+- each sweep child run records a `promote_command` in batch `results.json`
+- promoting a successful sweep child materializes its parameter values into the base agent in `config/project.yaml` and sets the base agent to `mode: paper`
+- sweep child runs cannot promote directly to live; run the materialized paper agent first, then promote that paper run to live
 
 ### `risk`
 

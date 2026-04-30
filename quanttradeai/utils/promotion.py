@@ -18,6 +18,10 @@ from quanttradeai.utils.config_schemas import ProjectConfigSchema
 from quanttradeai.utils.project_config import extract_canonical_live_risk_config
 from quanttradeai.utils.project_paths import infer_project_root, resolve_project_path
 from quanttradeai.utils.run_records import RUNS_ROOT, discover_runs
+from quanttradeai.utils.sweeps import (
+    apply_agent_scalar_overrides,
+    resolve_agent_scalar_path,
+)
 
 
 def _normalize_run_id(value: str | Path) -> str:
@@ -51,6 +55,26 @@ def _load_yaml_mapping(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"Project config must contain a mapping at root: {path}")
     return payload
+
+
+def _write_yaml_atomic(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=path.parent,
+            delete=False,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+        ) as handle:
+            yaml.safe_dump(payload, handle, sort_keys=False)
+            temp_path = Path(handle.name)
+        temp_path.replace(path)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink()
 
 
 def _find_run_record(run_id: str | Path, *, runs_root: Path | str) -> dict[str, Any]:
@@ -93,21 +117,6 @@ def _validate_agent_promotable_run(
     }
     required_source_mode = source_mode_by_target[target_mode]
 
-    sweep_metadata = dict(summary.get("sweep") or {})
-    if required_source_mode == "backtest" and sweep_metadata.get("promotable") is False:
-        sweep_name = str(sweep_metadata.get("name") or "unnamed_sweep")
-        base_agent_name = str(
-            sweep_metadata.get("base_agent_name")
-            or summary.get("agent_name")
-            or record.get("name")
-            or ""
-        ).strip()
-        raise ValueError(
-            "Sweep-generated backtest runs cannot be promoted directly. "
-            f"Copy the winning parameters from sweep '{sweep_name}' into config/project.yaml, "
-            f"rerun agent '{base_agent_name}' normally, and then promote that non-sweep backtest run."
-        )
-
     if run_type != "agent" or mode != required_source_mode or status != "success":
         raise ValueError(
             f"Only successful agent {required_source_mode} runs can be promoted to {target_mode}."
@@ -120,6 +129,17 @@ def _validate_agent_promotable_run(
         raise ValueError("Promotable agent run is missing an agent name.")
 
     return agent_name, required_source_mode
+
+
+def _sweep_metadata(summary: dict[str, Any]) -> dict[str, Any]:
+    sweep = summary.get("sweep")
+    if not isinstance(sweep, dict):
+        return {}
+    return dict(sweep)
+
+
+def _source_run_id(record: dict[str, Any], summary: dict[str, Any]) -> str:
+    return str(record.get("run_id") or _normalize_run_id(summary.get("run_id") or ""))
 
 
 def _validate_research_promotable_run(
@@ -198,6 +218,111 @@ def _apply_paper_promotion(
         raise ValueError(f"Promoted project config is invalid: {exc}") from exc
 
     return proposed, changed
+
+
+def _validate_sweep_materializable_run(
+    record: dict[str, Any],
+    summary: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    run_type = str(summary.get("run_type") or record.get("run_type") or "")
+    mode = str(summary.get("mode") or record.get("mode") or "")
+    status = str(summary.get("status") or record.get("status") or "")
+    if run_type != "agent" or mode != "backtest" or status != "success":
+        raise ValueError(
+            "Only successful agent backtest sweep runs can be materialized into project.yaml."
+        )
+
+    sweep_metadata = _sweep_metadata(summary)
+    sweep_name = str(sweep_metadata.get("name") or "").strip()
+    base_agent_name = str(sweep_metadata.get("base_agent_name") or "").strip()
+    parameters = sweep_metadata.get("parameters")
+    if not sweep_name:
+        raise ValueError("Sweep-generated backtest run is missing sweep.name.")
+    if not base_agent_name:
+        raise ValueError(
+            "Sweep-generated backtest run is missing sweep.base_agent_name."
+        )
+    if not isinstance(parameters, dict) or not parameters:
+        raise ValueError("Sweep-generated backtest run is missing sweep.parameters.")
+
+    variant_agent_name = str(
+        summary.get("agent_name") or summary.get("name") or record.get("name") or ""
+    ).strip()
+    if not variant_agent_name:
+        raise ValueError(
+            "Sweep-generated backtest run is missing a variant agent name."
+        )
+
+    return (
+        base_agent_name,
+        variant_agent_name,
+        {
+            "name": sweep_name,
+            "base_agent_name": base_agent_name,
+            "variant_agent_name": variant_agent_name,
+            "parameters": dict(parameters),
+        },
+    )
+
+
+def _apply_sweep_paper_materialization(
+    project_config: dict[str, Any],
+    *,
+    sweep: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    proposed = copy.deepcopy(project_config)
+    agents = proposed.get("agents")
+    if not isinstance(agents, list):
+        raise ValueError("Project config must include an agents list.")
+
+    base_agent_name = str(sweep["base_agent_name"])
+    parameters = dict(sweep["parameters"])
+    target_index: int | None = None
+    target_agent: dict[str, Any] | None = None
+    for index, agent in enumerate(agents):
+        if isinstance(agent, dict) and agent.get("name") == base_agent_name:
+            target_index = index
+            target_agent = agent
+            break
+
+    if target_agent is None or target_index is None:
+        raise ValueError(f"Base agent '{base_agent_name}' not found in project config.")
+
+    changed_fields: list[str] = []
+    for path, value in parameters.items():
+        _parent, _leaf_key, existing_value = resolve_agent_scalar_path(
+            target_agent,
+            str(path),
+        )
+        if existing_value != value:
+            changed_fields.append(f"agents.{base_agent_name}.{path}")
+
+    updated_agent = apply_agent_scalar_overrides(target_agent, parameters)
+    updated_agent["name"] = base_agent_name
+    if updated_agent.get("mode") != "paper":
+        updated_agent["mode"] = "paper"
+        changed_fields.append(f"agents.{base_agent_name}.mode")
+    agents[target_index] = updated_agent
+
+    deployment = proposed.get("deployment")
+    if not isinstance(deployment, dict):
+        raise ValueError("Project config must include a deployment mapping.")
+    if deployment.get("mode") != "paper":
+        deployment["mode"] = "paper"
+        changed_fields.append("deployment.mode")
+
+    streaming = (proposed.get("data") or {}).get("streaming")
+    if not isinstance(streaming, dict) or streaming.get("enabled") is not True:
+        raise ValueError(
+            "data.streaming.enabled must be true before materializing a sweep winner to paper."
+        )
+
+    try:
+        ProjectConfigSchema(**proposed)
+    except ValidationError as exc:
+        raise ValueError(f"Materialized project config is invalid: {exc}") from exc
+
+    return proposed, list(dict.fromkeys(changed_fields))
 
 
 def _apply_live_promotion(
@@ -474,9 +599,7 @@ def _promote_research_run(
 
     return {
         "status": "success",
-        "source_run_id": str(
-            record.get("run_id") or _normalize_run_id(summary.get("run_id") or "")
-        ),
+        "source_run_id": _source_run_id(record, summary),
         "run_type": "research",
         "project_name": summary.get("project_name"),
         "config_path": config_path.as_posix(),
@@ -484,6 +607,49 @@ def _promote_research_run(
         "changed": bool(promoted_targets),
         "experiment_dir": experiment_dir.as_posix(),
         "promoted_targets": promoted_targets,
+    }
+
+
+def _promote_sweep_backtest_run(
+    *,
+    record: dict[str, Any],
+    summary: dict[str, Any],
+    config_path: Path,
+    dry_run: bool,
+) -> dict[str, Any]:
+    base_agent_name, _variant_agent_name, sweep = _validate_sweep_materializable_run(
+        record,
+        summary,
+    )
+    project_config = _load_yaml_mapping(config_path)
+    materialized_config, changed_fields = _apply_sweep_paper_materialization(
+        project_config,
+        sweep=sweep,
+    )
+
+    if changed_fields and not dry_run:
+        _write_yaml_atomic(config_path, materialized_config)
+
+    config_path_display = config_path.as_posix()
+    next_command = (
+        f"quanttradeai agent run --agent {base_agent_name} "
+        f"-c {config_path_display} --mode paper"
+    )
+    return {
+        "status": "success",
+        "source_run_id": _source_run_id(record, summary),
+        "run_type": "agent",
+        "agent_name": base_agent_name,
+        "variant_agent_name": sweep["variant_agent_name"],
+        "from_mode": "backtest",
+        "to_mode": "paper",
+        "materialized_from_sweep": True,
+        "sweep": sweep,
+        "changed": bool(changed_fields),
+        "changed_fields": changed_fields,
+        "config_path": config_path_display,
+        "dry_run": dry_run,
+        "next_command": next_command,
     }
 
 
@@ -496,6 +662,23 @@ def _promote_agent_run(
     dry_run: bool,
     acknowledge_live: str | None,
 ) -> dict[str, Any]:
+    sweep_metadata = _sweep_metadata(summary)
+    source_mode = str(summary.get("mode") or record.get("mode") or "")
+    run_type = str(summary.get("run_type") or record.get("run_type") or "")
+    if sweep_metadata and run_type == "agent" and source_mode == "backtest":
+        if target_mode == "live":
+            raise ValueError(
+                "Sweep-generated backtest runs must be materialized to paper first. "
+                "Run `quanttradeai promote --run <sweep_run> -c config/project.yaml`, "
+                "then run the promoted paper agent and promote that paper run to live."
+            )
+        return _promote_sweep_backtest_run(
+            record=record,
+            summary=summary,
+            config_path=config_path,
+            dry_run=dry_run,
+        )
+
     agent_name, source_mode = _validate_agent_promotable_run(
         record,
         summary,
@@ -517,10 +700,7 @@ def _promote_agent_run(
         )
 
     if changed and not dry_run:
-        config_path.write_text(
-            yaml.safe_dump(promoted_config, sort_keys=False),
-            encoding="utf-8",
-        )
+        _write_yaml_atomic(config_path, promoted_config)
 
     config_path_display = config_path.as_posix()
     next_command = (
@@ -529,9 +709,7 @@ def _promote_agent_run(
     )
     return {
         "status": "success",
-        "source_run_id": str(
-            record.get("run_id") or _normalize_run_id(summary.get("run_id") or "")
-        ),
+        "source_run_id": _source_run_id(record, summary),
         "run_type": "agent",
         "agent_name": agent_name,
         "from_mode": source_mode,

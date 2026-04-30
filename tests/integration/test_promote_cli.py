@@ -47,6 +47,22 @@ def _write_research_project_config(path: Path) -> dict:
     return payload
 
 
+def _write_rule_project_config(
+    path: Path,
+    *,
+    agent_mode: str = "backtest",
+    deployment_mode: str = "backtest",
+) -> dict:
+    payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["rule-agent"], sort_keys=False)
+    )
+    payload["agents"][0]["mode"] = agent_mode
+    payload["deployment"]["mode"] = deployment_mode
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    return payload
+
+
 def _write_run_summary(
     *,
     run_id: str = "agent/backtest/20260101_010000_breakout_gpt",
@@ -84,6 +100,34 @@ def _write_run_summary(
         encoding="utf-8",
     )
     return run_dir
+
+
+def _attach_sweep_summary(
+    *,
+    run_id: str,
+    base_agent_name: str = "rsi_reversion",
+    variant_agent_name: str = "rsi_reversion__rsi_threshold_grid__buy_below-25_0__sell_above-75_0",
+    parameters: dict | None = None,
+    extra_sweep: dict | None = None,
+) -> None:
+    _write_run_summary(
+        run_id=run_id,
+        agent_name=variant_agent_name,
+        artifacts={"metrics": "runs/agent/backtest/metrics.json"},
+    )
+    summary_path = Path("runs").joinpath(*run_id.split("/")) / "summary.json"
+    summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary_payload["sweep"] = {
+        "name": "rsi_threshold_grid",
+        "base_agent_name": base_agent_name,
+        "parameters": parameters
+        or {
+            "rule.buy_below": 25.0,
+            "rule.sell_above": 75.0,
+        },
+        **dict(extra_sweep or {}),
+    }
+    summary_path.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
 
 
 def _load_project_config(path: Path) -> dict:
@@ -292,44 +336,159 @@ def test_promote_failure_cases_do_not_mutate_project_yaml(
         assert config_path.read_text(encoding="utf-8") == original
 
 
-def test_promote_rejects_sweep_generated_backtest_run(
+def test_promote_sweep_generated_backtest_materializes_base_agent_to_paper(
     tmp_path: Path,
     monkeypatch,
 ):
     monkeypatch.chdir(tmp_path)
     config_path = Path("config/project.yaml")
-    _write_project_config(config_path)
-    original = config_path.read_text(encoding="utf-8")
+    _write_rule_project_config(config_path)
 
     run_id = "agent/backtest/20260101_010000_rsi_sweep_variant"
-    _write_run_summary(
+    _attach_sweep_summary(
         run_id=run_id,
-        agent_name="rsi_reversion__rsi_threshold_grid__buy_below-25_0__sell_above-70_0",
-        artifacts={"metrics": "runs/agent/backtest/metrics.json"},
+        extra_sweep={"promotable": False},
     )
-    summary_path = Path("runs").joinpath(*run_id.split("/")) / "summary.json"
-    summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
-    summary_payload["sweep"] = {
-        "name": "rsi_threshold_grid",
-        "base_agent_name": "rsi_reversion",
-        "parameters": {
-            "rule.buy_below": 25.0,
-            "rule.sell_above": 70.0,
-        },
-        "promotable": False,
-    }
-    summary_path.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
 
     result = runner.invoke(
         app,
         ["promote", "--run", run_id, "--config", str(config_path)],
     )
 
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    updated = _load_project_config(config_path)
+    base_agent = updated["agents"][0]
+
+    assert payload["status"] == "success"
+    assert payload["source_run_id"] == run_id
+    assert payload["agent_name"] == "rsi_reversion"
+    assert payload["variant_agent_name"].startswith("rsi_reversion__")
+    assert payload["from_mode"] == "backtest"
+    assert payload["to_mode"] == "paper"
+    assert payload["materialized_from_sweep"] is True
+    assert payload["sweep"] == {
+        "name": "rsi_threshold_grid",
+        "base_agent_name": "rsi_reversion",
+        "variant_agent_name": "rsi_reversion__rsi_threshold_grid__buy_below-25_0__sell_above-75_0",
+        "parameters": {
+            "rule.buy_below": 25.0,
+            "rule.sell_above": 75.0,
+        },
+    }
+    assert set(payload["changed_fields"]) == {
+        "agents.rsi_reversion.rule.buy_below",
+        "agents.rsi_reversion.rule.sell_above",
+        "agents.rsi_reversion.mode",
+        "deployment.mode",
+    }
+    assert payload["next_command"] == (
+        "quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode paper"
+    )
+    assert base_agent["name"] == "rsi_reversion"
+    assert base_agent["mode"] == "paper"
+    assert base_agent["rule"]["buy_below"] == 25.0
+    assert base_agent["rule"]["sell_above"] == 75.0
+    assert updated["deployment"]["mode"] == "paper"
+
+
+def test_promote_sweep_generated_backtest_dry_run_is_non_mutating(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = Path("config/project.yaml")
+    _write_rule_project_config(config_path)
+    original = config_path.read_text(encoding="utf-8")
+    run_id = "agent/backtest/20260101_010000_rsi_sweep_variant"
+    _attach_sweep_summary(run_id=run_id)
+
+    result = runner.invoke(
+        app,
+        ["promote", "--run", run_id, "--config", str(config_path), "--dry-run"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["materialized_from_sweep"] is True
+    assert payload["changed"] is True
+    assert payload["dry_run"] is True
+    assert config_path.read_text(encoding="utf-8") == original
+
+
+def test_promote_sweep_generated_backtest_rejects_direct_live_promotion(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = Path("config/project.yaml")
+    _write_rule_project_config(config_path)
+    original = config_path.read_text(encoding="utf-8")
+    run_id = "agent/backtest/20260101_010000_rsi_sweep_variant"
+    _attach_sweep_summary(run_id=run_id)
+
+    result = runner.invoke(
+        app,
+        [
+            "promote",
+            "--run",
+            run_id,
+            "--config",
+            str(config_path),
+            "--to",
+            "live",
+        ],
+    )
+
     assert result.exit_code == 1
     combined_output = f"{result.stdout}\n{result.stderr}"
-    assert "cannot be promoted directly" in combined_output
-    assert "copy the winning parameters" in combined_output.lower()
+    assert "materialized to paper first" in combined_output
     assert config_path.read_text(encoding="utf-8") == original
+
+
+def test_promote_sweep_materialization_failures_do_not_mutate_project_yaml(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = Path("config/project.yaml")
+    _write_rule_project_config(config_path)
+    original = config_path.read_text(encoding="utf-8")
+
+    cases = [
+        (
+            "agent/backtest/20260101_010000_missing_base",
+            {"base_agent_name": "ghost_agent"},
+            "Base agent 'ghost_agent' not found",
+        ),
+        (
+            "agent/backtest/20260101_020000_invalid_path",
+            {"parameters": {"rule.missing": 25.0}},
+            "must resolve to an existing scalar leaf",
+        ),
+    ]
+    for run_id, sweep_overrides, expected_error in cases:
+        _attach_sweep_summary(
+            run_id=run_id,
+            base_agent_name=sweep_overrides.get("base_agent_name", "rsi_reversion"),
+            parameters=sweep_overrides.get(
+                "parameters",
+                {
+                    "rule.buy_below": 25.0,
+                    "rule.sell_above": 75.0,
+                },
+            ),
+        )
+
+        result = runner.invoke(
+            app,
+            ["promote", "--run", run_id, "--config", str(config_path)],
+        )
+
+        assert result.exit_code == 1
+        combined_output = f"{result.stdout}\n{result.stderr}"
+        assert expected_error in combined_output
+        assert config_path.read_text(encoding="utf-8") == original
 
 
 def test_promote_research_run_copies_models_to_promoted_paths(

@@ -367,6 +367,7 @@ Status on 2026-04-17:
 - `quanttradeai agent run --all -c config/project.yaml --mode backtest` is implemented for local multi-agent backtest batches, with bounded concurrency, preserved child runs, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
 - `quanttradeai agent run --all -c config/project.yaml --mode paper` is implemented for local multi-agent paper batches, reusing the existing replay-backed paper path, preserving child runs under `runs/agent/paper/...`, and writing batch-level manifests plus scoreboards under `runs/agent/batches/...`.
 - `quanttradeai agent run --sweep <name> -c config/project.yaml --mode backtest` is implemented for backtest-only parameter sweeps defined under `sweeps:` in `config/project.yaml`, with deterministic variant expansion, preserved child runs, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
+- `quanttradeai promote --run agent/backtest/<sweep_child_run_id> -c config/project.yaml` is implemented for materializing a winning sweep child into the base agent's canonical config and promoting that base agent to paper mode.
 - `quanttradeai agent run --all -c config/project.yaml --mode live --acknowledge-live <project_name>` is implemented for local multi-agent live batches, requiring an explicit project-name acknowledgement, live-mode agent configs, live runtime prerequisites, preserved child runs under `runs/agent/live/...`, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
 
 Deliverables:
@@ -466,7 +467,7 @@ quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode 
 ```
 
 Current implementation note:
-`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. Local paper mode defaults to replay-backed execution through `data.streaming.replay`, including `agent run --all --mode paper`. Agents can also opt into `execution.backend: alpaca` for happy-path real-time paper/live broker submission with broker-synced account and position snapshots. Backtest-only parameter sweeps are supported through the optional `sweeps:` section in `config/project.yaml`. `deploy --target local` and `deploy --target docker-compose` support both simulated and Alpaca-backed paper/live agent bundles.
+`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. Local paper mode defaults to replay-backed execution through `data.streaming.replay`, including `agent run --all --mode paper`. Agents can also opt into `execution.backend: alpaca` for happy-path real-time paper/live broker submission with broker-synced account and position snapshots. Backtest-only parameter sweeps are supported through the optional `sweeps:` section in `config/project.yaml`, and winning sweep children can be promoted into the base agent config for paper mode. `deploy --target local` and `deploy --target docker-compose` support both simulated and Alpaca-backed paper/live agent bundles.
 
 ### Hybrid track
 
