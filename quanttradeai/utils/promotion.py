@@ -728,6 +728,7 @@ def promote_run(
     target_mode: str = "paper",
     dry_run: bool = False,
     acknowledge_live: str | None = None,
+    apply_sweep: bool = False,
     runs_root: Path | str = RUNS_ROOT,
 ) -> dict[str, Any]:
     """Promote a successful research or agent run through the canonical workflow."""
@@ -741,6 +742,9 @@ def promote_run(
     summary = _load_json(summary_path)
     run_type = str(summary.get("run_type") or record.get("run_type") or "")
     project_config_path = Path(config_path)
+
+    if apply_sweep and not _sweep_metadata(summary):
+        raise ValueError("--apply-sweep requires a sweep-generated agent backtest run.")
 
     if run_type == "research":
         _validate_research_promotable_run(

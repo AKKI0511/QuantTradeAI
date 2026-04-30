@@ -467,7 +467,7 @@ quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode 
 ```
 
 Current implementation note:
-`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. Local paper mode defaults to replay-backed execution through `data.streaming.replay`, including `agent run --all --mode paper`. Agents can also opt into `execution.backend: alpaca` for happy-path real-time paper/live broker submission with broker-synced account and position snapshots. Backtest-only parameter sweeps are supported through the optional `sweeps:` section in `config/project.yaml`, and winning sweep children can be promoted into the base agent config for paper mode. `deploy --target local` and `deploy --target docker-compose` support both simulated and Alpaca-backed paper/live agent bundles.
+`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. Local paper mode defaults to replay-backed execution through `data.streaming.replay`, including `agent run --all --mode paper`; live batches are available through `agent run --all --mode live --acknowledge-live <project_name>`. Agents can also opt into `execution.backend: alpaca` for happy-path real-time paper/live broker submission with broker-synced account and position snapshots. Backtest-only parameter sweeps are supported through the optional `sweeps:` section in `config/project.yaml`, and winning sweep children can be promoted into the base agent config for paper mode. `deploy --target local` and `deploy --target docker-compose` support both simulated and Alpaca-backed paper/live agent bundles.
 
 ### Hybrid track
 

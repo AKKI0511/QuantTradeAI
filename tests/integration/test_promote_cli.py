@@ -416,6 +416,30 @@ def test_promote_sweep_generated_backtest_dry_run_is_non_mutating(
     assert config_path.read_text(encoding="utf-8") == original
 
 
+def test_promote_apply_sweep_alias_materializes_base_agent_to_paper(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = Path("config/project.yaml")
+    _write_rule_project_config(config_path)
+    run_id = "agent/backtest/20260101_010000_rsi_sweep_variant"
+    _attach_sweep_summary(run_id=run_id)
+
+    result = runner.invoke(
+        app,
+        ["promote", "--run", run_id, "--config", str(config_path), "--apply-sweep"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    updated = _load_project_config(config_path)
+    assert payload["materialized_from_sweep"] is True
+    assert payload["agent_name"] == "rsi_reversion"
+    assert updated["agents"][0]["mode"] == "paper"
+    assert updated["deployment"]["mode"] == "paper"
+
+
 def test_promote_sweep_generated_backtest_rejects_direct_live_promotion(
     tmp_path: Path,
     monkeypatch,
