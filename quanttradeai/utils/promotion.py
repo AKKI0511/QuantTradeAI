@@ -18,6 +18,7 @@ from quanttradeai.utils.config_schemas import ProjectConfigSchema
 from quanttradeai.utils.project_config import extract_canonical_live_risk_config
 from quanttradeai.utils.project_paths import infer_project_root, resolve_project_path
 from quanttradeai.utils.run_records import RUNS_ROOT, discover_runs
+from quanttradeai.utils.sweeps import apply_agent_scalar_overrides
 
 
 def _normalize_run_id(value: str | Path) -> str:
@@ -122,6 +123,44 @@ def _validate_agent_promotable_run(
     return agent_name, required_source_mode
 
 
+def _validate_sweep_apply_run(
+    record: dict[str, Any],
+    summary: dict[str, Any],
+    *,
+    target_mode: str,
+    acknowledge_live: str | None,
+) -> tuple[str, str, dict[str, Any]]:
+    if target_mode != "paper":
+        raise ValueError("--apply-sweep does not support --to live.")
+    if acknowledge_live is not None:
+        raise ValueError(
+            "--acknowledge-live is only supported when promoting agent paper runs to live."
+        )
+
+    run_type = str(summary.get("run_type") or record.get("run_type") or "")
+    mode = str(summary.get("mode") or record.get("mode") or "")
+    status = str(summary.get("status") or record.get("status") or "")
+    if run_type != "agent" or mode != "backtest" or status != "success":
+        raise ValueError(
+            "Only successful agent backtest sweep child runs can be applied to project config."
+        )
+
+    sweep_metadata = summary.get("sweep")
+    if not isinstance(sweep_metadata, dict):
+        raise ValueError("--apply-sweep requires a sweep-generated agent backtest run.")
+
+    base_agent_name = str(sweep_metadata.get("base_agent_name") or "").strip()
+    if not base_agent_name:
+        raise ValueError("Sweep child run summary is missing sweep.base_agent_name.")
+
+    parameters = sweep_metadata.get("parameters")
+    if not isinstance(parameters, dict) or not parameters:
+        raise ValueError("Sweep child run summary is missing sweep.parameters.")
+
+    sweep_name = str(sweep_metadata.get("name") or "").strip() or "unnamed_sweep"
+    return sweep_name, base_agent_name, dict(parameters)
+
+
 def _validate_research_promotable_run(
     record: dict[str, Any],
     summary: dict[str, Any],
@@ -153,6 +192,56 @@ def _validate_research_promotable_run(
         raise ValueError("Promotable research run is missing a project name.")
 
     return project_name, "research"
+
+
+def _apply_sweep_parameters(
+    project_config: dict[str, Any],
+    *,
+    base_agent_name: str,
+    parameters: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    proposed = copy.deepcopy(project_config)
+    agents = proposed.get("agents")
+    if not isinstance(agents, list):
+        raise ValueError("Project config must include an agents list.")
+
+    target_index: int | None = None
+    target_agent: dict[str, Any] | None = None
+    for index, agent in enumerate(agents):
+        if isinstance(agent, dict) and agent.get("name") == base_agent_name:
+            target_index = index
+            target_agent = agent
+            break
+
+    if target_agent is None or target_index is None:
+        raise ValueError(f"Base agent '{base_agent_name}' not found in project config.")
+
+    updated_agent = apply_agent_scalar_overrides(target_agent, parameters)
+    updated_agent["name"] = base_agent_name
+    changed = updated_agent != target_agent
+    agents[target_index] = updated_agent
+    return proposed, changed
+
+
+def _validate_proposed_project_config(
+    *,
+    proposed_config: dict[str, Any],
+    config_path: Path,
+) -> None:
+    try:
+        ProjectConfigSchema(**proposed_config)
+    except ValidationError as exc:
+        raise ValueError(f"Proposed project config is invalid: {exc}") from exc
+
+    from quanttradeai.utils.config_validator import validate_project_config
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        validate_project_config(
+            config_path=config_path,
+            output_dir=temp_dir,
+            project_config_override=proposed_config,
+            timestamp_subdir=False,
+        )
 
 
 def _apply_paper_promotion(
@@ -198,6 +287,59 @@ def _apply_paper_promotion(
         raise ValueError(f"Promoted project config is invalid: {exc}") from exc
 
     return proposed, changed
+
+
+def _apply_sweep_child_run(
+    *,
+    record: dict[str, Any],
+    summary: dict[str, Any],
+    config_path: Path,
+    target_mode: str,
+    dry_run: bool,
+    acknowledge_live: str | None,
+) -> dict[str, Any]:
+    sweep_name, base_agent_name, parameters = _validate_sweep_apply_run(
+        record,
+        summary,
+        target_mode=target_mode,
+        acknowledge_live=acknowledge_live,
+    )
+    project_config = _load_yaml_mapping(config_path)
+    proposed_config, changed = _apply_sweep_parameters(
+        project_config,
+        base_agent_name=base_agent_name,
+        parameters=parameters,
+    )
+    _validate_proposed_project_config(
+        proposed_config=proposed_config,
+        config_path=config_path,
+    )
+
+    if changed and not dry_run:
+        config_path.write_text(
+            yaml.safe_dump(proposed_config, sort_keys=False),
+            encoding="utf-8",
+        )
+
+    config_path_display = config_path.as_posix()
+    next_command = (
+        f"quanttradeai agent run --agent {base_agent_name} "
+        f"-c {config_path_display} --mode backtest"
+    )
+    return {
+        "status": "success",
+        "operation": "apply_sweep",
+        "source_run_id": str(
+            record.get("run_id") or _normalize_run_id(summary.get("run_id") or "")
+        ),
+        "sweep_name": sweep_name,
+        "base_agent_name": base_agent_name,
+        "applied_parameters": parameters,
+        "changed": changed,
+        "dry_run": dry_run,
+        "config_path": config_path_display,
+        "next_command": next_command,
+    }
 
 
 def _apply_live_promotion(
@@ -550,6 +692,7 @@ def promote_run(
     target_mode: str = "paper",
     dry_run: bool = False,
     acknowledge_live: str | None = None,
+    apply_sweep: bool = False,
     runs_root: Path | str = RUNS_ROOT,
 ) -> dict[str, Any]:
     """Promote a successful research or agent run through the canonical workflow."""
@@ -563,6 +706,16 @@ def promote_run(
     summary = _load_json(summary_path)
     run_type = str(summary.get("run_type") or record.get("run_type") or "")
     project_config_path = Path(config_path)
+
+    if apply_sweep:
+        return _apply_sweep_child_run(
+            record=record,
+            summary=summary,
+            config_path=project_config_path,
+            target_mode=target_mode,
+            dry_run=dry_run,
+            acknowledge_live=acknowledge_live,
+        )
 
     if run_type == "research":
         _validate_research_promotable_run(
