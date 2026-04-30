@@ -1136,6 +1136,11 @@ def cmd_promote(
         "--acknowledge-live",
         help="Required for --to live. Must exactly match the agent name being promoted.",
     ),
+    apply_sweep: bool = typer.Option(
+        False,
+        "--apply-sweep",
+        help="Apply a successful sweep child run's parameters back to the base agent.",
+    ),
 ):
     """Promote a successful research or agent run in the canonical workflow."""
 
@@ -1148,6 +1153,7 @@ def cmd_promote(
             target_mode=target,
             dry_run=dry_run,
             acknowledge_live=acknowledge_live,
+            apply_sweep=apply_sweep,
         )
     except Exception as exc:
         typer.echo(f"Promotion failed: {exc}", err=True)

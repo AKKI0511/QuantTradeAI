@@ -288,7 +288,15 @@ sweeps:
 
 This writes batch artifacts under `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/` plus one normal child run per expanded variant under `runs/agent/backtest/...`.
 
-Sweep child runs are intentionally not promotable. Copy the winning parameters into `config/project.yaml`, rerun that agent normally, and then promote the non-sweep run.
+After reviewing `scoreboard.txt` or `quanttradeai runs list --scoreboard --sort-by net_sharpe`, apply the selected sweep child back to the base agent:
+
+```bash
+poetry run quanttradeai promote --run agent/backtest/<winning_sweep_child> -c config/project.yaml --apply-sweep
+poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode backtest
+poetry run quanttradeai promote --run agent/backtest/<normal_run_id> -c config/project.yaml
+```
+
+Sweep child runs are intentionally not promoted directly; `--apply-sweep` updates the base agent parameters first, then the normal backtest-to-paper promotion flow continues.
 
 ### Deploy A Paper Or Live Agent
 

@@ -62,6 +62,9 @@ poetry run quanttradeai agent run --all -c config/project.yaml --mode live --ack
 # Backtest one sweep of agent parameter variants
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
+# Apply the selected sweep child to the base agent, then rerun normally
+poetry run quanttradeai promote --run agent/backtest/<winning_sweep_child> -c config/project.yaml --apply-sweep
+poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode backtest
 
 # Generate deployment bundles for the paper agent
 # Generated bundles disable replay and expect real-time streaming settings
