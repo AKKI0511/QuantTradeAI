@@ -253,6 +253,20 @@ def _build_sweep_specs(
     return sweep_payload, specs
 
 
+def _promote_sweep_result_command(
+    *,
+    run_id: Any,
+    project_config_path: Path,
+) -> str | None:
+    if not run_id:
+        return None
+    return (
+        "quanttradeai promote "
+        f"--run {run_id} "
+        f"-c {project_config_path.as_posix()}"
+    )
+
+
 def run_agent_batch(
     *,
     project_config_path: str = "config/project.yaml",
@@ -456,6 +470,12 @@ def run_agent_batch(
         }
         for item in results
     ]
+    if batch_type == "sweep":
+        for entry in result_entries:
+            entry["promote_command"] = _promote_sweep_result_command(
+                run_id=entry.get("run_id"),
+                project_config_path=original_project_path,
+            )
     result_entries = _sort_result_entries(
         result_entries,
         scoreboard_order=scoreboard_order,
@@ -533,6 +553,7 @@ def run_agent_batch(
                     "run_id",
                     "run_dir",
                     "variant_project_config",
+                    "promote_command",
                     "stdout_log",
                     "stderr_log",
                 )

@@ -1089,6 +1089,14 @@ def test_agent_run_sweep_writes_variant_artifacts_and_preserves_source_config(
     ]
     assert len(results_payload["expanded_variants"]) == 4
     assert all(item["variant_project_config"] for item in results_payload["results"])
+    assert all(
+        item["promote_command"]
+        == (
+            f"quanttradeai promote --run {item['run_id']} "
+            f"-c {config_path.resolve().as_posix()}"
+        )
+        for item in results_payload["results"]
+    )
 
     scoreboard_payload = json.loads((batch_dir / "scoreboard.json").read_text("utf-8"))
     ordered_names = [record["name"] for record in scoreboard_payload["records"]]
@@ -1111,7 +1119,7 @@ def test_agent_run_sweep_writes_variant_artifacts_and_preserves_source_config(
             "rule.buy_below": 25.0,
             "rule.sell_above": 70.0,
         },
-        "promotable": False,
+        "materializable": True,
     }
 
 

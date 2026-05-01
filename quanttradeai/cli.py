@@ -1139,7 +1139,7 @@ def cmd_promote(
     apply_sweep: bool = typer.Option(
         False,
         "--apply-sweep",
-        help="Apply a successful sweep child run's parameters back to the base agent.",
+        help="Compatibility alias. Sweep backtest runs materialize automatically.",
     ),
 ):
     """Promote a successful research or agent run in the canonical workflow."""

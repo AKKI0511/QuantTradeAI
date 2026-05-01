@@ -223,5 +223,5 @@ def sweep_summary_payload(
         "name": sweep_name,
         "base_agent_name": base_agent_name,
         "parameters": dict(parameters),
-        "promotable": False,
+        "materializable": True,
     }
