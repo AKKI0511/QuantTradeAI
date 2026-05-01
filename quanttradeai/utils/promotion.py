@@ -175,6 +175,31 @@ def _validate_research_promotable_run(
     return project_name, "research"
 
 
+def _validate_proposed_project_config(
+    *,
+    proposed_config: dict[str, Any],
+    config_path: Path,
+    description: str,
+) -> None:
+    try:
+        ProjectConfigSchema(**proposed_config)
+    except ValidationError as exc:
+        raise ValueError(f"{description} is invalid: {exc}") from exc
+
+    from quanttradeai.utils.config_validator import validate_project_config
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            validate_project_config(
+                config_path=config_path,
+                output_dir=temp_dir,
+                project_config_override=proposed_config,
+                timestamp_subdir=False,
+            )
+        except ValueError as exc:
+            raise ValueError(f"{description} failed validation: {exc}") from exc
+
+
 def _apply_paper_promotion(
     project_config: dict[str, Any],
     *,
@@ -625,6 +650,11 @@ def _promote_sweep_backtest_run(
     materialized_config, changed_fields = _apply_sweep_paper_materialization(
         project_config,
         sweep=sweep,
+    )
+    _validate_proposed_project_config(
+        proposed_config=materialized_config,
+        config_path=config_path,
+        description="Materialized project config",
     )
 
     if changed_fields and not dry_run:

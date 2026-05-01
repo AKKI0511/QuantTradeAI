@@ -515,6 +515,40 @@ def test_promote_sweep_materialization_failures_do_not_mutate_project_yaml(
         assert config_path.read_text(encoding="utf-8") == original
 
 
+def test_promote_sweep_materialization_full_validation_failure_does_not_write(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = Path("config/project.yaml")
+    _write_project_config(config_path)
+    prompt_path = Path("prompts/breakout.md")
+    prompt_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.write_text(
+        "Trade only when the breakout signal is clear.", encoding="utf-8"
+    )
+    original = config_path.read_text(encoding="utf-8")
+
+    run_id = "agent/backtest/20260101_030000_llm_sweep_variant"
+    _attach_sweep_summary(
+        run_id=run_id,
+        base_agent_name="breakout_gpt",
+        variant_agent_name="breakout_gpt__prompt_sweep__missing_prompt",
+        parameters={"llm.prompt_file": "prompts/missing.md"},
+    )
+
+    result = runner.invoke(
+        app,
+        ["promote", "--run", run_id, "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 1
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert "Materialized project config failed validation" in combined_output
+    assert "prompt file does not exist" in combined_output
+    assert config_path.read_text(encoding="utf-8") == original
+
+
 def test_promote_research_run_copies_models_to_promoted_paths(
     tmp_path: Path,
     monkeypatch,
