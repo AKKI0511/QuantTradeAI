@@ -70,6 +70,7 @@ poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml -
 # Generated bundles disable replay and expect real-time streaming settings
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target local
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target render -o deployments/breakout-render
 
 # Lower-level utility commands that still exist
 poetry run quanttradeai fetch-data
@@ -122,6 +123,15 @@ Canonical local deployment bundle artifacts:
 Canonical Docker Compose deployment bundle artifacts:
 - `reports/deployments/<agent>/<timestamp>/docker-compose.yml`
 - `reports/deployments/<agent>/<timestamp>/Dockerfile`
+- `reports/deployments/<agent>/<timestamp>/.env.example`
+- `reports/deployments/<agent>/<timestamp>/README.md`
+- `reports/deployments/<agent>/<timestamp>/resolved_project_config.yaml`
+- `reports/deployments/<agent>/<timestamp>/deployment_manifest.json`
+
+Canonical Render deployment bundle artifacts:
+- `reports/deployments/<agent>/<timestamp>/render.yaml`
+- `reports/deployments/<agent>/<timestamp>/Dockerfile`
+- `reports/deployments/<agent>/<timestamp>/assets/`
 - `reports/deployments/<agent>/<timestamp>/.env.example`
 - `reports/deployments/<agent>/<timestamp>/README.md`
 - `reports/deployments/<agent>/<timestamp>/resolved_project_config.yaml`

@@ -36,7 +36,7 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 | Run a hybrid agent | `init --template hybrid` -> `research run` -> `promote --run research/<run_id>` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Model signals plus LLM reasoning in one project, with research outputs promoted into a stable path before the agent is promoted through environments |
 | Run every project agent together | `agent run --all --mode backtest|paper|live --max-concurrency 4` | A local multi-agent batch that preserves normal child runs plus batch-level manifests and scoreboards |
 | Sweep one agent across parameter variants | `agent run --sweep rsi_threshold_grid --mode backtest --max-concurrency 4` | A local sweep batch that expands one agent into many backtest variants, preserves normal child runs, and ranks them with the same scoreboard flow |
-| Generate a QuantTradeAI deployment bundle | `deploy --agent <name> --target local|docker-compose --mode paper|live` | A local runner or Docker Compose bundle for a promoted paper or live agent with env placeholders and resolved config |
+| Generate a QuantTradeAI deployment bundle | `deploy --agent <name> --target local|docker-compose|render --mode paper|live` | A local runner, Docker Compose bundle, or Render worker bundle for a promoted paper or live agent |
 
 ## How It Fits Together
 
@@ -83,6 +83,7 @@ QuantTradeAI is one framework with two connected tracks:
 | `agent run --sweep <name> --mode backtest` from `project.yaml` | Supported |
 | `deploy --target local` for paper or live agents | Supported |
 | `deploy --target docker-compose` for paper or live agents | Supported |
+| `deploy --target render` for paper or live agents | Supported |
 ## Install In 2 Minutes
 
 QuantTradeAI requires Python `3.11+`.
@@ -299,18 +300,22 @@ Sweep child promotion materializes the winning scalar parameters into the base a
 
 ### Deploy A Paper Or Live Agent
 
-Use this if you want a generated local runner or Docker Compose bundle for a project-defined paper or live agent.
+Use this if you want a generated local runner, Docker Compose bundle, or Render Background Worker bundle for a project-defined paper or live agent.
 
 ```bash
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target local
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target local --mode live
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose --mode live
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target render
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target render --mode live
 ```
 
 This writes a deployment bundle under `reports/deployments/<agent>/<timestamp>/` with:
 
-- `run.py` for local bundles, or `docker-compose.yml` and `Dockerfile` for Docker Compose bundles
+- `run.py` for local bundles, `docker-compose.yml` for Docker Compose bundles, or `render.yaml` for Render bundles
+- `Dockerfile` for Docker Compose and Render bundles
+- `assets/` for Render bundles that need prompt, notes, or model files copied into the worker image
 - `.env.example`
 - `README.md`
 - `resolved_project_config.yaml`
@@ -319,6 +324,8 @@ This writes a deployment bundle under `reports/deployments/<agent>/<timestamp>/`
 Paper bundles always disable replay in the emitted resolved project config and expect real-time streaming credentials. Local replay-backed paper runs stay unchanged in your source `config/project.yaml`.
 
 Local bundles run `python <bundle>/run.py` from your project environment. The runner uses the bundle's resolved config, loads an optional `.env` file next to `run.py`, and writes runtime artifacts back under the project `runs/` and `reports/` directories.
+
+Render bundles emit a Blueprint worker service with `sync: false` secret placeholders and a persistent `/app/runs` disk. If you plan to deploy from Git, generate the bundle into a tracked path with `-o deployments/<agent>-render` or force-add the generated bundle because `reports/` is gitignored by default.
 
 If the target agent uses `execution.backend: alpaca`, the generated bundle README and manifest call out that the service will submit real Alpaca paper/live market orders instead of simulated local fills.
 

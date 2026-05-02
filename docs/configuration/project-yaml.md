@@ -11,7 +11,7 @@ It drives:
 - `quanttradeai agent run --all` for multi-agent batches in `backtest`, `paper`, and `live`
 - `quanttradeai agent run --sweep <name>` for backtest-only parameter sweeps
 - `quanttradeai promote` for research-model promotion, sweep winner materialization, and agent backtest-to-paper/paper-to-live promotion
-- `quanttradeai deploy` for docker-compose paper and live agent bundles
+- `quanttradeai deploy` for local, docker-compose, and Render paper/live agent bundles
 
 For local project-defined agents, `agent run --mode paper` defaults to deterministic replay when `data.streaming.replay.enabled: true`.
 
@@ -141,13 +141,15 @@ poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yam
 
 Research promotion updates model directories only and does not change `deployment.mode`.
 Paper promotion updates the matching agent's `mode` and `deployment.mode` to `paper`.
-Live promotion updates only the matching agent's `mode` to `live`. Set `deployment.mode: live` or pass `deploy --mode live` when generating a live docker-compose bundle.
+Live promotion updates only the matching agent's `mode` to `live`. Set `deployment.mode: live` or pass `deploy --mode live` when generating a live deployment bundle.
 
-Docker Compose deployment bundles can be generated with:
+Docker Compose and Render deployment bundles can be generated with:
 
 ```bash
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose --mode live
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target render -o deployments/breakout-render
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target render --mode live -o deployments/breakout-render-live
 ```
 
 ## Canonical Shape
@@ -637,7 +639,9 @@ Deployment metadata for the canonical project workflow.
 
 Current happy-path support:
 
+- `target: "local"`
 - `target: "docker-compose"`
+- `target: "render"`
 - `mode: "paper"` or `mode: "live"`
 
 Example:
@@ -652,13 +656,14 @@ Behavior:
 
 - `quanttradeai promote --run research/<run_id> -c config/project.yaml` copies trained model artifacts into stable `models/...` destinations and writes `promotion_manifest.json`
 - `quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml` updates `deployment.mode` to `paper` when promoting a successful agent backtest run
-- `quanttradeai deploy --agent <name> -c config/project.yaml --target docker-compose` generates a bundle under `reports/deployments/<agent>/<timestamp>/`
+- `quanttradeai deploy --agent <name> -c config/project.yaml --target local|docker-compose|render` generates a bundle under `reports/deployments/<agent>/<timestamp>/` unless `-o` is provided
 - generated paper bundles force `data.streaming.replay.enabled: false` in `resolved_project_config.yaml`
 - live bundles keep replay settings unchanged in `resolved_project_config.yaml`
-- deployment generation fails if the project does not include the real-time `provider`, `websocket_url`, and `channels` required for docker-compose deployment
-- live docker-compose deployment also requires the target agent to already be configured with `mode: live`, plus valid top-level `risk` and `position_manager` sections
-- generated bundles include `docker-compose.yml`, `Dockerfile`, `.env.example`, `README.md`, `resolved_project_config.yaml`, and `deployment_manifest.json`
-- generated compose services run `quanttradeai agent run --agent <name> -c config/project.yaml --mode <bundle-mode>`
+- deployment generation fails if the project does not include the real-time `provider`, `websocket_url`, and `channels` required for deployment
+- live deployment also requires the target agent to already be configured with `mode: live`, plus valid top-level `risk` and `position_manager` sections
+- local bundles include `run.py`; Docker Compose bundles include `docker-compose.yml`; Render bundles include `render.yaml` plus `assets/` for selected-agent prompt, notes, and model files
+- generated bundle services run `quanttradeai agent run --agent <name> -c config/project.yaml --mode <bundle-mode>`
+- Render output must stay inside the project root because the generated Blueprint uses repo-relative Docker paths
 
 ### `sweeps`
 

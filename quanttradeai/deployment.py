@@ -6,6 +6,7 @@ import copy
 import json
 import os
 import re
+import shutil
 import tempfile
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from typing import Any
 
 import yaml
 
+from quanttradeai.agents.context import context_block_enabled
 from quanttradeai.brokers import resolve_execution_backend
 from quanttradeai.streaming.env_vars import provider_env_var_prefix
 from quanttradeai.utils.config_validator import validate_project_config
@@ -32,7 +34,7 @@ DEFAULT_LLM_API_KEY_ENV_VARS = {
     "anthropic": "ANTHROPIC_API_KEY",
     "huggingface": "HUGGINGFACE_API_KEY",
 }
-SUPPORTED_DEPLOY_TARGETS = {"docker-compose", "local"}
+SUPPORTED_DEPLOY_TARGETS = {"docker-compose", "local", "render"}
 SUPPORTED_DEPLOY_MODES = {"paper", "live"}
 SUPPORTED_AGENT_KINDS = {"rule", "model", "llm", "hybrid"}
 
@@ -91,6 +93,156 @@ def _ensure_project_relative_dir(
         raise ValueError(
             f"{field_name} must resolve under {expected_top_level_dir}/ for docker-compose deployment."
         )
+
+
+def _ensure_render_output_dir(
+    *,
+    project_root: Path,
+    output_path: Path,
+) -> None:
+    try:
+        output_path.resolve().relative_to(project_root.resolve())
+    except ValueError as exc:
+        raise ValueError(
+            "Render deployment output must resolve inside the project root so render.yaml can use repo-relative Docker paths."
+        ) from exc
+
+
+def _resolve_render_asset_path(
+    *,
+    project_root: Path,
+    config_path: Path,
+    raw_path: Any,
+    expected_top_level_dir: str,
+    field_name: str,
+) -> tuple[Path, Path]:
+    candidate = str(raw_path or "").strip()
+    if not candidate:
+        raise ValueError(f"{field_name} must not be blank for Render deployment.")
+
+    if Path(candidate).is_absolute():
+        raise ValueError(
+            f"{field_name} must be project-relative and under {expected_top_level_dir}/ for Render deployment."
+        )
+
+    resolved_path = resolve_project_path(config_path, candidate)
+    try:
+        relative = resolved_path.resolve().relative_to(project_root.resolve())
+    except ValueError as exc:
+        raise ValueError(
+            f"{field_name} must resolve inside the project root under {expected_top_level_dir}/ for Render deployment."
+        ) from exc
+
+    if not relative.parts or relative.parts[0] != expected_top_level_dir:
+        raise ValueError(
+            f"{field_name} must resolve under {expected_top_level_dir}/ for Render deployment."
+        )
+
+    return resolved_path, relative
+
+
+def _copy_render_asset(
+    *,
+    source_path: Path,
+    relative_path: Path,
+    assets_root: Path,
+    asset_type: str,
+    seen: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    normalized_relative = relative_path.as_posix()
+    if normalized_relative in seen:
+        return seen[normalized_relative]
+
+    destination = assets_root / relative_path
+    if source_path.is_dir():
+        shutil.copytree(source_path, destination, dirs_exist_ok=True)
+    elif source_path.is_file():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, destination)
+    else:
+        raise FileNotFoundError(f"Render deployment asset not found: {source_path}")
+
+    record = {
+        "type": asset_type,
+        "source": normalized_relative,
+        "bundle_path": (Path("assets") / relative_path).as_posix(),
+        "image_path": f"/app/{normalized_relative}",
+    }
+    seen[normalized_relative] = record
+    return record
+
+
+def _collect_render_assets(
+    *,
+    prepared: PreparedDeployment,
+    agent_name: str,
+    assets_root: Path,
+) -> list[dict[str, Any]]:
+    asset_manifest: list[dict[str, Any]] = []
+    seen: dict[str, dict[str, Any]] = {}
+
+    def _add_asset(raw_path: Any, expected_dir: str, field_name: str, asset_type: str):
+        source_path, relative_path = _resolve_render_asset_path(
+            project_root=prepared.project_root,
+            config_path=prepared.config_path,
+            raw_path=raw_path,
+            expected_top_level_dir=expected_dir,
+            field_name=field_name,
+        )
+        asset_manifest.append(
+            _copy_render_asset(
+                source_path=source_path,
+                relative_path=relative_path,
+                assets_root=assets_root,
+                asset_type=asset_type,
+                seen=seen,
+            )
+        )
+
+    llm_cfg = dict(prepared.agent_config.get("llm") or {})
+    if llm_cfg.get("prompt_file"):
+        _add_asset(
+            llm_cfg.get("prompt_file"),
+            "prompts",
+            "agents.<name>.llm.prompt_file",
+            "prompt",
+        )
+
+    model_cfg = dict(prepared.agent_config.get("model") or {})
+    if model_cfg.get("path"):
+        _add_asset(
+            model_cfg.get("path"),
+            "models",
+            "agents.<name>.model.path",
+            "model",
+        )
+
+    for source in prepared.agent_config.get("model_signal_sources") or []:
+        if not isinstance(source, dict):
+            raise ValueError(
+                "Render deployment requires object model_signal_sources entries with name and path."
+            )
+        _add_asset(
+            source.get("path"),
+            "models",
+            f"agents.<name>.model_signal_sources.{source.get('name')}.path",
+            "model_signal_source",
+        )
+
+    context_cfg = dict(prepared.agent_config.get("context") or {})
+    notes_cfg = context_cfg.get("notes")
+    if context_block_enabled(notes_cfg):
+        notes_file = f"notes/{agent_name}.md"
+        if isinstance(notes_cfg, dict):
+            notes_file = str(notes_cfg.get("file") or notes_file)
+        _add_asset(
+            notes_file,
+            "notes",
+            "agents.<name>.context.notes.file",
+            "notes",
+        )
+
+    return list(seen.values())
 
 
 def _required_env_vars(
@@ -163,6 +315,45 @@ RUN pip install --upgrade pip && pip install .
 """
 
 
+def _render_render_dockerfile(
+    *,
+    bundle_relative_path: str,
+    agent_name: str,
+    mode: str,
+) -> str:
+    bundle_prefix = bundle_relative_path.rstrip("/") or "."
+    command = [
+        "quanttradeai",
+        "agent",
+        "run",
+        "--agent",
+        agent_name,
+        "-c",
+        "config/project.yaml",
+        "--mode",
+        mode,
+    ]
+    return f"""FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \\
+    PYTHONUNBUFFERED=1 \\
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN mkdir -p /app/config /app/data /app/models /app/prompts /app/reports /app/runs /app/notes
+
+COPY ["pyproject.toml", "README.md", "/app/"]
+COPY ["quanttradeai", "/app/quanttradeai"]
+COPY ["{bundle_prefix}/resolved_project_config.yaml", "/app/config/project.yaml"]
+COPY ["{bundle_prefix}/assets/", "/app/"]
+
+RUN pip install --upgrade pip && pip install .
+
+CMD {json.dumps(command)}
+"""
+
+
 def _render_bundle_readme(
     *,
     agent_name: str,
@@ -230,6 +421,82 @@ def _render_bundle_readme(
                 "## Environment",
                 "",
                 "Set the variables listed in `.env.example` before starting the service.",
+            ]
+        )
+
+    return "\n".join(lines) + "\n"
+
+
+def _render_render_bundle_readme(
+    *,
+    agent_name: str,
+    agent_kind: str,
+    mode: str,
+    execution_backend: str,
+    broker_provider: str | None,
+    service_name: str,
+    next_command: str,
+    env_vars: list[tuple[str, str]],
+    safety_requirements: list[str],
+    asset_manifest: list[dict[str, Any]],
+) -> str:
+    lines = [
+        "# QuantTradeAI Render Deployment Bundle",
+        "",
+        f"This bundle deploys the `{agent_name}` `{agent_kind}` agent in `{mode}` mode as a Render Background Worker.",
+        "",
+        "## Mode",
+        "",
+        f"- `mode: {mode}`",
+        f"- `execution.backend: {execution_backend}`",
+        f"- `service: {service_name}`",
+        "",
+        "## Files",
+        "",
+        "- `render.yaml`: Render Blueprint for a Docker-backed worker service.",
+        "- `Dockerfile`: builds QuantTradeAI from this repository and embeds the selected agent bundle.",
+        "- `assets/`: selected-agent prompt, notes, and model assets copied into the image.",
+        "- `.env.example`: provider environment variables inferred from the project config.",
+        "- `resolved_project_config.yaml`: exact project config snapshot used for deployment generation.",
+        "- `deployment_manifest.json`: machine-readable summary of the generated bundle.",
+        "",
+        "## Deploy",
+        "",
+        next_command,
+        "",
+        "The worker writes run artifacts under `/app/runs`, which is mounted as a Render persistent disk in `render.yaml`.",
+    ]
+
+    if execution_backend == "alpaca" and broker_provider:
+        lines.extend(
+            [
+                "",
+                "This bundle uses broker-backed execution.",
+                f"In `{mode}` mode it will submit real `{broker_provider}` market orders instead of simulated local fills.",
+            ]
+        )
+
+    if safety_requirements:
+        lines.extend(["", "## Safety Requirements", ""])
+        lines.extend([f"- {requirement}" for requirement in safety_requirements])
+
+    if env_vars:
+        lines.extend(
+            [
+                "",
+                "## Environment",
+                "",
+                "Render will prompt for these secret values because `render.yaml` emits them with `sync: false`:",
+            ]
+        )
+        lines.extend([f"- `{name}`: {description}" for name, description in env_vars])
+
+    if asset_manifest:
+        lines.extend(["", "## Bundled Assets", ""])
+        lines.extend(
+            [
+                f"- `{item['source']}` -> `{item['image_path']}`"
+                for item in asset_manifest
             ]
         )
 
@@ -635,6 +902,11 @@ def _prepare_deployment(
         raise ValueError(
             f"Unsupported deployment target '{resolved_target}'. Supported targets: {supported}."
         )
+    if resolved_target == "render":
+        _ensure_render_output_dir(
+            project_root=project_root,
+            output_path=output_path,
+        )
 
     resolved_mode = str(mode or deployment_cfg.get("mode") or "paper")
     resolved_mode = resolved_mode.strip().lower()
@@ -939,6 +1211,162 @@ def _write_local_bundle(
     )
 
 
+def _write_render_bundle(
+    prepared: PreparedDeployment,
+    *,
+    agent_name: str,
+) -> dict[str, Any]:
+    output_path = prepared.output_path
+    created_output = not output_path.exists()
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    assets_root = output_path / "assets"
+    try:
+        if assets_root.exists():
+            shutil.rmtree(assets_root)
+        assets_root.mkdir(parents=True, exist_ok=True)
+        asset_manifest = _collect_render_assets(
+            prepared=prepared,
+            agent_name=agent_name,
+            assets_root=assets_root,
+        )
+    except Exception:
+        if created_output and output_path.exists():
+            shutil.rmtree(output_path)
+        raise
+
+    resolved_project_path = output_path / "resolved_project_config.yaml"
+    resolved_project_path.write_text(
+        yaml.safe_dump(prepared.project_config, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    bundle_relative_path = _relative_posix(output_path, prepared.project_root)
+    dockerfile_path = output_path / "Dockerfile"
+    dockerfile_path.write_text(
+        _render_render_dockerfile(
+            bundle_relative_path=bundle_relative_path,
+            agent_name=agent_name,
+            mode=prepared.mode,
+        ),
+        encoding="utf-8",
+    )
+
+    docker_command = (
+        f"quanttradeai agent run --agent {agent_name} "
+        f"-c config/project.yaml --mode {prepared.mode}"
+    )
+    dockerfile_rel = _relative_posix(dockerfile_path, prepared.project_root)
+    render_payload = {
+        "services": [
+            {
+                "type": "worker",
+                "name": prepared.service_name,
+                "runtime": "docker",
+                "plan": "starter",
+                "region": "oregon",
+                "dockerContext": ".",
+                "dockerfilePath": dockerfile_rel,
+                "dockerCommand": docker_command,
+                "numInstances": 1,
+                "maxShutdownDelaySeconds": 60,
+                "envVars": [
+                    {"key": name, "sync": False} for name, _ in prepared.env_vars
+                ],
+                "disk": {
+                    "name": "runs",
+                    "mountPath": "/app/runs",
+                    "sizeGB": 1,
+                },
+            }
+        ]
+    }
+
+    render_yaml_path = output_path / "render.yaml"
+    render_yaml_path.write_text(
+        yaml.safe_dump(render_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    env_example_path = output_path / ".env.example"
+    env_example_path.write_text(
+        _render_env_example(prepared.env_vars, target_label="render"),
+        encoding="utf-8",
+    )
+
+    render_yaml_rel = _relative_posix(render_yaml_path, prepared.project_root)
+    next_command = (
+        f"Commit {render_yaml_rel} and create or sync a Render Blueprint from it."
+    )
+    bundle_readme_path = output_path / "README.md"
+    bundle_readme_path.write_text(
+        _render_render_bundle_readme(
+            agent_name=agent_name,
+            agent_kind=str(prepared.agent_config.get("kind") or ""),
+            mode=prepared.mode,
+            execution_backend=prepared.execution_backend,
+            broker_provider=prepared.broker_provider,
+            service_name=prepared.service_name,
+            next_command=next_command,
+            env_vars=prepared.env_vars,
+            safety_requirements=prepared.safety_requirements,
+            asset_manifest=asset_manifest,
+        ),
+        encoding="utf-8",
+    )
+
+    artifacts = {
+        "render_blueprint": render_yaml_path.as_posix(),
+        "dockerfile": dockerfile_path.as_posix(),
+        "env_example": env_example_path.as_posix(),
+        "readme": bundle_readme_path.as_posix(),
+        "resolved_project_config": resolved_project_path.as_posix(),
+        "assets": assets_root.as_posix(),
+    }
+    command = [
+        "quanttradeai",
+        "agent",
+        "run",
+        "--agent",
+        agent_name,
+        "-c",
+        "config/project.yaml",
+        "--mode",
+        prepared.mode,
+    ]
+    manifest = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "agent_name": agent_name,
+        "agent_kind": prepared.agent_config.get("kind"),
+        "target": prepared.target,
+        "platform": "render",
+        "service_type": "worker",
+        "mode": prepared.mode,
+        "execution_backend": prepared.execution_backend,
+        "broker_provider": prepared.broker_provider,
+        "service_name": prepared.service_name,
+        "project_root": prepared.project_root.as_posix(),
+        "source_config": prepared.config_path.as_posix(),
+        "command": command,
+        "docker_context": ".",
+        "dockerfile_path": dockerfile_rel,
+        "docker_command": docker_command,
+        "render_blueprint": render_yaml_path.as_posix(),
+        "asset_manifest": asset_manifest,
+        "safety_requirements": prepared.safety_requirements,
+        "environment_variables": [name for name, _ in prepared.env_vars],
+        "artifacts": artifacts,
+        "warnings": prepared.warnings,
+        "next_command": next_command,
+    }
+    return _write_manifest_and_result(
+        prepared=prepared,
+        manifest=manifest,
+        artifacts=artifacts,
+        next_command=next_command,
+    )
+
+
 def _write_manifest_and_result(
     *,
     prepared: PreparedDeployment,
@@ -991,6 +1419,8 @@ def deploy_project_agent(
         return _write_docker_compose_bundle(prepared, agent_name=agent_name)
     if prepared.target == "local":
         return _write_local_bundle(prepared, agent_name=agent_name)
+    if prepared.target == "render":
+        return _write_render_bundle(prepared, agent_name=agent_name)
 
     supported = ", ".join(sorted(SUPPORTED_DEPLOY_TARGETS))
     raise ValueError(

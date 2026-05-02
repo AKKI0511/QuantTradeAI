@@ -78,9 +78,12 @@ poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml 
 ```bash
 poetry run quanttradeai deploy --agent paper_momentum -c config/project.yaml --target local
 poetry run quanttradeai deploy --agent paper_momentum -c config/project.yaml --target docker-compose
+poetry run quanttradeai deploy --agent paper_momentum -c config/project.yaml --target render -o deployments/paper_momentum-render
 ```
 
-Generated local and Docker Compose deployment bundles are still real-time paper deployments. QuantTradeAI disables replay in the emitted `resolved_project_config.yaml` and requires the normal provider and websocket settings to be present in the source project config.
+Generated local, Docker Compose, and Render deployment bundles are still real-time paper deployments. QuantTradeAI disables replay in the emitted `resolved_project_config.yaml` and requires the normal provider and websocket settings to be present in the source project config.
+
+Render bundles include `render.yaml`, a Dockerfile, and selected-agent assets under `assets/`. Use a tracked output path such as `deployments/<agent>-render` when you want to commit the Blueprint for Render.
 
 Paper and live runs write standardized artifacts under `runs/agent/paper/...` and `runs/agent/live/...`, including:
 
@@ -123,7 +126,7 @@ poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.y
 
 The hybrid template already points `model_signal_sources` at `models/promoted/aapl_daily_classifier`, so the happy path does not require editing timestamped experiment directories by hand.
 
-Deployment bundles for project-defined paper agents are written under `reports/deployments/<agent>/<timestamp>/`. Use `--target local` for a Python runner bundle or `--target docker-compose` for a Compose bundle.
+Deployment bundles for project-defined paper agents are written under `reports/deployments/<agent>/<timestamp>/` by default. Use `--target local` for a Python runner bundle, `--target docker-compose` for a Compose bundle, or `--target render` for a Render Background Worker Blueprint.
 
 ## Workflow 4: Multi-Agent Batches
 
