@@ -85,6 +85,20 @@ def _load_local_deploy_bundle(output_dir: Path) -> tuple[str, str, str, dict, di
     return runner_text, env_example, readme, manifest, resolved_project
 
 
+def _load_render_deploy_bundle(
+    output_dir: Path,
+) -> tuple[dict, str, str, str, dict, dict]:
+    render_yaml = _read_yaml(output_dir / "render.yaml")
+    dockerfile_text = (output_dir / "Dockerfile").read_text(encoding="utf-8")
+    env_example = (output_dir / ".env.example").read_text(encoding="utf-8")
+    readme = (output_dir / "README.md").read_text(encoding="utf-8")
+    manifest = json.loads(
+        (output_dir / "deployment_manifest.json").read_text(encoding="utf-8")
+    )
+    resolved_project = _read_yaml(output_dir / "resolved_project_config.yaml")
+    return render_yaml, dockerfile_text, env_example, readme, manifest, resolved_project
+
+
 def test_rule_agent_deploy_writes_paper_bundle_and_preserves_project_config(
     tmp_path: Path, monkeypatch
 ):
@@ -205,6 +219,104 @@ def test_local_deploy_can_use_project_config_default_target(
     assert not (output_dir / "docker-compose.yml").exists()
 
 
+def test_rule_agent_render_deploy_writes_paper_worker_bundle_and_preserves_project_config(
+    tmp_path: Path, monkeypatch
+):
+    config_path = _init_template(tmp_path, monkeypatch, "rule-agent")
+    original_config = config_path.read_text(encoding="utf-8")
+
+    result = _deploy_agent(
+        agent_name="rsi_reversion",
+        config_path=config_path,
+        output_dir="deployments/rule-render",
+        extra_args=["--target", "render"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    output_dir = Path(payload["output_dir"])
+    render_yaml, dockerfile_text, env_example, readme, manifest, resolved_project = (
+        _load_render_deploy_bundle(output_dir)
+    )
+
+    service = render_yaml["services"][0]
+    assert payload["status"] == "success"
+    assert payload["target"] == "render"
+    assert payload["mode"] == "paper"
+    assert config_path.read_text(encoding="utf-8") == original_config
+    assert (output_dir / "render.yaml").is_file()
+    assert (output_dir / "Dockerfile").is_file()
+    assert (output_dir / ".env.example").is_file()
+    assert (output_dir / "README.md").is_file()
+    assert (output_dir / "resolved_project_config.yaml").is_file()
+    assert (output_dir / "deployment_manifest.json").is_file()
+    assert (output_dir / "assets").is_dir()
+    assert service["type"] == "worker"
+    assert service["runtime"] == "docker"
+    assert service["dockerContext"] == "."
+    assert service["dockerfilePath"] == "deployments/rule-render/Dockerfile"
+    assert service["dockerCommand"] == (
+        "quanttradeai agent run --agent rsi_reversion "
+        "-c config/project.yaml --mode paper"
+    )
+    assert service["numInstances"] == 1
+    assert service["maxShutdownDelaySeconds"] == 60
+    assert service["disk"] == {"name": "runs", "mountPath": "/app/runs", "sizeGB": 1}
+    assert {"key": "ALPACA_API_KEY", "sync": False} in service["envVars"]
+    assert {"key": "ALPACA_API_SECRET", "sync": False} in service["envVars"]
+    assert "deployments/rule-render/resolved_project_config.yaml" in dockerfile_text
+    assert "deployments/rule-render/assets/" not in dockerfile_text
+    assert "ALPACA_API_KEY" in env_example
+    assert "Render Background Worker" in readme
+    assert manifest["target"] == "render"
+    assert manifest["platform"] == "render"
+    assert manifest["service_type"] == "worker"
+    assert manifest["docker_context"] == "."
+    assert manifest["dockerfile_path"] == "deployments/rule-render/Dockerfile"
+    assert manifest["render_blueprint"].endswith("/render.yaml")
+    assert manifest["asset_manifest"] == []
+    assert resolved_project["data"]["streaming"]["replay"]["enabled"] is False
+    assert any(
+        "replay was disabled in the generated bundle" in warning.lower()
+        for warning in payload["warnings"]
+    )
+
+
+def test_render_deploy_can_use_project_config_default_target(
+    tmp_path: Path, monkeypatch
+):
+    config_path = _init_template(tmp_path, monkeypatch, "rule-agent")
+    payload = _read_yaml(config_path)
+    payload["deployment"]["target"] = "render"
+    _write_yaml(config_path, payload)
+    original_config = config_path.read_text(encoding="utf-8")
+
+    result = _deploy_agent(
+        agent_name="rsi_reversion",
+        config_path=config_path,
+        output_dir="deployments/rule-render-default",
+    )
+
+    assert result.exit_code == 0, result.stdout
+    deploy_payload = json.loads(result.stdout)
+    output_dir = Path(deploy_payload["output_dir"])
+    (
+        render_yaml,
+        _dockerfile_text,
+        _env_example,
+        _readme,
+        manifest,
+        _resolved_project,
+    ) = _load_render_deploy_bundle(output_dir)
+
+    assert config_path.read_text(encoding="utf-8") == original_config
+    assert deploy_payload["target"] == "render"
+    assert manifest["target"] == "render"
+    assert render_yaml["services"][0]["type"] == "worker"
+    assert (output_dir / "render.yaml").is_file()
+    assert not (output_dir / "docker-compose.yml").exists()
+
+
 def test_rule_agent_live_deploy_uses_config_default_mode_and_preserves_project_config(
     tmp_path: Path, monkeypatch
 ):
@@ -239,6 +351,45 @@ def test_rule_agent_live_deploy_uses_config_default_mode_and_preserves_project_c
     assert "ALPACA_API_KEY" in env_example
     assert "ALPACA_API_SECRET" in env_example
     assert "in `live` mode" in readme
+    assert "Safety Requirements" in readme
+    assert "`mode: live`" in readme
+    assert not any(
+        "replay was disabled in the generated bundle" in warning.lower()
+        for warning in payload["warnings"]
+    )
+    assert resolved_project["data"]["streaming"]["replay"]["enabled"] is True
+
+
+def test_rule_agent_render_live_deploy_uses_worker_safety_gates(
+    tmp_path: Path, monkeypatch
+):
+    config_path = _init_template(tmp_path, monkeypatch, "rule-agent")
+    _configure_live_deploy(config_path, deployment_mode="live")
+    original_config = config_path.read_text(encoding="utf-8")
+
+    result = _deploy_agent(
+        agent_name="rsi_reversion",
+        config_path=config_path,
+        output_dir="deployments/rule-render-live",
+        extra_args=["--target", "render"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    output_dir = Path(payload["output_dir"])
+    render_yaml, _dockerfile_text, env_example, readme, manifest, resolved_project = (
+        _load_render_deploy_bundle(output_dir)
+    )
+
+    assert config_path.read_text(encoding="utf-8") == original_config
+    assert payload["status"] == "success"
+    assert payload["target"] == "render"
+    assert payload["mode"] == "live"
+    assert render_yaml["services"][0]["dockerCommand"].endswith("--mode live")
+    assert manifest["mode"] == "live"
+    assert manifest["service_type"] == "worker"
+    assert manifest["safety_requirements"]
+    assert "ALPACA_API_KEY" in env_example
     assert "Safety Requirements" in readme
     assert "`mode: live`" in readme
     assert not any(
@@ -290,6 +441,103 @@ def test_hybrid_agent_local_live_deploy_absolutizes_prompt_and_model_paths(
         "replay was disabled in the generated bundle" in warning.lower()
         for warning in payload["warnings"]
     )
+
+
+def test_llm_agent_render_deploy_copies_prompt_assets(tmp_path: Path, monkeypatch):
+    config_path = _init_template(tmp_path, monkeypatch, "llm-agent")
+    original_config = config_path.read_text(encoding="utf-8")
+
+    result = _deploy_agent(
+        agent_name="breakout_gpt",
+        config_path=config_path,
+        output_dir="deployments/llm-render",
+        extra_args=["--target", "render"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    output_dir = Path(payload["output_dir"])
+    render_yaml, dockerfile_text, env_example, readme, manifest, resolved_project = (
+        _load_render_deploy_bundle(output_dir)
+    )
+
+    assert config_path.read_text(encoding="utf-8") == original_config
+    assert (output_dir / "assets" / "prompts" / "breakout.md").is_file()
+    assert "OPENAI_API_KEY" in env_example
+    assert {"key": "OPENAI_API_KEY", "sync": False} in render_yaml["services"][0][
+        "envVars"
+    ]
+    assert "deployments/llm-render/assets/" in dockerfile_text
+    assert "prompts/breakout.md" in readme
+    assert manifest["asset_manifest"] == [
+        {
+            "type": "prompt",
+            "source": "prompts/breakout.md",
+            "bundle_path": "assets/prompts/breakout.md",
+            "image_path": "/app/prompts/breakout.md",
+        }
+    ]
+    assert resolved_project["agents"][0]["llm"]["prompt_file"] == "prompts/breakout.md"
+
+
+@pytest.mark.parametrize(
+    (
+        "template",
+        "agent_name",
+        "expected_assets",
+        "expect_openai_env",
+    ),
+    [
+        (
+            "model-agent",
+            "paper_momentum",
+            ["models/promoted/aapl_daily_classifier"],
+            False,
+        ),
+        (
+            "hybrid",
+            "hybrid_swing_agent",
+            ["prompts/hybrid_swing.md", "models/promoted/aapl_daily_classifier"],
+            True,
+        ),
+    ],
+)
+def test_render_deploy_copies_model_and_hybrid_assets(
+    tmp_path: Path,
+    monkeypatch,
+    template: str,
+    agent_name: str,
+    expected_assets: list[str],
+    expect_openai_env: bool,
+):
+    config_path = _init_template(tmp_path, monkeypatch, template)
+    original_config = config_path.read_text(encoding="utf-8")
+
+    result = _deploy_agent(
+        agent_name=agent_name,
+        config_path=config_path,
+        output_dir=f"deployments/{template}-render",
+        extra_args=["--target", "render"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    output_dir = Path(payload["output_dir"])
+    render_yaml, dockerfile_text, env_example, readme, manifest, _resolved_project = (
+        _load_render_deploy_bundle(output_dir)
+    )
+    asset_sources = [item["source"] for item in manifest["asset_manifest"]]
+
+    assert config_path.read_text(encoding="utf-8") == original_config
+    for expected_asset in expected_assets:
+        assert expected_asset in asset_sources
+        assert (output_dir / "assets" / expected_asset).exists()
+        assert expected_asset in readme
+    assert ("OPENAI_API_KEY" in env_example) is expect_openai_env
+    assert f"deployments/{template}-render/assets/" in dockerfile_text
+    assert {"key": "ALPACA_API_KEY", "sync": False} in render_yaml["services"][0][
+        "envVars"
+    ]
 
 
 def test_deploy_readme_and_manifest_call_out_alpaca_backed_execution(
@@ -492,6 +740,26 @@ def test_local_live_deploy_requires_agent_to_be_configured_live(
     assert not Path("deployments/local-live-not-configured").exists()
 
 
+def test_render_live_deploy_requires_agent_to_be_configured_live(
+    tmp_path: Path, monkeypatch
+):
+    config_path = _init_template(tmp_path, monkeypatch, "llm-agent")
+    original_config = config_path.read_text(encoding="utf-8")
+
+    result = _deploy_agent(
+        agent_name="breakout_gpt",
+        config_path=config_path,
+        output_dir="deployments/render-live-not-configured",
+        extra_args=["--target", "render", "--mode", "live"],
+    )
+
+    assert result.exit_code == 1
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert "must be configured with mode=live" in combined_output
+    assert config_path.read_text(encoding="utf-8") == original_config
+    assert not Path("deployments/render-live-not-configured").exists()
+
+
 @pytest.mark.parametrize(
     ("field_name", "expected_error"),
     [
@@ -595,6 +863,96 @@ def test_local_live_deploy_requires_top_level_live_safety_sections(
     assert config_path.read_text(encoding="utf-8") == original_config
 
 
+def test_render_deploy_rejects_output_outside_project_root(tmp_path: Path, monkeypatch):
+    config_path = _init_template(tmp_path, monkeypatch, "rule-agent")
+    outside_output = tmp_path.parent / "outside-render-bundle"
+
+    result = _deploy_agent(
+        agent_name="rsi_reversion",
+        config_path=config_path,
+        output_dir=str(outside_output),
+        extra_args=["--target", "render"],
+    )
+
+    assert result.exit_code == 1
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert (
+        "Render deployment output must resolve inside the project root"
+        in combined_output
+    )
+    assert not outside_output.exists()
+
+
+@pytest.mark.parametrize(
+    ("template", "agent_name", "mutator", "expected_error"),
+    [
+        (
+            "llm-agent",
+            "breakout_gpt",
+            "prompt",
+            "agents.<name>.llm.prompt_file must resolve under prompts/",
+        ),
+        (
+            "model-agent",
+            "paper_momentum",
+            "model",
+            "agents.<name>.model.path must resolve under models/",
+        ),
+        (
+            "llm-agent",
+            "breakout_gpt",
+            "notes",
+            "agents.<name>.context.notes.file must resolve under notes/",
+        ),
+    ],
+)
+def test_render_deploy_rejects_assets_outside_expected_project_dirs(
+    tmp_path: Path,
+    monkeypatch,
+    template: str,
+    agent_name: str,
+    mutator: str,
+    expected_error: str,
+):
+    config_path = _init_template(tmp_path, monkeypatch, template)
+    payload = _read_yaml(config_path)
+
+    if mutator == "prompt":
+        bad_prompt = Path("other_prompts") / "agent.md"
+        bad_prompt.parent.mkdir(parents=True, exist_ok=True)
+        bad_prompt.write_text("Bad prompt location.", encoding="utf-8")
+        payload["agents"][0]["llm"]["prompt_file"] = bad_prompt.as_posix()
+    elif mutator == "model":
+        bad_model = Path("artifacts") / "model"
+        bad_model.mkdir(parents=True, exist_ok=True)
+        (bad_model / "README.md").write_text("Bad model location.", encoding="utf-8")
+        payload["agents"][0]["model"]["path"] = bad_model.as_posix()
+    elif mutator == "notes":
+        bad_notes = Path("agent_notes") / "breakout.md"
+        bad_notes.parent.mkdir(parents=True, exist_ok=True)
+        bad_notes.write_text("Bad notes location.", encoding="utf-8")
+        payload["agents"][0]["context"]["notes"] = {
+            "enabled": True,
+            "file": bad_notes.as_posix(),
+        }
+
+    _write_yaml(config_path, payload)
+    original_config = config_path.read_text(encoding="utf-8")
+
+    result = _deploy_agent(
+        agent_name=agent_name,
+        config_path=config_path,
+        output_dir=f"deployments/render-bad-{mutator}",
+        extra_args=["--target", "render"],
+    )
+
+    assert result.exit_code == 1
+    combined_output = f"{result.stdout}\n{result.stderr}"
+    assert expected_error in combined_output
+    assert config_path.read_text(encoding="utf-8") == original_config
+    assert not Path(f"deployments/render-bad-{mutator}").exists()
+
+
 def test_deploy_failure_cases(
     tmp_path: Path,
     monkeypatch,
@@ -656,6 +1014,7 @@ def test_deploy_failure_cases(
         if expected_error == "Unsupported deployment target":
             assert "docker-compose" in combined_output
             assert "local" in combined_output
+            assert "render" in combined_output
         assert config_path.read_text(encoding="utf-8") == original_config
         if requested_output == existing_output:
             assert (requested_output / "stale.txt").is_file()

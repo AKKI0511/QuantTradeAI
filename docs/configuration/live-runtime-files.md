@@ -77,7 +77,9 @@ Child runs keep their normal per-run runtime YAML snapshots inside their own run
 
 ## Deployment Bundles
 
-`quanttradeai deploy --agent <name> -c config/project.yaml --target docker-compose` generates a deployment bundle from the same canonical config. The bundle includes a deployment manifest plus emitted runtime config files for the selected agent and mode.
+`quanttradeai deploy --agent <name> -c config/project.yaml --target local|docker-compose|render` generates a deployment bundle from the same canonical config. The bundle includes a deployment manifest plus emitted runtime config files for the selected agent and mode.
+
+Render bundles add a `render.yaml` Blueprint for a Docker-backed background worker and copy selected-agent prompt, notes, and model assets into `assets/` so the worker image can run from the emitted `resolved_project_config.yaml`.
 
 ## Utility Command Boundary
 

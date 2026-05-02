@@ -62,9 +62,10 @@ Live batches require every configured agent to already have `mode: live` and req
 ```bash
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target local
 poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
+poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target render -o deployments/breakout-render
 ```
 
-Deployment bundles are generated from `config/project.yaml`. Use `--target local` for a Python runner bundle or `--target docker-compose` for a Compose bundle. Paper bundles disable replay in the emitted deployment config and expect valid real-time provider settings.
+Deployment bundles are generated from `config/project.yaml`. Use `--target local` for a Python runner bundle, `--target docker-compose` for a Compose bundle, or `--target render` for a Render Background Worker Blueprint. Paper bundles disable replay in the emitted deployment config and expect valid real-time provider settings.
 
 ## Important Boundaries
 
