@@ -265,7 +265,7 @@ def test_rule_agent_render_deploy_writes_paper_worker_bundle_and_preserves_proje
     assert {"key": "ALPACA_API_KEY", "sync": False} in service["envVars"]
     assert {"key": "ALPACA_API_SECRET", "sync": False} in service["envVars"]
     assert "deployments/rule-render/resolved_project_config.yaml" in dockerfile_text
-    assert "deployments/rule-render/assets/" in dockerfile_text
+    assert "deployments/rule-render/assets/" not in dockerfile_text
     assert "ALPACA_API_KEY" in env_example
     assert "Render Background Worker" in readme
     assert manifest["target"] == "render"
@@ -457,7 +457,7 @@ def test_llm_agent_render_deploy_copies_prompt_assets(tmp_path: Path, monkeypatc
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     output_dir = Path(payload["output_dir"])
-    render_yaml, _dockerfile_text, env_example, readme, manifest, resolved_project = (
+    render_yaml, dockerfile_text, env_example, readme, manifest, resolved_project = (
         _load_render_deploy_bundle(output_dir)
     )
 
@@ -467,6 +467,7 @@ def test_llm_agent_render_deploy_copies_prompt_assets(tmp_path: Path, monkeypatc
     assert {"key": "OPENAI_API_KEY", "sync": False} in render_yaml["services"][0][
         "envVars"
     ]
+    assert "deployments/llm-render/assets/" in dockerfile_text
     assert "prompts/breakout.md" in readme
     assert manifest["asset_manifest"] == [
         {
@@ -522,7 +523,7 @@ def test_render_deploy_copies_model_and_hybrid_assets(
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     output_dir = Path(payload["output_dir"])
-    render_yaml, _dockerfile_text, env_example, readme, manifest, _resolved_project = (
+    render_yaml, dockerfile_text, env_example, readme, manifest, _resolved_project = (
         _load_render_deploy_bundle(output_dir)
     )
     asset_sources = [item["source"] for item in manifest["asset_manifest"]]
@@ -533,6 +534,7 @@ def test_render_deploy_copies_model_and_hybrid_assets(
         assert (output_dir / "assets" / expected_asset).exists()
         assert expected_asset in readme
     assert ("OPENAI_API_KEY" in env_example) is expect_openai_env
+    assert f"deployments/{template}-render/assets/" in dockerfile_text
     assert {"key": "ALPACA_API_KEY", "sync": False} in render_yaml["services"][0][
         "envVars"
     ]

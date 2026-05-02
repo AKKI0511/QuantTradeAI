@@ -320,8 +320,12 @@ def _render_render_dockerfile(
     bundle_relative_path: str,
     agent_name: str,
     mode: str,
+    has_assets: bool,
 ) -> str:
     bundle_prefix = bundle_relative_path.rstrip("/") or "."
+    asset_copy_line = (
+        f'COPY ["{bundle_prefix}/assets/", "/app/"]\n' if has_assets else ""
+    )
     command = [
         "quanttradeai",
         "agent",
@@ -346,8 +350,7 @@ RUN mkdir -p /app/config /app/data /app/models /app/prompts /app/reports /app/ru
 COPY ["pyproject.toml", "README.md", "/app/"]
 COPY ["quanttradeai", "/app/quanttradeai"]
 COPY ["{bundle_prefix}/resolved_project_config.yaml", "/app/config/project.yaml"]
-COPY ["{bundle_prefix}/assets/", "/app/"]
-
+{asset_copy_line}
 RUN pip install --upgrade pip && pip install .
 
 CMD {json.dumps(command)}
@@ -1248,6 +1251,7 @@ def _write_render_bundle(
             bundle_relative_path=bundle_relative_path,
             agent_name=agent_name,
             mode=prepared.mode,
+            has_assets=bool(asset_manifest),
         ),
         encoding="utf-8",
     )
