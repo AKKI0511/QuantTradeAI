@@ -41,6 +41,15 @@ poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
 poetry run quanttradeai runs list --compare research/<run_id_a> --compare research/<run_id_b>
 poetry run quanttradeai runs list --compare agent/backtest/<run_id_a> --compare agent/backtest/<run_id_b> --sort-by net_sharpe
 
+# Start a YAML-only strategy lab with RSI and SMA rule agents
+poetry run quanttradeai init --template strategy-lab -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest --max-concurrency 4
+poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
+poetry run quanttradeai agent run --sweep sma_risk_grid -c config/project.yaml --mode backtest --max-concurrency 4
+poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
+poetry run quanttradeai promote --run agent/backtest/<winner_run_id> -c config/project.yaml
+
 # Run a YAML-defined llm or hybrid agent
 poetry run quanttradeai init --template llm-agent -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml

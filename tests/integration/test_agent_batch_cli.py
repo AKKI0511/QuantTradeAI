@@ -453,6 +453,90 @@ def test_agent_run_all_writes_batch_artifacts_and_sorts_scoreboard(
     assert "NET_SHARPE" in (batch_dir / "scoreboard.txt").read_text("utf-8")
 
 
+def test_strategy_lab_agent_run_all_backtest_enumerates_both_agents(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    config_path = Path("config/project.yaml")
+    init_result = runner.invoke(
+        app,
+        ["init", "--template", "strategy-lab", "--output", str(config_path)],
+    )
+    assert init_result.exit_code == 0, init_result.stdout
+
+    observed_agents: list[str] = []
+
+    def _fake_run_project_agent(
+        *,
+        project_config_path: str,
+        agent_name: str,
+        mode: str,
+        skip_validation: bool,
+        project_config_override: dict | None = None,
+        run_timestamp: str | None = None,
+    ):
+        assert mode == "backtest"
+        assert skip_validation is False
+        assert project_config_override is None
+        assert Path(project_config_path).resolve() == config_path.resolve()
+        assert run_timestamp is not None
+        observed_agents.append(agent_name)
+
+        run_dir = Path("runs") / "agent" / "backtest" / f"{run_timestamp}_{agent_name}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        metrics_path = run_dir / "metrics.json"
+        metrics_path.write_text(
+            json.dumps(
+                {"net_sharpe": 1.0, "net_pnl": 0.1, "net_mdd": -0.05},
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        summary = {
+            "run_id": f"agent/backtest/{run_dir.name}",
+            "run_type": "agent",
+            "mode": "backtest",
+            "name": agent_name,
+            "status": "success",
+            "timestamps": {"started_at": "2026-01-01T00:00:00+00:00"},
+            "symbols": ["AAPL"],
+            "warnings": [],
+            "artifacts": {"metrics": str(metrics_path)},
+            "run_dir": str(run_dir),
+        }
+        (run_dir / "summary.json").write_text(
+            json.dumps(summary, indent=2),
+            encoding="utf-8",
+        )
+        return summary, []
+
+    with patch(
+        "quanttradeai.agents.batch.run_project_agent",
+        side_effect=_fake_run_project_agent,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "agent",
+                "run",
+                "--all",
+                "--config",
+                str(config_path),
+                "--mode",
+                "backtest",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    assert payload["agent_count"] == 2
+    assert observed_agents == ["rsi_reversion", "sma_trend"]
+    assert [item["agent_name"] for item in payload["results"]] == [
+        "rsi_reversion",
+        "sma_trend",
+    ]
+
+
 def test_agent_run_all_paper_writes_batch_artifacts_and_sorts_by_total_pnl(
     tmp_path: Path, monkeypatch
 ):

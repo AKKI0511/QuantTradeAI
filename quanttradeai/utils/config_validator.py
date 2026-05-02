@@ -272,25 +272,37 @@ def _validate_agent_project_sections(
         if agent_kind == "rule":
             rule_feature = str(rule_cfg.get("feature", "")).strip()
             rule_preset = str(rule_cfg.get("preset", "")).strip()
-            if rule_feature and rule_feature not in feature_names:
-                errors.append(
-                    f"Agent '{agent_name}' rule.feature references unknown feature: {rule_feature}"
-                )
-            if rule_feature and rule_feature not in (context_cfg.get("features") or []):
-                errors.append(
-                    f"Agent '{agent_name}' must include rule.feature '{rule_feature}' in context.features."
-                )
-            if (
-                rule_feature
-                and rule_preset == "rsi_threshold"
-                and rule_feature in feature_definitions
-                and not _rule_feature_is_rsi_resolvable(
-                    feature_definitions[rule_feature]
-                )
-            ):
-                errors.append(
-                    f"Agent '{agent_name}' rule.feature '{rule_feature}' must resolve to a scalar RSI value for preset '{rule_preset}'."
-                )
+            context_features = list(context_cfg.get("features") or [])
+            if rule_preset == "rsi_threshold":
+                if rule_feature and rule_feature not in feature_names:
+                    errors.append(
+                        f"Agent '{agent_name}' rule.feature references unknown feature: {rule_feature}"
+                    )
+                if rule_feature and rule_feature not in context_features:
+                    errors.append(
+                        f"Agent '{agent_name}' must include rule.feature '{rule_feature}' in context.features."
+                    )
+                if (
+                    rule_feature
+                    and rule_feature in feature_definitions
+                    and not _rule_feature_is_rsi_resolvable(
+                        feature_definitions[rule_feature]
+                    )
+                ):
+                    errors.append(
+                        f"Agent '{agent_name}' rule.feature '{rule_feature}' must resolve to a scalar RSI value for preset '{rule_preset}'."
+                    )
+            if rule_preset == "sma_crossover":
+                for key in ("fast_feature", "slow_feature"):
+                    crossover_feature = str(rule_cfg.get(key) or "").strip()
+                    if crossover_feature and crossover_feature not in feature_names:
+                        errors.append(
+                            f"Agent '{agent_name}' rule.{key} references unknown feature: {crossover_feature}"
+                        )
+                    if crossover_feature and crossover_feature not in context_features:
+                        errors.append(
+                            f"Agent '{agent_name}' must include rule.{key} '{crossover_feature}' in context.features."
+                        )
 
         missing_features = sorted(
             feature_name
