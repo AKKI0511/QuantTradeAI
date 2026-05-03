@@ -416,6 +416,11 @@ Deliverables:
 - Add AI-assisted experiment planning and ops support only where it materially saves user time.
 - Tighten docs, templates, and examples around the final product model.
 
+Status on 2026-05-03:
+
+- Agent batch and sweep runs now write agent-readable experiment briefs (`experiment_brief.json` and `experiment_brief.md`) plus batch-level `summary.json` records under `runs/agent/batches/...`, so coding agents can identify the best child run, inspect failures, and execute the recommended next command without manually stitching together batch artifacts.
+- `quanttradeai runs list --type batch --json` is implemented for local batch run discovery.
+
 ## Golden Workflows
 
 The roadmap is only successful if these workflows feel excellent.

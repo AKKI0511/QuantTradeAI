@@ -36,7 +36,7 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 | Run a trained model as an agent | `init --template model-agent` -> `validate` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | One YAML-defined model agent wired to a stable `models/promoted/...` path that can be backtested, promoted, paper-run, and live-run |
 | Run an LLM agent | `init --template llm-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Prompt-driven agent logic using project config across all three modes |
 | Run a hybrid agent | `init --template hybrid` -> `research run` -> `promote --run research/<run_id>` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Model signals plus LLM reasoning in one project, with research outputs promoted into a stable path before the agent is promoted through environments |
-| Run every project agent together | `agent run --all --mode backtest|paper|live --max-concurrency 4` | A local multi-agent batch that preserves normal child runs plus batch-level manifests and scoreboards |
+| Run every project agent together | `agent run --all --mode backtest|paper|live --max-concurrency 4` | A local multi-agent batch that preserves normal child runs plus batch-level manifests, scoreboards, and experiment briefs |
 | Sweep one agent across parameter variants | `agent run --sweep rsi_threshold_grid --mode backtest --max-concurrency 4` | A local sweep batch that expands one agent into many backtest variants, preserves normal child runs, and ranks them with the same scoreboard flow |
 | Generate a QuantTradeAI deployment bundle | `deploy --agent <name> --target local|docker-compose|render --mode paper|live` | A local runner, Docker Compose bundle, or Render worker bundle for a promoted paper or live agent |
 
@@ -84,6 +84,7 @@ QuantTradeAI is one framework with two connected tracks:
 | `agent run --all --mode paper` from `project.yaml` | Supported |
 | `agent run --all --mode live` from `project.yaml` with acknowledgement | Supported |
 | `agent run --sweep <name> --mode backtest` from `project.yaml` | Supported |
+| Batch experiment briefs and `runs list --type batch` | Supported |
 | `deploy --target local` for paper or live agents | Supported |
 | `deploy --target docker-compose` for paper or live agents | Supported |
 | `deploy --target render` for paper or live agents | Supported |
@@ -291,12 +292,15 @@ Live batches require every agent in `config/project.yaml` to already have `mode:
 
 This writes batch artifacts under `runs/agent/batches/<timestamp>_<project>_<mode>/`:
 
+- `summary.json`
 - `batch_manifest.json`
 - `results.json`
 - `scoreboard.json`
 - `scoreboard.txt`
+- `experiment_brief.json`
+- `experiment_brief.md`
 
-Each child agent still writes its normal run under `runs/agent/backtest/...`, `runs/agent/paper/...`, or `runs/agent/live/...`, so `quanttradeai runs list --scoreboard` continues to work for ranking and `quanttradeai runs list --compare ...` can inspect shortlisted runs in detail. Backtest batches rank by `net_sharpe`; paper and live batches rank by `total_pnl`.
+Each child agent still writes its normal run under `runs/agent/backtest/...`, `runs/agent/paper/...`, or `runs/agent/live/...`, so `quanttradeai runs list --scoreboard` continues to work for ranking and `quanttradeai runs list --compare ...` can inspect shortlisted runs in detail. Batch summaries are discoverable with `quanttradeai runs list --type batch --json`. Backtest batches rank by `net_sharpe`; paper and live batches rank by `total_pnl`.
 
 ### Sweep One Agent
 
@@ -426,12 +430,15 @@ For the full shape, field reference, and supported agent modes, see [Project YAM
 
 Sweep batch artifacts:
 
+- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/summary.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/batch_manifest.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/results.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.txt`
+- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/experiment_brief.json`
+- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/experiment_brief.md`
 
-This makes it easier to rank runs, inspect what actually changed, and reuse winning configurations.
+This makes it easier to rank runs, inspect what actually changed, reuse winning configurations, and hand the next action to a coding agent without opening every batch artifact manually.
 
 To rank and compare local runs directly from the CLI, use the scoreboard first and then compare explicit run ids:
 
@@ -441,6 +448,7 @@ poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
 poetry run quanttradeai runs list --compare research/<run_id_a> --compare research/<run_id_b>
 poetry run quanttradeai runs list --compare agent/backtest/<run_id_a> --compare agent/backtest/<run_id_b> --sort-by net_sharpe
 poetry run quanttradeai runs list --type agent --mode live --scoreboard --sort-by total_pnl
+poetry run quanttradeai runs list --type batch --json
 ```
 
 ## Documentation Map

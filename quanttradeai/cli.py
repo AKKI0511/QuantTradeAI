@@ -1104,7 +1104,7 @@ def cmd_research_run(
 @runs_app.command("list")
 def cmd_runs_list(
     run_type: str = typer.Option(
-        "all", "--type", help="Run type filter: all, research, or agent"
+        "all", "--type", help="Run type filter: all, research, agent, or batch"
     ),
     mode: str = typer.Option(
         "all",
@@ -1192,7 +1192,9 @@ def cmd_runs_list(
     discovered = discover_runs()
     filters = RunFilters(
         run_type=_normalize_choice(
-            run_type, allowed={"all", "research", "agent"}, field_name="type"
+            run_type,
+            allowed={"all", "research", "agent", "batch"},
+            field_name="type",
         ),
         mode=_normalize_choice(
             mode,

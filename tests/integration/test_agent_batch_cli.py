@@ -433,6 +433,15 @@ def test_agent_run_all_writes_batch_artifacts_and_sorts_scoreboard(
     assert (batch_dir / "results.json").is_file()
     assert (batch_dir / "scoreboard.json").is_file()
     assert (batch_dir / "scoreboard.txt").is_file()
+    assert (batch_dir / "summary.json").is_file()
+    assert (batch_dir / "experiment_brief.json").is_file()
+    assert (batch_dir / "experiment_brief.md").is_file()
+    assert payload["artifacts"]["experiment_brief_json"] == str(
+        batch_dir / "experiment_brief.json"
+    )
+    assert payload["artifacts"]["experiment_brief_md"] == str(
+        batch_dir / "experiment_brief.md"
+    )
 
     results_payload = json.loads((batch_dir / "results.json").read_text("utf-8"))
     assert [item["agent_name"] for item in results_payload["results"]] == [
@@ -451,6 +460,33 @@ def test_agent_run_all_writes_batch_artifacts_and_sorts_scoreboard(
         "rsi_reversion",
     ]
     assert "NET_SHARPE" in (batch_dir / "scoreboard.txt").read_text("utf-8")
+
+    brief = json.loads((batch_dir / "experiment_brief.json").read_text("utf-8"))
+    assert brief["kind"] == "quanttradeai.experiment_brief"
+    assert brief["schema_version"] == 1
+    assert brief["winner"]["agent_name"] == "breakout_gpt"
+    assert brief["recommended_next_action"]["action"] == "promote_winner_to_paper"
+    assert brief["commands"]["promote_winner"] == (
+        f"quanttradeai promote --run {brief['winner']['run_id']} "
+        f"-c {config_path.resolve().as_posix()}"
+    )
+    assert "compare_top_runs" in brief["commands"]
+
+    manifest = json.loads((batch_dir / "batch_manifest.json").read_text("utf-8"))
+    assert manifest["artifacts"]["experiment_brief_json"] == str(
+        batch_dir / "experiment_brief.json"
+    )
+
+    batch_summary = json.loads((batch_dir / "summary.json").read_text("utf-8"))
+    assert batch_summary["run_type"] == "batch"
+    assert batch_summary["run_id"] == f"agent/batches/{batch_dir.name}"
+
+    runs_result = runner.invoke(app, ["runs", "list", "--type", "batch", "--json"])
+    assert runs_result.exit_code == 0, runs_result.stdout
+    run_records = json.loads(runs_result.stdout)
+    assert [record["run_id"] for record in run_records] == [
+        f"agent/batches/{batch_dir.name}"
+    ]
 
 
 def test_strategy_lab_agent_run_all_backtest_enumerates_both_agents(
@@ -1157,7 +1193,12 @@ def test_agent_run_sweep_writes_variant_artifacts_and_preserves_source_config(
     assert (batch_dir / "batch_manifest.json").is_file()
     assert (batch_dir / "results.json").is_file()
     assert (batch_dir / "scoreboard.json").is_file()
+    assert (batch_dir / "experiment_brief.json").is_file()
+    assert (batch_dir / "experiment_brief.md").is_file()
     assert (batch_dir / "variants").is_dir()
+    assert payload["artifacts"]["experiment_brief_json"] == str(
+        batch_dir / "experiment_brief.json"
+    )
 
     results_payload = json.loads((batch_dir / "results.json").read_text("utf-8"))
     assert results_payload["batch_type"] == "sweep"
@@ -1205,6 +1246,20 @@ def test_agent_run_sweep_writes_variant_artifacts_and_preserves_source_config(
         },
         "materializable": True,
     }
+
+    brief = json.loads((batch_dir / "experiment_brief.json").read_text("utf-8"))
+    assert brief["winner"]["agent_name"] == (
+        "rsi_reversion__rsi_threshold_grid__buy_below-30_0__sell_above-75_0"
+    )
+    assert brief["recommended_next_action"]["action"] == "materialize_sweep_winner"
+    assert brief["commands"]["promote_winner"] == (
+        f"quanttradeai promote --run {brief['winner']['run_id']} "
+        f"-c {config_path.resolve().as_posix()}"
+    )
+    assert brief["commands"]["run_promoted_paper_agent"] == (
+        "quanttradeai agent run --agent rsi_reversion "
+        f"-c {config_path.resolve().as_posix()} --mode paper"
+    )
 
 
 def test_agent_run_sweep_uses_canonical_project_root_for_llm_assets(
