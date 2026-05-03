@@ -517,6 +517,7 @@ Validation checks that:
 - for `rsi_threshold`, `rule.buy_below < rule.sell_above`
 - for `sma_crossover`, `rule.fast_feature` and `rule.slow_feature` exist in `features.definitions`
 - for `sma_crossover`, both crossover features are listed in `context.features`
+- for `sma_crossover`, both crossover features resolve to generated `sma_<period>` columns
 
 Backtest mode:
 

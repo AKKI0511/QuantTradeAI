@@ -72,6 +72,7 @@ LEGACY_PROJECT_SECTIONS = {
     "pipeline",
     "news",
 }
+DEFAULT_GENERATED_SMA_PERIODS = {5, 10, 20, 50, 200}
 
 
 def _rule_feature_is_rsi_resolvable(feature_definition: dict[str, Any]) -> bool:
@@ -89,6 +90,67 @@ def _rule_feature_is_rsi_resolvable(feature_definition: dict[str, Any]) -> bool:
         {"rsi", "macd", "macd_signal", "macd_hist"},
     )
     return len(resolved_columns) == 1 and resolved_columns[0] == "rsi"
+
+
+def _sma_period_from_feature_name(feature_name: str) -> int | None:
+    normalized_name = str(feature_name or "").strip().lower()
+    if not normalized_name.startswith("sma_"):
+        return None
+    suffix = normalized_name.removeprefix("sma_")
+    if not suffix.isdigit():
+        return None
+    period = int(suffix)
+    return period if period > 0 else None
+
+
+def _as_positive_int_set(raw_value: Any) -> set[int]:
+    if raw_value is None:
+        return set()
+    values = raw_value if isinstance(raw_value, list) else [raw_value]
+    periods: set[int] = set()
+    for value in values:
+        try:
+            period = int(value)
+        except (TypeError, ValueError):
+            continue
+        if period > 0:
+            periods.add(period)
+    return periods
+
+
+def _project_generated_sma_periods(
+    feature_definitions: Mapping[str, dict[str, Any]],
+) -> set[int]:
+    technical_definitions = [
+        definition
+        for definition in feature_definitions.values()
+        if definition.get("type") == "technical"
+    ]
+    configured_periods: set[int] = set()
+    for definition in technical_definitions:
+        named_period = _sma_period_from_feature_name(str(definition.get("name") or ""))
+        if named_period is not None:
+            configured_periods.add(named_period)
+        configured_periods.update(
+            _as_positive_int_set(
+                dict(definition.get("params") or {}).get("sma_periods")
+            )
+        )
+
+    if configured_periods:
+        return configured_periods
+    if technical_definitions:
+        return set(DEFAULT_GENERATED_SMA_PERIODS)
+    return set()
+
+
+def _rule_feature_is_sma_resolvable(
+    feature_definition: dict[str, Any],
+    generated_sma_periods: set[int],
+) -> bool:
+    generated_columns = {f"sma_{period}" for period in generated_sma_periods}
+    resolved_columns = _infer_feature_columns(feature_definition, generated_columns)
+    return len(resolved_columns) == 1 and resolved_columns[0] in generated_columns
 
 
 def _validate_models_relative_path(
@@ -192,6 +254,7 @@ def _validate_agent_project_sections(
         if isinstance(item, dict) and item.get("name")
     }
     feature_names = set(feature_definitions)
+    generated_sma_periods = _project_generated_sma_periods(feature_definitions)
     data_streaming_cfg = dict((resolved.get("data") or {}).get("streaming") or {})
     position_manager_cfg = dict(resolved.get("position_manager") or {})
     top_level_news_cfg = dict(resolved.get("news") or {})
@@ -302,6 +365,17 @@ def _validate_agent_project_sections(
                     if crossover_feature and crossover_feature not in context_features:
                         errors.append(
                             f"Agent '{agent_name}' must include rule.{key} '{crossover_feature}' in context.features."
+                        )
+                    if (
+                        crossover_feature
+                        and crossover_feature in feature_definitions
+                        and not _rule_feature_is_sma_resolvable(
+                            feature_definitions[crossover_feature],
+                            generated_sma_periods,
+                        )
+                    ):
+                        errors.append(
+                            f"Agent '{agent_name}' rule.{key} '{crossover_feature}' must resolve to a generated SMA value for preset '{rule_preset}'."
                         )
 
         missing_features = sorted(

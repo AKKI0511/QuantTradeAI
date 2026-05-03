@@ -41,6 +41,27 @@ def test_project_runtime_honors_technical_feature_params():
     }
 
 
+def test_project_runtime_compiles_named_sma_feature_periods():
+    project_cfg = {
+        "data": {"symbols": ["AAPL"]},
+        "research": {"enabled": False},
+        "features": {
+            "definitions": [
+                {"name": "sma_10", "type": "technical", "params": {}},
+                {"name": "sma_30", "type": "technical", "params": {}},
+            ]
+        },
+    }
+
+    _, runtime_features_cfg = project_to_runtime_configs(
+        project_cfg,
+        require_research=False,
+    )
+
+    assert runtime_features_cfg["price_features"]["sma_periods"] == [10, 30]
+    assert runtime_features_cfg["price_features"]["close_to_open"] is True
+
+
 def test_project_runtime_matches_canonical_compiler_for_agent_flows():
     project_cfg = {
         "data": {

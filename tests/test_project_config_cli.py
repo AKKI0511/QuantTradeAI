@@ -283,6 +283,64 @@ def test_validate_fails_when_sma_crossover_feature_is_unknown(
     assert "rule.slow_feature references unknown feature" in result.stderr
 
 
+def test_validate_accepts_non_default_sma_crossover_periods_from_feature_names(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["strategy-lab"], sort_keys=False)
+    )
+    config_payload["features"]["definitions"] = [
+        {"name": "rsi_14", "type": "technical", "params": {"period": 14}},
+        {"name": "sma_10", "type": "technical", "params": {}},
+        {"name": "sma_30", "type": "technical", "params": {}},
+    ]
+    config_payload["agents"][1]["rule"]["fast_feature"] = "sma_10"
+    config_payload["agents"][1]["rule"]["slow_feature"] = "sma_30"
+    config_payload["agents"][1]["context"]["features"] = ["sma_10", "sma_30"]
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 0, result.stderr
+
+
+def test_validate_fails_when_sma_crossover_feature_is_not_runtime_resolvable(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["strategy-lab"], sort_keys=False)
+    )
+    config_payload["features"]["definitions"] = [
+        {"name": "rsi_14", "type": "technical", "params": {"period": 14}},
+        {"name": "trend_fast", "type": "technical", "params": {}},
+        {"name": "trend_slow", "type": "technical", "params": {}},
+    ]
+    config_payload["agents"][1]["rule"]["fast_feature"] = "trend_fast"
+    config_payload["agents"][1]["rule"]["slow_feature"] = "trend_slow"
+    config_payload["agents"][1]["context"]["features"] = [
+        "trend_fast",
+        "trend_slow",
+    ]
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "must resolve to a generated SMA value" in result.stderr
+
+
 def test_validate_fails_when_sweep_names_duplicate(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg_path = Path("config/project.yaml")
