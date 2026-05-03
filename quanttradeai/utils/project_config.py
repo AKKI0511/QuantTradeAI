@@ -129,6 +129,17 @@ def _as_int_list(raw_value: Any) -> list[int]:
     return [int(raw_value)]
 
 
+def _sma_period_from_feature_name(feature_name: str) -> int | None:
+    normalized_name = str(feature_name or "").strip().lower()
+    if not normalized_name.startswith("sma_"):
+        return None
+    suffix = normalized_name.removeprefix("sma_")
+    if not suffix.isdigit():
+        return None
+    period = int(suffix)
+    return period if period > 0 else None
+
+
 def _resolve_custom_feature_key(name: str, params: dict[str, Any]) -> str:
     explicit = params.get("kind")
     if explicit in {
@@ -309,11 +320,17 @@ def compile_research_runtime_configs(
         "keltner_channels": None,
     }
     custom_features: list[dict[str, Any]] = []
+    sma_periods: set[int] = set()
 
     for definition in technical_definitions:
         params = dict(definition.get("params") or {})
+        feature_name = str(definition.get("name") or "")
         price_features.extend(params.get("price_features") or [])
 
+        named_sma_period = _sma_period_from_feature_name(feature_name)
+        if named_sma_period is not None:
+            sma_periods.add(named_sma_period)
+        sma_periods.update(_as_int_list(params.get("sma_periods")))
         if "period" in params:
             momentum_features["rsi_period"] = int(params["period"])
         if "rsi_period" in params:
@@ -364,9 +381,14 @@ def compile_research_runtime_configs(
         )
         custom_features.append({custom_key: {"periods": periods}})
 
+    runtime_price_features: list[str] | dict[str, Any] = price_features
+    if sma_periods:
+        runtime_price_features = {name: True for name in price_features}
+        runtime_price_features["sma_periods"] = sorted(sma_periods)
+
     runtime_features_cfg: dict[str, Any] = {
         "pipeline": {"steps": steps},
-        "price_features": price_features,
+        "price_features": runtime_price_features,
         "volume_features": [],
         "volatility_features": volatility_features,
         "custom_features": custom_features,

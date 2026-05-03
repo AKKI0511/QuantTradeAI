@@ -35,7 +35,35 @@ To promote a successful research run into the stable model path used by the `mod
 poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
 ```
 
-## Workflow 2: Model Agent From `project.yaml`
+## Workflow 2: Strategy Lab From `project.yaml`
+
+Use this when you want one QuantTradeAI project with multiple deterministic strategies, reusable sweeps, and promotion-ready run records without writing Python or setting LLM/broker credentials.
+
+```bash
+poetry run quanttradeai init --template strategy-lab -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest --max-concurrency 4
+poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
+poetry run quanttradeai agent run --sweep sma_risk_grid -c config/project.yaml --mode backtest --max-concurrency 4
+poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
+poetry run quanttradeai promote --run agent/backtest/<winning_run_id> -c config/project.yaml
+```
+
+The template defines:
+
+- `rsi_reversion`, an RSI threshold rule agent
+- `sma_trend`, an SMA crossover rule agent using `sma_20` and `sma_50`
+- replay-enabled paper settings for local follow-up runs
+- top-level `risk`, `position_manager`, and deployment defaults
+- `rsi_threshold_grid` and `sma_risk_grid` sweeps
+
+After promotion, run the materialized winner in paper mode with its base agent name:
+
+```bash
+poetry run quanttradeai agent run --agent <base_agent_name> -c config/project.yaml --mode paper
+```
+
+## Workflow 3: Model Agent From `project.yaml`
 
 ```bash
 poetry run quanttradeai init --template model-agent -o config/project.yaml
@@ -96,7 +124,7 @@ Replay-backed paper runs also write `replay_manifest.json`.
 
 Live runs also write compiled `runtime_risk_config.yaml` and `runtime_position_manager_config.yaml`.
 
-## Workflow 3: LLM Or Hybrid Agent
+## Workflow 4: LLM Or Hybrid Agent
 
 LLM and hybrid agents are supported in backtest, paper, and live mode from `project.yaml`.
 
@@ -128,7 +156,7 @@ The hybrid template already points `model_signal_sources` at `models/promoted/aa
 
 Deployment bundles for project-defined paper agents are written under `reports/deployments/<agent>/<timestamp>/` by default. Use `--target local` for a Python runner bundle, `--target docker-compose` for a Compose bundle, or `--target render` for a Render Background Worker Blueprint.
 
-## Workflow 4: Multi-Agent Batches
+## Workflow 5: Multi-Agent Batches
 
 Use this when one `config/project.yaml` already defines several agents and you want one local batch run across all of them.
 

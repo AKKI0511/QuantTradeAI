@@ -207,6 +207,140 @@ def test_validate_reports_sweep_count_for_valid_project(tmp_path: Path, monkeypa
     assert payload["summary"]["sweeps"] == 1
 
 
+def test_strategy_lab_template_includes_two_rule_agents_and_sweeps(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    result = runner.invoke(
+        app,
+        ["init", "--template", "strategy-lab", "--output", str(cfg_path)],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    assert [agent["name"] for agent in payload["agents"]] == [
+        "rsi_reversion",
+        "sma_trend",
+    ]
+    assert payload["agents"][1]["rule"] == {
+        "preset": "sma_crossover",
+        "fast_feature": "sma_20",
+        "slow_feature": "sma_50",
+    }
+    assert [sweep["name"] for sweep in payload["sweeps"]] == [
+        "rsi_threshold_grid",
+        "sma_risk_grid",
+    ]
+
+    validate_result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+    assert validate_result.exit_code == 0, validate_result.stdout
+    assert "agents=2" in validate_result.stdout
+    assert "sweeps=2" in validate_result.stdout
+
+
+def test_validate_fails_when_sma_crossover_feature_missing_from_context(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["strategy-lab"], sort_keys=False)
+    )
+    config_payload["agents"][1]["context"]["features"] = ["sma_20"]
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "sma crossover rule features" in result.stderr.lower()
+
+
+def test_validate_fails_when_sma_crossover_feature_is_unknown(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["strategy-lab"], sort_keys=False)
+    )
+    config_payload["agents"][1]["rule"]["slow_feature"] = "sma_200"
+    config_payload["agents"][1]["context"]["features"] = ["sma_20", "sma_200"]
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "rule.slow_feature references unknown feature" in result.stderr
+
+
+def test_validate_accepts_non_default_sma_crossover_periods_from_feature_names(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["strategy-lab"], sort_keys=False)
+    )
+    config_payload["features"]["definitions"] = [
+        {"name": "rsi_14", "type": "technical", "params": {"period": 14}},
+        {"name": "sma_10", "type": "technical", "params": {}},
+        {"name": "sma_30", "type": "technical", "params": {}},
+    ]
+    config_payload["agents"][1]["rule"]["fast_feature"] = "sma_10"
+    config_payload["agents"][1]["rule"]["slow_feature"] = "sma_30"
+    config_payload["agents"][1]["context"]["features"] = ["sma_10", "sma_30"]
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 0, result.stderr
+
+
+def test_validate_fails_when_sma_crossover_feature_is_not_runtime_resolvable(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["strategy-lab"], sort_keys=False)
+    )
+    config_payload["features"]["definitions"] = [
+        {"name": "rsi_14", "type": "technical", "params": {"period": 14}},
+        {"name": "trend_fast", "type": "technical", "params": {}},
+        {"name": "trend_slow", "type": "technical", "params": {}},
+    ]
+    config_payload["agents"][1]["rule"]["fast_feature"] = "trend_fast"
+    config_payload["agents"][1]["rule"]["slow_feature"] = "trend_slow"
+    config_payload["agents"][1]["context"]["features"] = [
+        "trend_fast",
+        "trend_slow",
+    ]
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 1
+    assert "must resolve to a generated SMA value" in result.stderr
+
+
 def test_validate_fails_when_sweep_names_duplicate(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg_path = Path("config/project.yaml")

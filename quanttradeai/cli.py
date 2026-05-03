@@ -516,6 +516,135 @@ PROJECT_TEMPLATES = {
         ],
         "deployment": {"target": "docker-compose", "mode": "paper"},
     },
+    "strategy-lab": {
+        "project": {"name": "strategy_lab", "profile": "paper"},
+        "profiles": {
+            "research": {"mode": "research"},
+            "paper": {"mode": "paper"},
+            "live": {"mode": "live"},
+        },
+        "data": {
+            "symbols": ["AAPL"],
+            "start_date": "2022-01-01",
+            "end_date": "2024-12-31",
+            "timeframe": "1d",
+            "test_start": "2024-09-01",
+            "test_end": "2024-12-31",
+            "streaming": {
+                "enabled": True,
+                "provider": "alpaca",
+                "websocket_url": "wss://stream.data.alpaca.markets/v2/iex",
+                "auth_method": "api_key",
+                "symbols": ["AAPL"],
+                "channels": ["trades", "quotes"],
+                "buffer_size": 1000,
+                "reconnect_attempts": 5,
+                "replay": {"enabled": True, "pace_delay_ms": 0},
+                "monitoring": {"enabled": True, "check_interval": 5},
+                "metrics": {"enabled": False, "host": "0.0.0.0", "port": 9000},
+                "api": {"enabled": False, "host": "0.0.0.0", "port": 8000},
+            },
+        },
+        "features": {
+            "definitions": [
+                {"name": "rsi_14", "type": "technical", "params": {"period": 14}},
+                {"name": "sma_20", "type": "technical", "params": {}},
+                {"name": "sma_50", "type": "technical", "params": {}},
+            ]
+        },
+        "research": {
+            "enabled": False,
+            "labels": {},
+            "model": {},
+            "evaluation": {},
+            "backtest": {},
+        },
+        "risk": {
+            "drawdown_protection": {
+                "enabled": True,
+                "max_drawdown_pct": 0.15,
+                "warning_threshold": 0.8,
+                "soft_stop_threshold": 0.9,
+                "hard_stop_threshold": 1.0,
+                "emergency_stop_threshold": 1.1,
+                "lookback_periods": [1, 7, 30],
+            },
+            "turnover_limits": {
+                "daily_max": 2.0,
+                "weekly_max": 5.0,
+                "monthly_max": 15.0,
+            },
+        },
+        "position_manager": {
+            "impact": {
+                "enabled": False,
+                "model": "linear",
+                "alpha": 0.0,
+                "beta": 0.0,
+            },
+            "reconciliation": {"intraday": "1m", "daily": "1d"},
+            "mode": "live",
+        },
+        "agents": [
+            {
+                "name": "rsi_reversion",
+                "kind": "rule",
+                "mode": "paper",
+                "execution": {"backend": "simulated"},
+                "rule": {
+                    "preset": "rsi_threshold",
+                    "feature": "rsi_14",
+                    "buy_below": 30.0,
+                    "sell_above": 70.0,
+                },
+                "context": {
+                    "features": ["rsi_14"],
+                    "positions": True,
+                    "risk_state": True,
+                },
+                "tools": [],
+                "risk": {"max_position_pct": 0.05},
+            },
+            {
+                "name": "sma_trend",
+                "kind": "rule",
+                "mode": "paper",
+                "execution": {"backend": "simulated"},
+                "rule": {
+                    "preset": "sma_crossover",
+                    "fast_feature": "sma_20",
+                    "slow_feature": "sma_50",
+                },
+                "context": {
+                    "features": ["sma_20", "sma_50"],
+                    "positions": True,
+                    "risk_state": True,
+                },
+                "tools": [],
+                "risk": {"max_position_pct": 0.05},
+            },
+        ],
+        "sweeps": [
+            {
+                "name": "rsi_threshold_grid",
+                "kind": "agent_backtest",
+                "agent": "rsi_reversion",
+                "parameters": [
+                    {"path": "rule.buy_below", "values": [25.0, 30.0]},
+                    {"path": "rule.sell_above", "values": [70.0, 75.0]},
+                ],
+            },
+            {
+                "name": "sma_risk_grid",
+                "kind": "agent_backtest",
+                "agent": "sma_trend",
+                "parameters": [
+                    {"path": "risk.max_position_pct", "values": [0.03, 0.05, 0.07]}
+                ],
+            },
+        ],
+        "deployment": {"target": "docker-compose", "mode": "paper"},
+    },
 }
 
 PROJECT_TEMPLATE_PROMPTS = {

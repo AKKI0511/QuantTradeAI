@@ -39,3 +39,26 @@ def test_expand_agent_backtest_sweep_builds_cartesian_variants_with_deterministi
         "sell_above": 70.0,
     }
     assert "sweeps" not in expansion["variants"][0]["project_config"]
+
+
+def test_strategy_lab_sma_risk_sweep_expands_against_sma_agent():
+    project_cfg = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["strategy-lab"], sort_keys=False)
+    )
+
+    expansion = expand_agent_backtest_sweep(project_cfg, "sma_risk_grid")
+
+    assert expansion["base_agent_name"] == "sma_trend"
+    assert [variant["name"] for variant in expansion["variants"]] == [
+        "sma_trend__sma_risk_grid__max_position_pct-0_03",
+        "sma_trend__sma_risk_grid__max_position_pct-0_05",
+        "sma_trend__sma_risk_grid__max_position_pct-0_07",
+    ]
+    assert expansion["variants"][0]["agent_config"]["rule"] == {
+        "preset": "sma_crossover",
+        "fast_feature": "sma_20",
+        "slow_feature": "sma_50",
+    }
+    assert expansion["variants"][0]["agent_config"]["risk"] == {
+        "max_position_pct": 0.03
+    }

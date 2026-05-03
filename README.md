@@ -12,6 +12,7 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 ## Start Here
 
 - Want the fastest working path? Jump to [Research In 4 Commands](#research-in-4-commands)
+- Want a multi-strategy lab? Jump to [Run The Strategy Lab](#run-the-strategy-lab)
 - Already have a trained model? Jump to [Run A Model Agent](#run-a-model-agent)
 - Evaluating prompt-driven agents? Jump to [Run An LLM Agent](#run-an-llm-agent)
 - Need the full config shape? Jump to [What A Project Looks Like](#what-a-project-looks-like)
@@ -30,6 +31,7 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 | I want to... | Best path today | What I get |
 | --- | --- | --- |
 | Research a strategy end to end | `init` -> `validate` -> `research run` -> `promote --run research/<run_id>` | Time-aware evaluation, backtests, metrics, run records, and a stable promoted model path |
+| Compare multiple deterministic strategies | `init --template strategy-lab` -> `validate` -> `agent run --all --mode backtest` -> `agent run --sweep ...` -> `promote` | RSI reversion and SMA trend agents, reusable sweeps, run scoreboards, and promotion without Python, LLM keys, or broker credentials |
 | Run a deterministic rule agent | `init --template rule-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | A YAML-only agent that can move through backtest, paper, and live with explicit promotion gates |
 | Run a trained model as an agent | `init --template model-agent` -> `validate` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | One YAML-defined model agent wired to a stable `models/promoted/...` path that can be backtested, promoted, paper-run, and live-run |
 | Run an LLM agent | `init --template llm-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | Prompt-driven agent logic using project config across all three modes |
@@ -77,6 +79,7 @@ QuantTradeAI is one framework with two connected tracks:
 | Research-run promotion to stable model paths | Supported |
 | Agent backtest-to-paper promotion | Supported |
 | Agent paper-to-live promotion with acknowledgement | Supported |
+| `init --template strategy-lab` with two rule agents and sweeps | Supported |
 | `agent run --all --mode backtest` from `project.yaml` | Supported |
 | `agent run --all --mode paper` from `project.yaml` | Supported |
 | `agent run --all --mode live` from `project.yaml` with acknowledgement | Supported |
@@ -159,6 +162,37 @@ agents:
       feature: "rsi_14"
       buy_below: 30.0
       sell_above: 70.0
+```
+
+### Run The Strategy Lab
+
+Use this when you want a ready-made QuantTradeAI lab that can compare more than one deterministic strategy from YAML.
+
+```bash
+poetry run quanttradeai init --template strategy-lab -o config/project.yaml
+poetry run quanttradeai validate -c config/project.yaml
+poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest --max-concurrency 4
+poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
+poetry run quanttradeai agent run --sweep sma_risk_grid -c config/project.yaml --mode backtest --max-concurrency 4
+poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
+poetry run quanttradeai promote --run agent/backtest/<winning_run_id> -c config/project.yaml
+```
+
+The template includes `rsi_reversion` and `sma_trend`. The SMA agent is fully YAML-defined:
+
+```yaml
+agents:
+  - name: "sma_trend"
+    kind: "rule"
+    mode: "paper"
+    rule:
+      preset: "sma_crossover"
+      fast_feature: "sma_20"
+      slow_feature: "sma_50"
+    context:
+      features: ["sma_20", "sma_50"]
+      positions: true
+      risk_state: true
 ```
 
 ### Run A Model Agent

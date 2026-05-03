@@ -672,15 +672,44 @@ class ProjectAgentModelConfig(BaseModel):
 
 
 class ProjectAgentRuleConfig(BaseModel):
-    preset: Literal["rsi_threshold"]
-    feature: str
-    buy_below: float
-    sell_above: float
+    preset: Literal["rsi_threshold", "sma_crossover"]
+    feature: Optional[str] = None
+    buy_below: Optional[float] = None
+    sell_above: Optional[float] = None
+    fast_feature: Optional[str] = None
+    slow_feature: Optional[str] = None
 
     @model_validator(mode="after")
-    def validate_thresholds(self) -> "ProjectAgentRuleConfig":
-        if self.buy_below >= self.sell_above:
-            raise ValueError("rule.buy_below must be less than rule.sell_above.")
+    def validate_rule_shape(self) -> "ProjectAgentRuleConfig":
+        if self.preset == "rsi_threshold":
+            if not self.feature or not self.feature.strip():
+                raise ValueError(
+                    "rule.feature is required when rule.preset is rsi_threshold."
+                )
+            if self.buy_below is None:
+                raise ValueError(
+                    "rule.buy_below is required when rule.preset is rsi_threshold."
+                )
+            if self.sell_above is None:
+                raise ValueError(
+                    "rule.sell_above is required when rule.preset is rsi_threshold."
+                )
+            if self.buy_below >= self.sell_above:
+                raise ValueError("rule.buy_below must be less than rule.sell_above.")
+            return self
+
+        if not self.fast_feature or not self.fast_feature.strip():
+            raise ValueError(
+                "rule.fast_feature is required when rule.preset is sma_crossover."
+            )
+        if not self.slow_feature or not self.slow_feature.strip():
+            raise ValueError(
+                "rule.slow_feature is required when rule.preset is sma_crossover."
+            )
+        if self.fast_feature.strip() == self.slow_feature.strip():
+            raise ValueError(
+                "rule.fast_feature and rule.slow_feature must be different."
+            )
         return self
 
 
@@ -823,14 +852,30 @@ class ProjectAgentConfig(BaseModel):
             raise ValueError(
                 f"agents.{self.name} only supports an llm block when kind is llm or hybrid."
             )
-        if (
-            self.kind == "rule"
-            and self.rule is not None
-            and self.rule.feature not in self.context.features
-        ):
-            raise ValueError(
-                f"agents.{self.name} must include rule.feature '{self.rule.feature}' in context.features."
-            )
+        if self.kind == "rule" and self.rule is not None:
+            if (
+                self.rule.preset == "rsi_threshold"
+                and self.rule.feature not in self.context.features
+            ):
+                raise ValueError(
+                    f"agents.{self.name} must include rule.feature '{self.rule.feature}' in context.features."
+                )
+            if self.rule.preset == "sma_crossover":
+                missing_context_features = [
+                    feature_name
+                    for feature_name in (
+                        self.rule.fast_feature,
+                        self.rule.slow_feature,
+                    )
+                    if feature_name not in self.context.features
+                ]
+                if missing_context_features:
+                    raise ValueError(
+                        f"agents.{self.name} must include SMA crossover rule features in context.features: "
+                        + ", ".join(
+                            str(feature) for feature in missing_context_features
+                        )
+                    )
         return self
 
 

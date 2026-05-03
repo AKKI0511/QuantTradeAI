@@ -360,7 +360,7 @@ Status on 2026-04-17:
 Goal:
 Make running many agents and many experiments on one machine easy and trustworthy.
 
-Status on 2026-04-17:
+Status on 2026-05-02:
 
 - `quanttradeai runs list --scoreboard` is implemented for local research and agent runs, with metric-aware sorting via `--sort-by` and additive JSON scoreboard payloads.
 - `quanttradeai runs list --compare <run_id> --compare <run_id>` is implemented for same-family research and agent runs, loading `summary.json`, `metrics.json`, and `resolved_project_config.yaml` to show metric tables plus compact config deltas before promotion.
@@ -369,6 +369,8 @@ Status on 2026-04-17:
 - `quanttradeai agent run --sweep <name> -c config/project.yaml --mode backtest` is implemented for backtest-only parameter sweeps defined under `sweeps:` in `config/project.yaml`, with deterministic variant expansion, preserved child runs, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
 - `quanttradeai promote --run agent/backtest/<sweep_child_run_id> -c config/project.yaml` is implemented for materializing a winning sweep child into the base agent's canonical config and promoting that base agent to paper mode.
 - `quanttradeai agent run --all -c config/project.yaml --mode live --acknowledge-live <project_name>` is implemented for local multi-agent live batches, requiring an explicit project-name acknowledgement, live-mode agent configs, live runtime prerequisites, preserved child runs under `runs/agent/live/...`, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
+- `quanttradeai init --template strategy-lab -o config/project.yaml` is implemented as a YAML-only multi-strategy lab with `rsi_reversion`, `sma_trend`, replay-enabled paper settings, top-level risk/runtime defaults, and starter sweeps for RSI thresholds and SMA risk sizing.
+- `rule.preset: sma_crossover` is implemented for deterministic rule agents, using `rule.fast_feature` and `rule.slow_feature` from shared project feature definitions and agent context.
 
 Deliverables:
 
@@ -475,7 +477,7 @@ quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode 
 ```
 
 Current implementation note:
-`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. Local paper mode defaults to replay-backed execution through `data.streaming.replay`, including `agent run --all --mode paper`; live batches are available through `agent run --all --mode live --acknowledge-live <project_name>`. Agents can also opt into `execution.backend: alpaca` for happy-path real-time paper/live broker submission with broker-synced account and position snapshots. Backtest-only parameter sweeps are supported through the optional `sweeps:` section in `config/project.yaml`, and winning sweep child runs can be materialized back to the base agent with `promote --apply-sweep` before rerunning a normal backtest. `deploy --target local`, `deploy --target docker-compose`, and `deploy --target render` support both simulated and Alpaca-backed paper/live agent bundles.
+`rule`, `model`, `llm`, and `hybrid` agents support `--mode backtest`, `--mode paper`, and `--mode live` today. Local paper mode defaults to replay-backed execution through `data.streaming.replay`, including `agent run --all --mode paper`; live batches are available through `agent run --all --mode live --acknowledge-live <project_name>`. Agents can also opt into `execution.backend: alpaca` for happy-path real-time paper/live broker submission with broker-synced account and position snapshots. Backtest-only parameter sweeps are supported through the optional `sweeps:` section in `config/project.yaml`, and winning sweep child runs can be materialized back to the base agent with `promote --run agent/backtest/<run_id> -c config/project.yaml` before running the promoted paper agent. The `strategy-lab` template gives this flow a ready-made two-agent QuantTradeAI project with RSI and SMA rule agents. `deploy --target local`, `deploy --target docker-compose`, and `deploy --target render` support both simulated and Alpaca-backed paper/live agent bundles.
 
 ### Hybrid track
 
