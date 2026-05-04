@@ -11,7 +11,7 @@ from typing import Any, Iterable
 
 
 RUNS_ROOT = Path("runs")
-RUN_TYPES = {"research", "agent"}
+RUN_TYPES = {"research", "agent", "batch"}
 RUN_MODES = {"research", "backtest", "paper", "live"}
 RUN_STATUSES = {"success", "failed"}
 
@@ -54,6 +54,8 @@ def create_run_dir(
 
     if run_type == "research":
         run_dir = runs_root / "research" / f"{timestamp}_{safe_name}"
+    elif run_type == "batch":
+        run_dir = runs_root / "agent" / "batches" / f"{timestamp}_{safe_name}"
     else:
         if mode not in RUN_MODES:
             raise ValueError(f"Unsupported mode for agent run: {mode}")

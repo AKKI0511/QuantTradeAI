@@ -67,6 +67,7 @@ poetry run quanttradeai agent run --all -c config/project.yaml --mode paper
 poetry run quanttradeai agent run --all -c config/project.yaml --mode paper --max-concurrency 4
 # Acknowledged live batch across every live-configured project agent
 poetry run quanttradeai agent run --all -c config/project.yaml --mode live --acknowledge-live <project_name>
+poetry run quanttradeai runs list --type batch --json
 
 # Backtest one sweep of agent parameter variants
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest
@@ -147,20 +148,22 @@ Canonical Render deployment bundle artifacts:
 - `reports/deployments/<agent>/<timestamp>/deployment_manifest.json`
 
 Canonical multi-agent batch artifacts:
-- `runs/agent/batches/<timestamp>_<project>_backtest/batch_manifest.json`
-- `runs/agent/batches/<timestamp>_<project>_backtest/results.json`
-- `runs/agent/batches/<timestamp>_<project>_backtest/scoreboard.json`
-- `runs/agent/batches/<timestamp>_<project>_backtest/scoreboard.txt`
-- `runs/agent/batches/<timestamp>_<project>_paper/batch_manifest.json`
-- `runs/agent/batches/<timestamp>_<project>_paper/results.json`
-- `runs/agent/batches/<timestamp>_<project>_paper/scoreboard.json`
-- `runs/agent/batches/<timestamp>_<project>_paper/scoreboard.txt`
+- `runs/agent/batches/<timestamp>_<project>_<mode>/summary.json`
+- `runs/agent/batches/<timestamp>_<project>_<mode>/batch_manifest.json`
+- `runs/agent/batches/<timestamp>_<project>_<mode>/results.json`
+- `runs/agent/batches/<timestamp>_<project>_<mode>/scoreboard.json`
+- `runs/agent/batches/<timestamp>_<project>_<mode>/scoreboard.txt`
+- `runs/agent/batches/<timestamp>_<project>_<mode>/experiment_brief.json`
+- `runs/agent/batches/<timestamp>_<project>_<mode>/experiment_brief.md`
 
 Canonical sweep batch artifacts:
+- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/summary.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/batch_manifest.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/results.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.txt`
+- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/experiment_brief.json`
+- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/experiment_brief.md`
 
 ## Python API Patterns
 
