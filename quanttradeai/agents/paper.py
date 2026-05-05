@@ -49,6 +49,7 @@ from quanttradeai.utils.project_config import (
     compile_research_runtime_configs,
     resolve_paper_replay_window,
 )
+from quanttradeai.utils.run_brief import write_run_brief_artifacts
 from quanttradeai.utils.run_records import apply_required_run_fields, create_run_dir
 
 from .backtest import (
@@ -1250,6 +1251,7 @@ def _run_agent_streaming(
             mode=mode,
             name=agent_name,
         )
+        write_run_brief_artifacts(summary, run_dir, project_config_path)
         _write_json(run_dir / "summary.json", summary)
         return summary
     except Exception as exc:
@@ -1264,5 +1266,6 @@ def _run_agent_streaming(
             mode=mode,
             name=agent_name,
         )
+        write_run_brief_artifacts(summary, run_dir, project_config_path)
         _write_json(run_dir / "summary.json", summary)
         raise

@@ -33,6 +33,7 @@ from .utils.run_scoreboard import (
     render_scoreboard_table,
     sort_run_records,
 )
+from .utils.run_brief import write_run_brief_artifacts
 
 
 app = typer.Typer(add_completion=False, help="QuantTradeAI command line interface")
@@ -1081,20 +1082,22 @@ def cmd_research_run(
             "error": str(exc),
         }
 
-        (run_dir / "summary.json").write_text(
-            json.dumps(summary, indent=2), encoding="utf-8"
-        )
         (run_dir / "metrics.json").write_text(
             json.dumps(metrics_payload, indent=2), encoding="utf-8"
+        )
+        write_run_brief_artifacts(summary, run_dir, project_path)
+        (run_dir / "summary.json").write_text(
+            json.dumps(summary, indent=2), encoding="utf-8"
         )
         typer.echo(f"Research run failed: {exc}", err=True)
         raise typer.Exit(code=1)
 
-    (run_dir / "summary.json").write_text(
-        json.dumps(summary, indent=2), encoding="utf-8"
-    )
     (run_dir / "metrics.json").write_text(
         json.dumps(metrics_payload, indent=2), encoding="utf-8"
+    )
+    write_run_brief_artifacts(summary, run_dir, project_path)
+    (run_dir / "summary.json").write_text(
+        json.dumps(summary, indent=2), encoding="utf-8"
     )
 
     typer.echo(f"Research run completed: {run_dir}")
