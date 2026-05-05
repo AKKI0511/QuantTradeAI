@@ -25,8 +25,8 @@ from quanttradeai.trading.portfolio import PortfolioManager
 from quanttradeai.utils.config_validator import validate_project_config
 from quanttradeai.utils.project_config import compile_research_runtime_configs
 from quanttradeai.utils.project_paths import resolve_project_path
-from quanttradeai.utils.run_brief import write_run_brief_artifacts
 from quanttradeai.utils.run_records import apply_required_run_fields, create_run_dir
+from quanttradeai.utils.run_result import attach_run_result
 
 from .base import AgentSimulationState, action_to_target, signal_to_action
 from .context import (
@@ -501,7 +501,11 @@ def run_agent_backtest(
             mode=mode,
             name=agent_name,
         )
-        write_run_brief_artifacts(summary, run_dir, project_config_path)
+        attach_run_result(
+            summary,
+            project_config_path=project_config_path,
+            metrics_payload=aggregate_metrics,
+        )
         _write_json(run_dir / "summary.json", summary)
         return summary
 
@@ -517,6 +521,6 @@ def run_agent_backtest(
             mode=mode,
             name=agent_name,
         )
-        write_run_brief_artifacts(summary, run_dir, project_config_path)
+        attach_run_result(summary, project_config_path=project_config_path)
         _write_json(run_dir / "summary.json", summary)
         raise

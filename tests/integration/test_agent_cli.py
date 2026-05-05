@@ -37,7 +37,9 @@ def _mock_history() -> pd.DataFrame:
 
 def _mock_history_with_news() -> pd.DataFrame:
     history = _mock_history()
-    history["text"] = pd.Series([np.nan] * len(history), index=history.index, dtype=object)
+    history["text"] = pd.Series(
+        [np.nan] * len(history), index=history.index, dtype=object
+    )
     history.loc[pd.Timestamp("2024-01-24"), "text"] = "Apple expands its buyback"
     history.loc[pd.Timestamp("2024-01-25"), "text"] = "Apple expands its buyback"
     history.loc[pd.Timestamp("2024-01-26"), "text"] = "Analyst raises Apple target"
@@ -202,13 +204,13 @@ def test_agent_run_backtest_writes_artifacts(tmp_path: Path, monkeypatch):
     assert (run_dir / "equity_curve.csv").is_file()
     assert (run_dir / "decisions.jsonl").is_file()
     assert (run_dir / "prompt_samples.json").is_file()
-    assert (run_dir / "run_brief.json").is_file()
-    assert (run_dir / "run_brief.md").is_file()
-    assert payload["artifacts"]["run_brief_json"] == str(run_dir / "run_brief.json")
-    run_brief = json.loads((run_dir / "run_brief.json").read_text("utf-8"))
-    assert run_brief["kind"] == "quanttradeai.run_brief"
-    assert run_brief["recommended_next_action"]["action"] == "promote_to_paper"
-    assert "promote_to_paper" in run_brief["commands"]
+    assert not (run_dir / "run_brief.json").exists()
+    assert not (run_dir / "run_brief.md").exists()
+    summary_payload = json.loads((run_dir / "summary.json").read_text("utf-8"))
+    assert summary_payload["run_result"]["next_action"]["action"] == (
+        "promote_agent_to_paper"
+    )
+    assert "promote_to_paper" in summary_payload["run_result"]["commands"]
 
     decision_lines = (
         (run_dir / "decisions.jsonl").read_text(encoding="utf-8").strip().splitlines()
@@ -307,7 +309,9 @@ def test_llm_agent_backtest_context_blocks_include_orders_memory_news_and_notes(
         "path": "notes/breakout_gpt.md",
         "content": "Favor continuation setups over noise.",
     }
-    assert first_context["news"]["headlines"][0]["text"] == "Analyst raises Apple target"
+    assert (
+        first_context["news"]["headlines"][0]["text"] == "Analyst raises Apple target"
+    )
 
     second_context = decisions[1]["context"]
     assert second_context["orders"]["recent_orders"][0]["action"] == "buy"
@@ -377,7 +381,7 @@ def test_agent_run_backtest_omits_ledger_artifact_when_no_trades(
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     run_dir = Path(payload["run_dir"])
     assert payload["status"] == "success"
-    assert "ledger" not in payload["artifacts"]
+    assert "ledger" not in payload["important_artifacts"]
     assert not (run_dir / "ledger.csv").exists()
 
 
@@ -790,7 +794,7 @@ def test_rule_agent_backtest_writes_standardized_artifacts(tmp_path: Path, monke
     assert (run_dir / "metrics.json").is_file()
     assert (run_dir / "equity_curve.csv").is_file()
     assert (run_dir / "decisions.jsonl").is_file()
-    assert "prompt_samples" not in payload["artifacts"]
+    assert "prompt_samples" not in payload["important_artifacts"]
     assert not (run_dir / "prompt_samples.json").exists()
 
     decision_lines = (
@@ -873,7 +877,7 @@ def test_model_agent_backtest_writes_standardized_artifacts(
     assert (run_dir / "equity_curve.csv").is_file()
     assert (run_dir / "decisions.jsonl").is_file()
     assert (run_dir / "runtime_backtest_config.yaml").is_file()
-    assert "prompt_samples" not in payload["artifacts"]
+    assert "prompt_samples" not in payload["important_artifacts"]
 
     decision_lines = (
         (run_dir / "decisions.jsonl").read_text(encoding="utf-8").strip().splitlines()
@@ -946,9 +950,7 @@ def test_model_agent_paper_run_writes_metrics_and_execution_log(
     assert metrics_payload["open_positions"]["AAPL"]["unrealized_pnl"] == 50.0
 
 
-def test_model_agent_paper_run_uses_replay_manifest(
-    tmp_path: Path, monkeypatch
-):
+def test_model_agent_paper_run_uses_replay_manifest(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _stub_prometheus_client(monkeypatch)
     _stub_live_trading_module(monkeypatch)
@@ -1007,12 +1009,12 @@ def test_model_agent_paper_run_uses_replay_manifest(
     run_dir = Path(payload["run_dir"])
     assert payload["paper_source"] == "replay"
     assert (run_dir / "replay_manifest.json").is_file()
-    assert (run_dir / "run_brief.json").is_file()
-    assert payload["artifacts"]["run_brief_json"] == str(run_dir / "run_brief.json")
-    run_brief = json.loads((run_dir / "run_brief.json").read_text("utf-8"))
-    assert run_brief["recommended_next_action"]["action"] == "promote_to_live"
-    assert "promote_to_live" in run_brief["commands"]
-    assert "deploy_agent" in run_brief["commands"]
+    assert not (run_dir / "run_brief.json").exists()
+    summary_payload = json.loads((run_dir / "summary.json").read_text("utf-8"))
+    assert summary_payload["run_result"]["next_action"]["action"] == (
+        "promote_agent_to_live"
+    )
+    assert "promote_to_live" in summary_payload["run_result"]["commands"]
     assert observed["gateway"].__class__.__name__ == "ReplayGateway"
     assert observed["bootstrap_history_frames"]
 
@@ -1121,12 +1123,14 @@ def test_model_agent_live_run_with_alpaca_backend_writes_broker_artifacts(
             self.execution_log = []
             if getattr(self, "broker_runtime", None) is not None:
                 self.broker_runtime.start_session()
-                execution_status, execution_payload = self.broker_runtime.execute_action(
-                    symbol="AAPL",
-                    action="buy",
-                    price=100.0,
-                    timestamp=pd.Timestamp("2024-01-01T00:00:00Z").to_pydatetime(),
-                    extra={"signal": 1},
+                execution_status, execution_payload = (
+                    self.broker_runtime.execute_action(
+                        symbol="AAPL",
+                        action="buy",
+                        price=100.0,
+                        timestamp=pd.Timestamp("2024-01-01T00:00:00Z").to_pydatetime(),
+                        extra={"signal": 1},
+                    )
                 )
                 self.execution_log = [execution_payload]
                 self.decision_log = [
@@ -1408,7 +1412,9 @@ def test_llm_agent_paper_context_blocks_include_orders_memory_news_and_notes(
         "path": "notes/breakout_gpt.md",
         "content": "Bias toward clear trend continuation.",
     }
-    assert first_context["news"]["headlines"][0]["text"] == "Analyst raises Apple target"
+    assert (
+        first_context["news"]["headlines"][0]["text"] == "Analyst raises Apple target"
+    )
 
     second_context = decisions[1]["context"]
     assert second_context["orders"]["recent_orders"][0]["action"] == "buy"
@@ -1567,7 +1573,7 @@ def test_rule_agent_paper_run_writes_metrics_and_execution_log(
     assert (run_dir / "metrics.json").is_file()
     assert (run_dir / "decisions.jsonl").is_file()
     assert (run_dir / "executions.jsonl").is_file()
-    assert "prompt_samples" not in payload["artifacts"]
+    assert "prompt_samples" not in payload["important_artifacts"]
     assert not (run_dir / "prompt_samples.json").exists()
 
     decision_lines = [

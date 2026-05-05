@@ -68,12 +68,11 @@ LLM and hybrid live runs also write `prompt_samples.json`.
 `quanttradeai agent run --all` and `quanttradeai agent run --sweep` write batch-level artifacts under `runs/agent/batches/...`, including:
 
 - `resolved_project_config.yaml`
-- `batch_manifest.json`
+- `summary.json` with `run_result`
 - `results.json`
 - `scoreboard.json`
-- `scoreboard.txt`
 
-Child runs keep their normal per-run runtime YAML snapshots inside their own run directories. Live batches require `--acknowledge-live <project.name>` and preserve normal child runs under `runs/agent/live/...`.
+Child runs keep their normal per-run runtime YAML snapshots inside their own run directories. `summary.json.run_result` carries the high-level winner, failures, important artifacts, and next commands. Live batches require `--acknowledge-live <project.name>` and preserve normal child runs under `runs/agent/live/...`.
 
 ## Deployment Bundles
 

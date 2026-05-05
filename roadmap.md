@@ -1,6 +1,6 @@
 # QuantTradeAI Roadmap
 
-Last updated: 2026-05-04
+Last updated: 2026-05-05
 
 This document is the product source of truth for QuantTradeAI.
 It is written for both human contributors and coding agents.
@@ -416,11 +416,11 @@ Deliverables:
 - Add AI-assisted experiment planning and ops support only where it materially saves user time.
 - Tighten docs, templates, and examples around the final product model.
 
-Status on 2026-05-04:
+Status on 2026-05-05:
 
-- Agent batch and sweep runs now write agent-readable experiment briefs (`experiment_brief.json` and `experiment_brief.md`) plus batch-level `summary.json` records under `runs/agent/batches/...`, so coding agents can identify the best child run, inspect failures, and execute the recommended next command without manually stitching together batch artifacts.
+- Research, agent, batch, and sweep runs now attach `run_result` to `summary.json`, and completion-oriented CLI commands print compact JSON with `run_id`, `status`, `run_dir`, key metrics, next action, commands, warnings, and important artifacts for coding-agent context.
+- Agent batch and sweep runs keep only the required high-level batch artifacts: `summary.json`, `results.json`, and `scoreboard.json`. Redundant experiment brief, text scoreboard, and batch manifest files are replaced by `summary.json.run_result`.
 - `quanttradeai runs list --type batch --json` is implemented for local batch run discovery.
-- Single research and agent runs now write agent-readable run briefs (`run_brief.json` and `run_brief.md`) under each run directory, so coding agents can inspect metrics, warnings, artifact paths, and the recommended next command without manually stitching together single-run artifacts.
 
 ## Golden Workflows
 

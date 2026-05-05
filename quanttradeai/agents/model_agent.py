@@ -45,8 +45,8 @@ from quanttradeai.utils.project_config import (
     resolve_paper_replay_window,
 )
 from quanttradeai.utils.project_paths import resolve_project_path
-from quanttradeai.utils.run_brief import write_run_brief_artifacts
 from quanttradeai.utils.run_records import apply_required_run_fields, create_run_dir
+from quanttradeai.utils.run_result import attach_run_result
 
 from .base import signal_to_action
 
@@ -474,7 +474,11 @@ def run_model_agent_backtest(
             mode="backtest",
             name=agent_name,
         )
-        write_run_brief_artifacts(summary, run_dir, project_config_path)
+        attach_run_result(
+            summary,
+            project_config_path=project_config_path,
+            metrics_payload=aggregate_metrics,
+        )
         _write_json(run_dir / "summary.json", summary)
         return summary
     except Exception as exc:
@@ -489,7 +493,7 @@ def run_model_agent_backtest(
             mode="backtest",
             name=agent_name,
         )
-        write_run_brief_artifacts(summary, run_dir, project_config_path)
+        attach_run_result(summary, project_config_path=project_config_path)
         _write_json(run_dir / "summary.json", summary)
         raise
 
@@ -782,7 +786,11 @@ def _run_model_agent_streaming(
             mode=mode,
             name=agent_name,
         )
-        write_run_brief_artifacts(summary, run_dir, project_config_path)
+        attach_run_result(
+            summary,
+            project_config_path=project_config_path,
+            metrics_payload=metrics_payload,
+        )
         _write_json(run_dir / "summary.json", summary)
         return summary
     except Exception as exc:
@@ -797,6 +805,6 @@ def _run_model_agent_streaming(
             mode=mode,
             name=agent_name,
         )
-        write_run_brief_artifacts(summary, run_dir, project_config_path)
+        attach_run_result(summary, project_config_path=project_config_path)
         _write_json(run_dir / "summary.json", summary)
         raise

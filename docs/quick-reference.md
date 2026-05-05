@@ -149,21 +149,15 @@ Canonical Render deployment bundle artifacts:
 
 Canonical multi-agent batch artifacts:
 - `runs/agent/batches/<timestamp>_<project>_<mode>/summary.json`
-- `runs/agent/batches/<timestamp>_<project>_<mode>/batch_manifest.json`
 - `runs/agent/batches/<timestamp>_<project>_<mode>/results.json`
 - `runs/agent/batches/<timestamp>_<project>_<mode>/scoreboard.json`
-- `runs/agent/batches/<timestamp>_<project>_<mode>/scoreboard.txt`
-- `runs/agent/batches/<timestamp>_<project>_<mode>/experiment_brief.json`
-- `runs/agent/batches/<timestamp>_<project>_<mode>/experiment_brief.md`
 
 Canonical sweep batch artifacts:
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/summary.json`
-- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/batch_manifest.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/results.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.json`
-- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.txt`
-- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/experiment_brief.json`
-- `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/experiment_brief.md`
+
+Batch `summary.json` files include `run_result` with ranked candidates, failures, important artifacts, and next commands for coding agents.
 
 ## Python API Patterns
 

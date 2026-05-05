@@ -667,9 +667,7 @@ def test_runs_list_scoreboard_json_includes_additive_scoreboard_payload(
     assert payload[1]["scoreboard"]["accuracy"] == 0.8
 
 
-def test_runs_list_ignores_batch_artifacts_without_child_run_summaries(
-    tmp_path: Path, monkeypatch
-):
+def test_runs_list_ignores_batch_directory_without_summary(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runs_root = Path("runs")
     _seed_runs(runs_root)
@@ -678,10 +676,8 @@ def test_runs_list_ignores_batch_artifacts_without_child_run_summaries(
         runs_root / "agent" / "batches" / "20260101_000000_multi_agent_backtest"
     )
     batch_root.mkdir(parents=True, exist_ok=True)
-    (batch_root / "batch_manifest.json").write_text("{}", encoding="utf-8")
     (batch_root / "results.json").write_text("{}", encoding="utf-8")
     (batch_root / "scoreboard.json").write_text("{}", encoding="utf-8")
-    (batch_root / "scoreboard.txt").write_text("placeholder", encoding="utf-8")
 
     result = runner.invoke(app, ["runs", "list", "--json"])
 
