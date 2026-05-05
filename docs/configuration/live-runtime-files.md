@@ -72,7 +72,7 @@ LLM and hybrid live runs also write `prompt_samples.json`.
 - `results.json`
 - `scoreboard.json`
 
-Child runs keep their normal per-run runtime YAML snapshots inside their own run directories. `summary.json.run_result` carries the high-level winner, failures, important artifacts, and next commands. Live batches require `--acknowledge-live <project.name>` and preserve normal child runs under `runs/agent/live/...`.
+Child runs keep their normal per-run runtime YAML snapshots inside their own run directories. `summary.json.run_result` carries only the high-level winner, other top candidates, and failures; artifact paths remain in the normal `artifacts` sections and child result records. Live batches require `--acknowledge-live <project.name>` and preserve normal child runs under `runs/agent/live/...`.
 
 ## Deployment Bundles
 

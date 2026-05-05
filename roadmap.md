@@ -418,8 +418,8 @@ Deliverables:
 
 Status on 2026-05-05:
 
-- Research, agent, batch, and sweep runs now attach `run_result` to `summary.json`, and completion-oriented CLI commands print compact JSON with `run_id`, `status`, `run_dir`, key metrics, next action, commands, warnings, and important artifacts for coding-agent context.
-- Agent batch and sweep runs keep only the required high-level batch artifacts: `summary.json`, `results.json`, and `scoreboard.json`. Redundant experiment brief, text scoreboard, and batch manifest files are replaced by `summary.json.run_result`.
+- Research, agent, batch, and sweep runs now attach sparse `run_result` analysis to `summary.json`, and completion-oriented CLI commands print one compact JSON object with `run_id`, `status`, `run_dir`, and derived metrics for coding-agent context.
+- Agent batch and sweep runs keep only the required high-level batch artifacts: `summary.json`, `results.json`, and `scoreboard.json`. Redundant experiment brief, text scoreboard, and batch manifest files are replaced by non-prescriptive `summary.json.run_result` ranking and failure summaries.
 - `quanttradeai runs list --type batch --json` is implemented for local batch run discovery.
 
 ## Golden Workflows

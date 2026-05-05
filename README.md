@@ -296,7 +296,7 @@ This writes the required batch artifacts under `runs/agent/batches/<timestamp>_<
 - `results.json`
 - `scoreboard.json`
 
-`summary.json.run_result` contains the winner, top candidates, failed children, important artifacts, and exact next commands for promotion or inspection. Each child agent still writes its normal run under `runs/agent/backtest/...`, `runs/agent/paper/...`, or `runs/agent/live/...`, so `quanttradeai runs list --scoreboard` continues to work for ranking and `quanttradeai runs list --compare ...` can inspect shortlisted runs in detail. Batch summaries are discoverable with `quanttradeai runs list --type batch --json`. Backtest batches rank by `net_sharpe`; paper and live batches rank by `total_pnl`.
+`summary.json.run_result` contains only the high-level batch analysis: one winner, other top candidates, and failed children. Artifact paths remain in the normal summary and result records, and CLI completion output stays to one compact JSON object with the run id, status, run directory, and derived metrics. Each child agent still writes its normal run under `runs/agent/backtest/...`, `runs/agent/paper/...`, or `runs/agent/live/...`, so `quanttradeai runs list --scoreboard` continues to work for ranking and `quanttradeai runs list --compare ...` can inspect shortlisted runs in detail. Batch summaries are discoverable with `quanttradeai runs list --type batch --json`. Backtest batches rank by `net_sharpe`; paper and live batches rank by `total_pnl`.
 
 ### Sweep One Agent
 
@@ -430,7 +430,7 @@ Sweep batch artifacts:
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/results.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.json`
 
-`summary.json.run_result` is the durable high-level context for coding agents. It summarizes the winner, top candidates, failures, important artifacts, and next commands without duplicating the same guidance into separate Markdown or manifest files.
+`summary.json.run_result` is the durable high-level context for coding agents. It summarizes derived metrics, ranked candidates, and failures without duplicating artifact paths or prescribing follow-up actions in separate Markdown or manifest files.
 
 To rank and compare local runs directly from the CLI, use the scoreboard first and then compare explicit run ids:
 

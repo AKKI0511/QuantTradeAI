@@ -207,10 +207,9 @@ def test_agent_run_backtest_writes_artifacts(tmp_path: Path, monkeypatch):
     assert not (run_dir / "run_brief.json").exists()
     assert not (run_dir / "run_brief.md").exists()
     summary_payload = json.loads((run_dir / "summary.json").read_text("utf-8"))
-    assert summary_payload["run_result"]["next_action"]["action"] == (
-        "promote_agent_to_paper"
-    )
-    assert "promote_to_paper" in summary_payload["run_result"]["commands"]
+    assert summary_payload["run_result"]["metrics"]["metrics_status"] == "available"
+    assert "next_action" not in summary_payload["run_result"]
+    assert "commands" not in summary_payload["run_result"]
 
     decision_lines = (
         (run_dir / "decisions.jsonl").read_text(encoding="utf-8").strip().splitlines()
@@ -381,7 +380,7 @@ def test_agent_run_backtest_omits_ledger_artifact_when_no_trades(
     payload = json.loads(result.stdout[result.stdout.index("{") :])
     run_dir = Path(payload["run_dir"])
     assert payload["status"] == "success"
-    assert "ledger" not in payload["important_artifacts"]
+    assert "important_artifacts" not in payload
     assert not (run_dir / "ledger.csv").exists()
 
 
@@ -794,7 +793,7 @@ def test_rule_agent_backtest_writes_standardized_artifacts(tmp_path: Path, monke
     assert (run_dir / "metrics.json").is_file()
     assert (run_dir / "equity_curve.csv").is_file()
     assert (run_dir / "decisions.jsonl").is_file()
-    assert "prompt_samples" not in payload["important_artifacts"]
+    assert "important_artifacts" not in payload
     assert not (run_dir / "prompt_samples.json").exists()
 
     decision_lines = (
@@ -877,7 +876,7 @@ def test_model_agent_backtest_writes_standardized_artifacts(
     assert (run_dir / "equity_curve.csv").is_file()
     assert (run_dir / "decisions.jsonl").is_file()
     assert (run_dir / "runtime_backtest_config.yaml").is_file()
-    assert "prompt_samples" not in payload["important_artifacts"]
+    assert "important_artifacts" not in payload
 
     decision_lines = (
         (run_dir / "decisions.jsonl").read_text(encoding="utf-8").strip().splitlines()
@@ -1011,10 +1010,9 @@ def test_model_agent_paper_run_uses_replay_manifest(tmp_path: Path, monkeypatch)
     assert (run_dir / "replay_manifest.json").is_file()
     assert not (run_dir / "run_brief.json").exists()
     summary_payload = json.loads((run_dir / "summary.json").read_text("utf-8"))
-    assert summary_payload["run_result"]["next_action"]["action"] == (
-        "promote_agent_to_live"
-    )
-    assert "promote_to_live" in summary_payload["run_result"]["commands"]
+    assert summary_payload["run_result"]["metrics"]["metrics_status"] == "available"
+    assert "next_action" not in summary_payload["run_result"]
+    assert "commands" not in summary_payload["run_result"]
     assert observed["gateway"].__class__.__name__ == "ReplayGateway"
     assert observed["bootstrap_history_frames"]
 
@@ -1573,7 +1571,7 @@ def test_rule_agent_paper_run_writes_metrics_and_execution_log(
     assert (run_dir / "metrics.json").is_file()
     assert (run_dir / "decisions.jsonl").is_file()
     assert (run_dir / "executions.jsonl").is_file()
-    assert "prompt_samples" not in payload["important_artifacts"]
+    assert "important_artifacts" not in payload
     assert not (run_dir / "prompt_samples.json").exists()
 
     decision_lines = [

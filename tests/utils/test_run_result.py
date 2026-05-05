@@ -43,7 +43,7 @@ def _entry(
     }
 
 
-def test_research_success_recommends_model_promotion():
+def test_research_success_summarizes_metrics_without_prescriptive_fields():
     summary = _summary(run_type="research", mode="research")
     attach_run_result(
         summary,
@@ -54,64 +54,72 @@ def test_research_success_recommends_model_promotion():
         },
     )
 
-    assert summary["run_result"]["next_action"]["action"] == "promote_research_model"
-    assert summary["run_result"]["commands"]["promote_model"] == (
-        "quanttradeai promote --run research/demo -c config/project.yaml"
-    )
-    assert summary["run_result"]["key_metrics"]["accuracy"] == 0.75
+    run_result = summary["run_result"]
+    assert run_result["schema_version"] == 2
+    assert run_result["metrics"]["accuracy"] == 0.75
+    assert run_result["metrics"]["net_sharpe"] == 1.2
+    assert "next_action" not in run_result
+    assert "commands" not in run_result
+    assert "important_artifacts" not in run_result
+    assert "warnings" not in run_result
 
 
-def test_agent_backtest_success_recommends_paper_promotion():
+def test_agent_backtest_success_summarizes_result_metrics():
     summary = _summary(run_type="agent", mode="backtest")
     attach_run_result(
         summary,
         metrics_payload={"net_sharpe": 1.1, "net_pnl": 0.2, "net_mdd": -0.05},
     )
 
-    assert summary["run_result"]["next_action"]["action"] == "promote_agent_to_paper"
-    assert summary["run_result"]["commands"]["promote_to_paper"] == (
-        "quanttradeai promote --run agent/backtest/demo -c config/project.yaml"
-    )
-    assert summary["run_result"]["commands"]["run_paper"] == (
-        "quanttradeai agent run --agent demo_agent -c config/project.yaml --mode paper"
-    )
+    assert summary["run_result"]["metrics"] == {
+        "metrics_status": "available",
+        "net_sharpe": 1.1,
+        "net_pnl": 0.2,
+        "net_mdd": -0.05,
+    }
 
 
-def test_agent_paper_success_recommends_live_promotion():
+def test_agent_paper_success_summarizes_execution_metrics():
     summary = _summary(run_type="agent", mode="paper")
     attach_run_result(
         summary,
         metrics_payload={"total_pnl": 42.0, "portfolio_value": 100042.0},
     )
 
-    assert summary["run_result"]["next_action"]["action"] == "promote_agent_to_live"
-    assert summary["run_result"]["commands"]["promote_to_live"] == (
-        "quanttradeai promote --run agent/paper/demo -c config/project.yaml "
-        "--to live --acknowledge-live demo_agent"
-    )
+    assert summary["run_result"]["metrics"] == {
+        "metrics_status": "available",
+        "total_pnl": 42.0,
+        "portfolio_value": 100042.0,
+    }
 
 
-def test_agent_live_success_recommends_inspection():
+def test_agent_live_success_summarizes_execution_metrics():
     summary = _summary(run_type="agent", mode="live")
-    attach_run_result(summary, metrics_payload={"total_pnl": 12.0})
-
-    assert summary["run_result"]["next_action"]["action"] == "inspect_live_run"
-    assert (
-        "runs list --type agent --mode live"
-        in summary["run_result"]["next_action"]["command"]
+    attach_run_result(
+        summary,
+        metrics_payload={"total_pnl": 12.0, "risk_status": "ok"},
     )
 
+    assert summary["run_result"]["metrics"] == {
+        "metrics_status": "available",
+        "total_pnl": 12.0,
+        "risk_status": "ok",
+    }
 
-def test_failed_run_recommends_failure_inspection():
+
+def test_failed_run_preserves_failure_at_summary_level_only():
     summary = _summary(run_type="agent", mode="backtest", status="failed")
     summary["error"] = "model failed"
     attach_run_result(summary)
 
-    assert summary["run_result"]["next_action"]["action"] == "inspect_failure"
-    assert summary["run_result"]["failure"]["error"] == "model failed"
+    run_result = summary["run_result"]
+    assert run_result["metrics"]["metrics_status"] == "missing"
+    assert "failure" not in run_result
+    compact = compact_cli_result(summary)
+    assert compact["error"] == "model failed"
 
 
-def test_batch_sweep_winner_failures_and_compact_output_are_agent_ready():
+def test_batch_sweep_winner_failures_and_compact_output_are_sparse():
     batch_summary = {
         "run_id": "agent/batches/demo_batch",
         "run_type": "batch",
@@ -123,6 +131,7 @@ def test_batch_sweep_winner_failures_and_compact_output_are_agent_ready():
         "agent_count": 3,
         "success_count": 2,
         "failure_count": 1,
+        "scoreboard_sort_by": "net_sharpe",
         "warnings": ["batch warning"],
         "artifacts": {
             "summary": "runs/agent/batches/demo_batch/summary.json",
@@ -130,6 +139,7 @@ def test_batch_sweep_winner_failures_and_compact_output_are_agent_ready():
             "scoreboard_json": "runs/agent/batches/demo_batch/scoreboard.json",
         },
         "run_dir": "runs/agent/batches/demo_batch",
+        "sweep": {"name": "grid", "base_agent_name": "rsi_reversion"},
     }
     results = [
         _entry("low", "agent/backtest/low", score=0.5),
@@ -149,16 +159,33 @@ def test_batch_sweep_winner_failures_and_compact_output_are_agent_ready():
         scoreboard_sort_by="net_sharpe",
     )
 
-    run_result = batch_summary["run_result"]
-    assert run_result["winner"]["agent_name"] == "high"
-    assert run_result["top_candidates"][0]["score"] == 2.5
-    assert run_result["failures"][0]["error"] == "bad config"
-    assert run_result["next_action"]["action"] == "materialize_sweep_winner"
-    assert run_result["commands"]["run_promoted_paper_agent"] == (
-        "quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode paper"
-    )
+    batch = batch_summary["run_result"]["batch"]
+    assert batch["winner"]["agent_name"] == "high"
+    assert batch["top_candidates"][0]["agent_name"] == "low"
+    assert batch["top_candidates"][0]["score"] == 0.5
+    assert batch["failures"][0]["error"] == "bad config"
+    assert "artifacts" not in batch["winner"]
+    assert "promote_command" not in batch["winner"]
+    assert "score_metric" not in batch["winner"]
+    assert "warnings" not in batch["failures"][0]
 
     compact = compact_cli_result(batch_summary)
-    assert compact["run_id"] == "agent/batches/demo_batch"
-    assert compact["key_metrics"]["winner_agent"] == "high"
-    assert compact["important_artifacts"]["results"].endswith("results.json")
+    assert compact == {
+        "run_id": "agent/batches/demo_batch",
+        "status": "success",
+        "run_dir": "runs/agent/batches/demo_batch",
+        "run_type": "batch",
+        "mode": "backtest",
+        "name": "demo_batch",
+        "metrics": {"scoreboard_sort_by": "net_sharpe"},
+        "winner": {
+            "agent_name": "high",
+            "run_id": "agent/backtest/high",
+            "score": 2.5,
+        },
+        "batch_type": "sweep",
+        "agent_count": 3,
+        "success_count": 2,
+        "failure_count": 1,
+        "sweep": {"name": "grid", "base_agent_name": "rsi_reversion"},
+    }

@@ -582,6 +582,7 @@ def run_agent_batch(
         "agent_count": len(results),
         "success_count": success_count,
         "failure_count": failure_count,
+        "scoreboard_sort_by": scoreboard_sort_by,
         "artifacts": dict(batch_artifacts),
         "warnings": batch_warnings,
         "run_result": dict(batch_summary["run_result"]),

@@ -45,6 +45,10 @@ app.add_typer(agent_app, name="agent")
 app.add_typer(runs_app, name="runs")
 
 
+def _echo_compact_result(summary: dict[str, Any]) -> None:
+    typer.echo(json.dumps(compact_cli_result(summary), separators=(",", ":")))
+
+
 def fetch_data_only(*args, **kwargs):
     from .main import fetch_data_only as _fetch_data_only
 
@@ -1108,8 +1112,7 @@ def cmd_research_run(
         json.dumps(metrics_payload, indent=2), encoding="utf-8"
     )
 
-    typer.echo(f"Research run completed: {run_dir}")
-    typer.echo(json.dumps(compact_cli_result(summary), indent=2))
+    _echo_compact_result(summary)
 
 
 @runs_app.command("list")
@@ -1418,8 +1421,7 @@ def cmd_agent_run(
                 max_concurrency=max_concurrency,
                 acknowledge_live_project_name=acknowledge_live,
             )
-            typer.echo(f"Agent batch completed: {batch_result['run_dir']}")
-            typer.echo(json.dumps(compact_cli_result(batch_result), indent=2))
+            _echo_compact_result(batch_result)
             if batch_result["status"] != "success":
                 raise typer.Exit(code=1)
             return
@@ -1434,8 +1436,7 @@ def cmd_agent_run(
                 max_concurrency=max_concurrency,
                 sweep_name=sweep,
             )
-            typer.echo(f"Agent sweep completed: {batch_result['run_dir']}")
-            typer.echo(json.dumps(compact_cli_result(batch_result), indent=2))
+            _echo_compact_result(batch_result)
             if batch_result["status"] != "success":
                 raise typer.Exit(code=1)
             return
@@ -1455,8 +1456,7 @@ def cmd_agent_run(
         typer.echo(f"Agent run failed: {exc}", err=True)
         raise typer.Exit(code=1)
 
-    typer.echo(f"Agent run completed: {summary['run_dir']}")
-    typer.echo(json.dumps(compact_cli_result(summary), indent=2))
+    _echo_compact_result(summary)
 
 
 @app.command("init")

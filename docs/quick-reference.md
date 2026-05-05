@@ -157,7 +157,7 @@ Canonical sweep batch artifacts:
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/results.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.json`
 
-Batch `summary.json` files include `run_result` with ranked candidates, failures, important artifacts, and next commands for coding agents.
+Batch `summary.json` files include sparse `run_result` analysis with ranked candidates and failures. Completion-oriented CLI commands print one compact JSON object with the run id, status, run directory, and derived metrics.
 
 ## Python API Patterns
 

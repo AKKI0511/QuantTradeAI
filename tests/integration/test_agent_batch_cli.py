@@ -24,10 +24,14 @@ def _assert_compact_batch_payload(payload: dict) -> None:
         "run_id",
         "status",
         "run_dir",
-        "key_metrics",
-        "next_action",
-        "important_artifacts",
+        "run_type",
+        "mode",
+        "metrics",
     } <= set(payload)
+    assert "next_action" not in payload
+    assert "commands" not in payload
+    assert "important_artifacts" not in payload
+    assert "artifacts" not in payload
 
 
 def _write_project_with_all_agent_kinds(config_path: Path) -> None:
@@ -449,11 +453,6 @@ def test_agent_run_all_writes_batch_artifacts_and_sorts_scoreboard(
     assert not (batch_dir / "scoreboard.txt").exists()
     assert not (batch_dir / "experiment_brief.json").exists()
     assert not (batch_dir / "experiment_brief.md").exists()
-    assert payload["important_artifacts"]["results"] == str(batch_dir / "results.json")
-    assert payload["important_artifacts"]["scoreboard_json"] == str(
-        batch_dir / "scoreboard.json"
-    )
-
     results_payload = json.loads((batch_dir / "results.json").read_text("utf-8"))
     assert [item["agent_name"] for item in results_payload["results"]] == [
         "breakout_gpt",
@@ -472,14 +471,12 @@ def test_agent_run_all_writes_batch_artifacts_and_sorts_scoreboard(
     ]
 
     batch_summary = json.loads((batch_dir / "summary.json").read_text("utf-8"))
-    run_result = batch_summary["run_result"]
+    run_result = batch_summary["run_result"]["batch"]
     assert run_result["winner"]["agent_name"] == "breakout_gpt"
-    assert run_result["next_action"]["action"] == "promote_winner_to_paper"
-    assert run_result["commands"]["promote_winner"] == (
-        f"quanttradeai promote --run {run_result['winner']['run_id']} "
-        f"-c {config_path.resolve().as_posix()}"
-    )
-    assert "compare_top_runs" in run_result["commands"]
+    assert batch_summary["scoreboard_sort_by"] == "net_sharpe"
+    assert "scoreboard_sort_by" not in run_result
+    assert "next_action" not in batch_summary["run_result"]
+    assert "commands" not in batch_summary["run_result"]
     assert batch_summary["run_type"] == "batch"
     assert batch_summary["run_id"] == f"agent/batches/{batch_dir.name}"
 
@@ -571,7 +568,7 @@ def test_strategy_lab_agent_run_all_backtest_enumerates_both_agents(
     _assert_compact_batch_payload(payload)
     assert observed_agents == ["rsi_reversion", "sma_trend"]
     results_payload = json.loads(
-        Path(payload["important_artifacts"]["results"]).read_text("utf-8")
+        (Path(payload["run_dir"]) / "results.json").read_text("utf-8")
     )
     assert [item["agent_name"] for item in results_payload["results"]] == [
         "rsi_reversion",
@@ -702,8 +699,8 @@ def test_agent_run_all_paper_writes_batch_artifacts_and_sorts_by_total_pnl(
         "rsi_reversion",
     ]
     summary_payload = json.loads((batch_dir / "summary.json").read_text("utf-8"))
-    assert summary_payload["run_result"]["next_action"]["action"] == (
-        "promote_winner_to_live"
+    assert summary_payload["run_result"]["batch"]["winner"]["agent_name"] == (
+        "breakout_gpt"
     )
 
 
@@ -815,7 +812,7 @@ def test_agent_run_all_paper_preserves_child_failures_and_logs(
     assert payload["failure_count"] == 1
     assert payload["success_count"] == 3
     results_payload = json.loads(
-        Path(payload["important_artifacts"]["results"]).read_text("utf-8")
+        (Path(payload["run_dir"]) / "results.json").read_text("utf-8")
     )
 
     failed_entry = next(
@@ -978,10 +975,9 @@ def test_agent_run_all_live_writes_batch_artifacts_and_sorts_by_total_pnl(
         "rsi_reversion",
     ]
     summary_payload = json.loads((batch_dir / "summary.json").read_text("utf-8"))
-    assert summary_payload["run_result"]["next_action"]["action"] == (
-        "inspect_live_batch"
+    assert summary_payload["run_result"]["batch"]["winner"]["agent_name"] == (
+        "breakout_gpt"
     )
-    assert summary_payload["run_result"]["winner"]["agent_name"] == "breakout_gpt"
 
 
 def test_agent_run_all_live_preserves_child_failures_and_logs(
@@ -1096,7 +1092,7 @@ def test_agent_run_all_live_preserves_child_failures_and_logs(
     assert payload["failure_count"] == 1
     assert payload["success_count"] == 3
     results_payload = json.loads(
-        Path(payload["important_artifacts"]["results"]).read_text("utf-8")
+        (Path(payload["run_dir"]) / "results.json").read_text("utf-8")
     )
 
     failed_entry = next(
@@ -1269,19 +1265,13 @@ def test_agent_run_sweep_writes_variant_artifacts_and_preserves_source_config(
     }
 
     batch_summary = json.loads((batch_dir / "summary.json").read_text("utf-8"))
-    run_result = batch_summary["run_result"]
+    run_result = batch_summary["run_result"]["batch"]
     assert run_result["winner"]["agent_name"] == (
         "rsi_reversion__rsi_threshold_grid__buy_below-30_0__sell_above-75_0"
     )
-    assert run_result["next_action"]["action"] == "materialize_sweep_winner"
-    assert run_result["commands"]["promote_winner"] == (
-        f"quanttradeai promote --run {run_result['winner']['run_id']} "
-        f"-c {config_path.resolve().as_posix()}"
-    )
-    assert run_result["commands"]["run_promoted_paper_agent"] == (
-        "quanttradeai agent run --agent rsi_reversion "
-        f"-c {config_path.resolve().as_posix()} --mode paper"
-    )
+    assert batch_summary["scoreboard_sort_by"] == "net_sharpe"
+    assert "scoreboard_sort_by" not in run_result
+    assert "commands" not in batch_summary["run_result"]
 
 
 def test_agent_run_sweep_uses_canonical_project_root_for_llm_assets(
@@ -1377,7 +1367,7 @@ def test_agent_run_sweep_uses_canonical_project_root_for_llm_assets(
     _assert_compact_batch_payload(payload)
     assert payload["success_count"] == 1
     results_payload = json.loads(
-        Path(payload["important_artifacts"]["results"]).read_text("utf-8")
+        (Path(payload["run_dir"]) / "results.json").read_text("utf-8")
     )
 
     child_run_dir = Path(results_payload["results"][0]["run_dir"])
@@ -1482,7 +1472,7 @@ def test_agent_run_all_returns_non_zero_after_partial_failure(
     _assert_compact_batch_payload(payload)
     assert payload["failure_count"] == 1
     results_payload = json.loads(
-        Path(payload["important_artifacts"]["results"]).read_text("utf-8")
+        (Path(payload["run_dir"]) / "results.json").read_text("utf-8")
     )
     failed_result = next(
         item

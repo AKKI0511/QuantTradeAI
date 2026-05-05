@@ -181,7 +181,7 @@ Batch artifacts include:
 - `results.json`
 - `scoreboard.json`
 
-`summary.json.run_result` identifies the winner, top candidates, failed children, important artifacts, and exact next command. Backtest batches rank by `net_sharpe`. Paper and live batches rank by `total_pnl`. Live batches require every configured agent to already have `mode: live` and require `--acknowledge-live` to match `project.name`.
+`summary.json.run_result` summarizes the batch ranking with one winner, other top candidates, and failed children without repeating artifact paths or prescribing a next command. Backtest batches rank by `net_sharpe`. Paper and live batches rank by `total_pnl`. Live batches require every configured agent to already have `mode: live` and require `--acknowledge-live` to match `project.name`.
 
 ## Standalone Utility Commands
 

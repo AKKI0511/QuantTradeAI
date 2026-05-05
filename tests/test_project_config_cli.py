@@ -1574,17 +1574,20 @@ def test_research_run_happy_path_writes_run_artifacts(tmp_path: Path, monkeypatc
 
     run_result = runner.invoke(app, ["research", "run", "--config", str(cfg_path)])
     assert run_result.exit_code == 0, run_result.stdout
-    assert "Research run completed:" in run_result.stdout
-    cli_payload = json.loads(run_result.stdout[run_result.stdout.index("{") :])
+    assert "Research run completed:" not in run_result.stdout
+    cli_payload = json.loads(run_result.stdout)
     assert {
         "run_id",
         "status",
         "run_dir",
-        "key_metrics",
-        "next_action",
-        "important_artifacts",
+        "run_type",
+        "mode",
+        "metrics",
     } <= set(cli_payload)
-    assert cli_payload["next_action"]["action"] == "promote_research_model"
+    assert "next_action" not in cli_payload
+    assert "commands" not in cli_payload
+    assert "important_artifacts" not in cli_payload
+    assert cli_payload["metrics"]["net_sharpe"] == 1.2
 
     run_root = Path("runs") / "research"
     run_dirs = sorted(path for path in run_root.iterdir() if path.is_dir())
@@ -1608,10 +1611,9 @@ def test_research_run_happy_path_writes_run_artifacts(tmp_path: Path, monkeypatc
     assert summary_payload["mode"] == "research"
     assert summary_payload["name"] == PROJECT_TEMPLATES["research"]["project"]["name"]
     assert summary_payload["run_id"].startswith("research/")
-    assert summary_payload["run_result"]["next_action"]["action"] == (
-        "promote_research_model"
-    )
-    assert summary_payload["run_result"]["key_metrics"]["net_sharpe"] == 1.2
+    assert summary_payload["run_result"]["metrics"]["net_sharpe"] == 1.2
+    assert "next_action" not in summary_payload["run_result"]
+    assert "commands" not in summary_payload["run_result"]
     assert (
         summary_payload["project_name"]
         == PROJECT_TEMPLATES["research"]["project"]["name"]
@@ -1622,10 +1624,7 @@ def test_research_run_happy_path_writes_run_artifacts(tmp_path: Path, monkeypatc
     assert metrics_payload["backtest_metrics_by_symbol"]["AAPL"]["net_sharpe"] == 1.2
     assert not (latest_run / "run_brief.json").exists()
     assert not (latest_run / "run_brief.md").exists()
-    assert summary_payload["run_result"]["next_action"]["action"] == (
-        "promote_research_model"
-    )
-    assert "promote_model" in summary_payload["run_result"]["commands"]
+    assert summary_payload["run_result"]["schema_version"] == 2
 
 
 def test_research_run_rejects_removed_legacy_config_flag(tmp_path: Path, monkeypatch):
@@ -1923,6 +1922,7 @@ def test_research_run_fails_for_malformed_project_config(tmp_path: Path, monkeyp
     )
 
     assert summary_payload["status"] == "failed"
-    assert summary_payload["run_result"]["next_action"]["action"] == "inspect_failure"
-    assert "error" in summary_payload["run_result"]["failure"]
+    assert "next_action" not in summary_payload["run_result"]
+    assert "failure" not in summary_payload["run_result"]
+    assert "error" in summary_payload
     assert metrics_payload["status"] == "placeholder"
