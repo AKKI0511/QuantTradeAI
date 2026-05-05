@@ -202,6 +202,13 @@ def test_agent_run_backtest_writes_artifacts(tmp_path: Path, monkeypatch):
     assert (run_dir / "equity_curve.csv").is_file()
     assert (run_dir / "decisions.jsonl").is_file()
     assert (run_dir / "prompt_samples.json").is_file()
+    assert (run_dir / "run_brief.json").is_file()
+    assert (run_dir / "run_brief.md").is_file()
+    assert payload["artifacts"]["run_brief_json"] == str(run_dir / "run_brief.json")
+    run_brief = json.loads((run_dir / "run_brief.json").read_text("utf-8"))
+    assert run_brief["kind"] == "quanttradeai.run_brief"
+    assert run_brief["recommended_next_action"]["action"] == "promote_to_paper"
+    assert "promote_to_paper" in run_brief["commands"]
 
     decision_lines = (
         (run_dir / "decisions.jsonl").read_text(encoding="utf-8").strip().splitlines()
@@ -1000,6 +1007,12 @@ def test_model_agent_paper_run_uses_replay_manifest(
     run_dir = Path(payload["run_dir"])
     assert payload["paper_source"] == "replay"
     assert (run_dir / "replay_manifest.json").is_file()
+    assert (run_dir / "run_brief.json").is_file()
+    assert payload["artifacts"]["run_brief_json"] == str(run_dir / "run_brief.json")
+    run_brief = json.loads((run_dir / "run_brief.json").read_text("utf-8"))
+    assert run_brief["recommended_next_action"]["action"] == "promote_to_live"
+    assert "promote_to_live" in run_brief["commands"]
+    assert "deploy_agent" in run_brief["commands"]
     assert observed["gateway"].__class__.__name__ == "ReplayGateway"
     assert observed["bootstrap_history_frames"]
 

@@ -1606,6 +1606,15 @@ def test_research_run_happy_path_writes_run_artifacts(tmp_path: Path, monkeypatc
     assert "migrated_project_config" not in summary_payload["artifacts"]
     assert metrics_payload["status"] == "available"
     assert metrics_payload["backtest_metrics_by_symbol"]["AAPL"]["net_sharpe"] == 1.2
+    assert (latest_run / "run_brief.json").is_file()
+    assert (latest_run / "run_brief.md").is_file()
+    assert summary_payload["artifacts"]["run_brief_json"] == str(
+        latest_run / "run_brief.json"
+    )
+    run_brief = json.loads((latest_run / "run_brief.json").read_text("utf-8"))
+    assert run_brief["kind"] == "quanttradeai.run_brief"
+    assert run_brief["recommended_next_action"]["action"] == "promote_research_run"
+    assert "promote_this_run" in run_brief["commands"]
 
 
 def test_research_run_rejects_removed_legacy_config_flag(tmp_path: Path, monkeypatch):

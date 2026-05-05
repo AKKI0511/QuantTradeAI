@@ -423,10 +423,10 @@ For the full shape, field reference, and supported agent modes, see [Project YAM
 
 | Workflow | Output directory | Typical artifacts |
 | --- | --- | --- |
-| Research | `runs/research/<timestamp>_<project>/` | `resolved_project_config.yaml`, runtime YAML snapshots, `summary.json`, `metrics.json`, backtest artifacts |
-| Agent backtest | `runs/agent/backtest/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, backtest files |
-| Agent paper | `runs/agent/paper/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime YAML snapshots, `replay_manifest.json` when replay is enabled, and broker snapshots when `execution.backend: alpaca` |
-| Agent live | `runs/agent/live/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `decisions.jsonl`, `executions.jsonl`, runtime streaming/risk/position-manager YAML snapshots, and broker snapshots when `execution.backend: alpaca` |
+| Research | `runs/research/<timestamp>_<project>/` | `resolved_project_config.yaml`, runtime YAML snapshots, `summary.json`, `metrics.json`, `run_brief.json`, `run_brief.md`, backtest artifacts |
+| Agent backtest | `runs/agent/backtest/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `run_brief.json`, `run_brief.md`, `decisions.jsonl`, backtest files |
+| Agent paper | `runs/agent/paper/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `run_brief.json`, `run_brief.md`, `decisions.jsonl`, `executions.jsonl`, runtime YAML snapshots, `replay_manifest.json` when replay is enabled, and broker snapshots when `execution.backend: alpaca` |
+| Agent live | `runs/agent/live/<timestamp>_<agent>/` | `resolved_project_config.yaml`, `summary.json`, `metrics.json`, `run_brief.json`, `run_brief.md`, `decisions.jsonl`, `executions.jsonl`, runtime streaming/risk/position-manager YAML snapshots, and broker snapshots when `execution.backend: alpaca` |
 
 Sweep batch artifacts:
 
@@ -438,7 +438,9 @@ Sweep batch artifacts:
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/experiment_brief.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/experiment_brief.md`
 
-This makes it easier to rank runs, inspect what actually changed, reuse winning configurations, and hand the next action to a coding agent without opening every batch artifact manually.
+Each single research or agent run also writes `run_brief.json` and `run_brief.md`. These briefs summarize the normalized run identity, scoreboard metrics, warnings/errors, artifact paths, and exact next commands such as promotion, deployment, or ranking.
+
+This makes it easier to rank runs, inspect what actually changed, reuse winning configurations, and hand the next action to a coding agent without opening every artifact manually.
 
 To rank and compare local runs directly from the CLI, use the scoreboard first and then compare explicit run ids:
 
