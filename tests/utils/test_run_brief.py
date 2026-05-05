@@ -257,3 +257,35 @@ def test_write_run_brief_artifacts_updates_summary_and_markdown(tmp_path: Path):
     assert "promote_to_paper" in rendered
     assert "## Commands" in rendered
     assert "## Artifacts" in rendered
+
+
+def test_write_run_brief_artifacts_keeps_summary_backed_decision_count(
+    tmp_path: Path,
+):
+    run_dir = tmp_path / "runs" / "agent" / "backtest" / "20260101_breakout_gpt"
+    _write_json(
+        run_dir / "metrics.json",
+        {"net_sharpe": 1.2, "net_pnl": 0.1, "net_mdd": -0.05},
+    )
+    summary = _summary(
+        run_dir,
+        run_id="agent/backtest/20260101_breakout_gpt",
+        run_type="agent",
+        mode="backtest",
+        name="breakout_gpt",
+        extra={
+            "agent_name": "breakout_gpt",
+            "decision_count": 17,
+            "artifacts": {"metrics": str(run_dir / "metrics.json")},
+        },
+    )
+
+    artifacts = write_run_brief_artifacts(summary, run_dir, _config_path(tmp_path))
+
+    brief = json.loads(Path(artifacts["run_brief_json"]).read_text("utf-8"))
+    persisted_summary = json.loads((run_dir / "summary.json").read_text("utf-8"))
+    assert brief["scoreboard"]["decision_count"] == 17
+    assert persisted_summary["decision_count"] == 17
+    assert (
+        persisted_summary["artifacts"]["run_brief_json"] == artifacts["run_brief_json"]
+    )

@@ -59,7 +59,14 @@ def _scoreboard_for_summary(
             "status": "missing",
             "error": "Run summary could not be normalized for scoreboard loading.",
         }
-    return load_scoreboard_record(record)
+    scoreboard = load_scoreboard_record(record)
+    for key in ("decision_count", "execution_count"):
+        if scoreboard.get(key) is None and summary.get(key) is not None:
+            try:
+                scoreboard[key] = int(summary[key])
+            except (TypeError, ValueError):
+                scoreboard[key] = summary[key]
+    return scoreboard
 
 
 def _deployment_target(project_config: dict[str, Any]) -> str | None:
@@ -321,6 +328,12 @@ def write_run_brief_artifacts(
     artifacts["run_brief_md"] = str(run_brief_md_path)
     summary["artifacts"] = artifacts
 
+    # Scoreboard loading reads summary.json for fallback fields such as
+    # decision_count, so persist the normalized summary before building the brief.
+    (run_dir_path / "summary.json").write_text(
+        json.dumps(summary, indent=2, default=str),
+        encoding="utf-8",
+    )
     brief = build_run_brief(
         summary=summary,
         run_dir=run_dir_path,
