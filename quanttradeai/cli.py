@@ -33,7 +33,7 @@ from .utils.run_scoreboard import (
     render_scoreboard_table,
     sort_run_records,
 )
-from .utils.run_brief import write_run_brief_artifacts
+from .utils.run_result import attach_run_result, compact_cli_result
 
 
 app = typer.Typer(add_completion=False, help="QuantTradeAI command line interface")
@@ -43,6 +43,10 @@ runs_app = typer.Typer(help="Run records")
 app.add_typer(research_app, name="research")
 app.add_typer(agent_app, name="agent")
 app.add_typer(runs_app, name="runs")
+
+
+def _echo_compact_result(summary: dict[str, Any]) -> None:
+    typer.echo(json.dumps(compact_cli_result(summary), separators=(",", ":")))
 
 
 def fetch_data_only(*args, **kwargs):
@@ -1081,27 +1085,34 @@ def cmd_research_run(
             "message": "Research pipeline did not complete successfully.",
             "error": str(exc),
         }
+        attach_run_result(
+            summary,
+            project_config_path=project_path,
+            metrics_payload=metrics_payload,
+        )
 
         (run_dir / "metrics.json").write_text(
             json.dumps(metrics_payload, indent=2), encoding="utf-8"
         )
-        write_run_brief_artifacts(summary, run_dir, project_path)
         (run_dir / "summary.json").write_text(
             json.dumps(summary, indent=2), encoding="utf-8"
         )
         typer.echo(f"Research run failed: {exc}", err=True)
         raise typer.Exit(code=1)
 
-    (run_dir / "metrics.json").write_text(
-        json.dumps(metrics_payload, indent=2), encoding="utf-8"
+    attach_run_result(
+        summary,
+        project_config_path=project_path,
+        metrics_payload=metrics_payload,
     )
-    write_run_brief_artifacts(summary, run_dir, project_path)
     (run_dir / "summary.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"
     )
+    (run_dir / "metrics.json").write_text(
+        json.dumps(metrics_payload, indent=2), encoding="utf-8"
+    )
 
-    typer.echo(f"Research run completed: {run_dir}")
-    typer.echo(json.dumps(summary, indent=2))
+    _echo_compact_result(summary)
 
 
 @runs_app.command("list")
@@ -1410,8 +1421,7 @@ def cmd_agent_run(
                 max_concurrency=max_concurrency,
                 acknowledge_live_project_name=acknowledge_live,
             )
-            typer.echo(f"Agent batch completed: {batch_result['run_dir']}")
-            typer.echo(json.dumps(batch_result, indent=2))
+            _echo_compact_result(batch_result)
             if batch_result["status"] != "success":
                 raise typer.Exit(code=1)
             return
@@ -1426,8 +1436,7 @@ def cmd_agent_run(
                 max_concurrency=max_concurrency,
                 sweep_name=sweep,
             )
-            typer.echo(f"Agent sweep completed: {batch_result['run_dir']}")
-            typer.echo(json.dumps(batch_result, indent=2))
+            _echo_compact_result(batch_result)
             if batch_result["status"] != "success":
                 raise typer.Exit(code=1)
             return
@@ -1447,8 +1456,7 @@ def cmd_agent_run(
         typer.echo(f"Agent run failed: {exc}", err=True)
         raise typer.Exit(code=1)
 
-    typer.echo(f"Agent run completed: {summary['run_dir']}")
-    typer.echo(json.dumps(summary, indent=2))
+    _echo_compact_result(summary)
 
 
 @app.command("init")

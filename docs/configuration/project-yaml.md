@@ -109,7 +109,7 @@ poetry run quanttradeai agent run --all -c config/project.yaml --mode live --ack
 
 Multi-agent batches preserve the normal child runs under `runs/agent/backtest/...`, `runs/agent/paper/...`, or `runs/agent/live/...` and write batch artifacts under `runs/agent/batches/<timestamp>_<project>_<mode>/`.
 
-Every batch directory includes `summary.json`, `experiment_brief.json`, and `experiment_brief.md`. The JSON brief identifies the top successful run from the existing scoreboard order, failed children, useful logs, and exact next commands for promotion or inspection. Batch summaries are discoverable with `quanttradeai runs list --type batch --json`.
+Every batch directory includes `summary.json`, `results.json`, and `scoreboard.json`. `summary.json.run_result` identifies the top successful run from the existing scoreboard order, other top candidates, and failed children without duplicating artifact paths or promotion commands. Batch summaries are discoverable with `quanttradeai runs list --type batch --json`.
 
 Backtest batches rank by `net_sharpe`. Paper and live batches rank by `total_pnl`. Live batches require every configured agent to already have `mode: live` and require `--acknowledge-live` to match `project.name`.
 
@@ -810,7 +810,7 @@ Writes under `runs/agent/backtest/<timestamp>_<agent>/`.
 
 Writes a batch directory under `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/` and one normal child backtest run under `runs/agent/backtest/...` for each expanded variant.
 
-The sweep batch also writes `summary.json`, `experiment_brief.json`, and `experiment_brief.md`. The brief uses the winning child's existing `promote_command` and includes the follow-up paper command for the base agent.
+The sweep batch also writes `summary.json`, `results.json`, and `scoreboard.json`. `summary.json.run_result` records the winning child and ranked candidates; child command details remain in `results.json`.
 
 ### `quanttradeai agent run --mode paper`
 
@@ -824,7 +824,7 @@ When replay is enabled, the run directory also includes `replay_manifest.json`, 
 
 Writes a batch directory under `runs/agent/batches/<timestamp>_<project>_paper/` and one normal child paper run under `runs/agent/paper/...` for each enumerated agent.
 
-Batch scoreboards for paper mode sort by `total_pnl`. The experiment brief recommends the live-promotion command for the top successful paper run.
+Batch scoreboards for paper mode sort by `total_pnl`. `summary.json.run_result` records the top successful paper run without recommending a promotion command.
 
 ### `quanttradeai agent run --all --mode live`
 
@@ -832,7 +832,7 @@ Writes a batch directory under `runs/agent/batches/<timestamp>_<project>_live/` 
 
 Live batches require `--acknowledge-live <project.name>`, reject `--skip-validation`, and fail fast unless every configured agent already has `mode: live`.
 
-Batch scoreboards for live mode sort by `total_pnl`. The experiment brief points to metrics, executions, decisions, and logs for inspection instead of producing a promotion command.
+Batch scoreboards for live mode sort by `total_pnl`. `summary.json.run_result` records the winning live run and failed children; metrics, executions, decisions, and logs stay in their normal run artifacts.
 
 ### `quanttradeai agent run --mode live`
 

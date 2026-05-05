@@ -177,12 +177,11 @@ This workflow:
 
 Batch artifacts include:
 
-- `batch_manifest.json`
+- `summary.json` with `run_result`
 - `results.json`
 - `scoreboard.json`
-- `scoreboard.txt`
 
-Backtest batches rank by `net_sharpe`. Paper and live batches rank by `total_pnl`. Live batches require every configured agent to already have `mode: live` and require `--acknowledge-live` to match `project.name`.
+`summary.json.run_result` summarizes the batch ranking with one winner, other top candidates, and failed children without repeating artifact paths or prescribing a next command. Backtest batches rank by `net_sharpe`. Paper and live batches rank by `total_pnl`. Live batches require every configured agent to already have `mode: live` and require `--acknowledge-live` to match `project.name`.
 
 ## Standalone Utility Commands
 

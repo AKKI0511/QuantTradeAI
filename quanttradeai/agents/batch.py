@@ -20,14 +20,10 @@ from quanttradeai.utils.project_config import (
     compile_paper_streaming_runtime_config,
     load_project_config,
 )
-from quanttradeai.utils.experiment_brief import (
-    build_experiment_brief,
-    render_experiment_brief_markdown,
-)
 from quanttradeai.utils.run_records import apply_required_run_fields
+from quanttradeai.utils.run_result import attach_run_result
 from quanttradeai.utils.run_scoreboard import (
     attach_scoreboard,
-    render_scoreboard_table,
     sort_run_records,
 )
 from quanttradeai.utils.sweeps import expand_agent_backtest_sweep, sweep_summary_payload
@@ -383,6 +379,11 @@ def run_agent_batch(
                 run_timestamp=str(spec["run_timestamp"]),
             )
             summary = _attach_sweep_metadata(summary, sweep=spec.get("sweep"))
+            attach_run_result(
+                summary,
+                project_config_path=str(spec["project_config_path"]),
+            )
+            _write_child_summary(summary)
             stdout_log.write_text(
                 json.dumps({"summary": summary, "warnings": warnings}, indent=2),
                 encoding="utf-8",
@@ -416,6 +417,11 @@ def run_agent_batch(
                 child_summary,
                 sweep=spec.get("sweep"),
             )
+            attach_run_result(
+                child_summary,
+                project_config_path=str(spec["project_config_path"]),
+            )
+            _write_child_summary(child_summary)
             return {
                 **spec,
                 "status": "failed",
@@ -511,17 +517,9 @@ def run_agent_batch(
 
     results_path = batch_dir / "results.json"
     scoreboard_json_path = batch_dir / "scoreboard.json"
-    scoreboard_txt_path = batch_dir / "scoreboard.txt"
-    brief_json_path = batch_dir / "experiment_brief.json"
-    brief_md_path = batch_dir / "experiment_brief.md"
     summary_path = batch_dir / "summary.json"
-    manifest_path = batch_dir / "batch_manifest.json"
     _write_json(results_path, results_payload)
     _write_json(scoreboard_json_path, scoreboard_payload)
-    scoreboard_txt_path.write_text(
-        render_scoreboard_table(scoreboard_records),
-        encoding="utf-8",
-    )
 
     success_count = sum(1 for item in results if item["status"] == "success")
     failure_count = len(results) - success_count
@@ -530,64 +528,11 @@ def run_agent_batch(
     batch_artifacts = {
         "results": str(results_path),
         "scoreboard_json": str(scoreboard_json_path),
-        "scoreboard_txt": str(scoreboard_txt_path),
-        "experiment_brief_json": str(brief_json_path),
-        "experiment_brief_md": str(brief_md_path),
         "summary": str(summary_path),
-        "manifest": str(manifest_path),
         "resolved_project_config": str(resolved_project_path),
     }
     batch_run_id = f"agent/batches/{batch_dir.name}"
     batch_warnings = list(dict.fromkeys(validation.get("warnings", [])))
-
-    manifest = {
-        "generated_at": completed_at,
-        "status": batch_status,
-        "batch_type": batch_type,
-        "project_name": project_name,
-        "project_config_path": str(original_project_path),
-        "resolved_project_config": str(resolved_project_path),
-        "mode": mode,
-        "max_concurrency": max_concurrency,
-        "run_dir": str(batch_dir),
-        "agent_count": len(results),
-        "success_count": success_count,
-        "failure_count": failure_count,
-        "scoreboard_sort_by": scoreboard_sort_by,
-        "scoreboard_order": scoreboard_order,
-        "artifacts": dict(batch_artifacts),
-        "agents": [
-            {
-                key: entry.get(key)
-                for key in (
-                    "agent_name",
-                    "base_agent_name",
-                    "parameters",
-                    "agent_kind",
-                    "configured_mode",
-                    "status",
-                    "paper_source",
-                    "execution_backend",
-                    "broker_provider",
-                    "artifacts",
-                    "run_timestamp",
-                    "run_id",
-                    "run_dir",
-                    "variant_project_config",
-                    "promote_command",
-                    "stdout_log",
-                    "stderr_log",
-                )
-            }
-            for entry in result_entries
-        ],
-        "warnings": batch_warnings,
-    }
-    if sweep_payload is not None:
-        manifest["sweep"] = dict(sweep_payload)
-        manifest["expanded_variants"] = list(
-            sweep_payload.get("expanded_variants") or []
-        )
 
     batch_summary = {
         "batch_type": batch_type,
@@ -617,35 +562,18 @@ def run_agent_batch(
         name=batch_dir.name,
     )
     batch_summary["run_id"] = batch_run_id
-
-    brief = build_experiment_brief(
-        batch={
-            "run_id": batch_summary["run_id"],
-            "batch_type": batch_type,
-            "project_name": project_name,
-            "mode": mode,
-            "status": batch_status,
-            "agent_count": len(results),
-            "success_count": success_count,
-            "failure_count": failure_count,
-            "run_dir": str(batch_dir),
-        },
-        results=result_entries,
+    attach_run_result(
+        batch_summary,
+        project_config_path=original_project_path.as_posix(),
+        batch_results=result_entries,
         scoreboard_order=scoreboard_order,
         scoreboard_sort_by=scoreboard_sort_by,
-        project_config_path=original_project_path.as_posix(),
-        artifacts=batch_artifacts,
-        warnings=batch_warnings,
-    )
-    _write_json(brief_json_path, brief)
-    brief_md_path.write_text(
-        render_experiment_brief_markdown(brief),
-        encoding="utf-8",
     )
     _write_json(summary_path, batch_summary)
-    _write_json(manifest_path, manifest)
 
     return {
+        "run_id": batch_summary["run_id"],
+        "run_type": batch_summary["run_type"],
         "status": batch_status,
         "batch_type": batch_type,
         "project_name": project_name,
@@ -654,9 +582,10 @@ def run_agent_batch(
         "agent_count": len(results),
         "success_count": success_count,
         "failure_count": failure_count,
+        "scoreboard_sort_by": scoreboard_sort_by,
         "artifacts": dict(batch_artifacts),
-        "results": results_payload["results"],
-        "warnings": manifest["warnings"],
+        "warnings": batch_warnings,
+        "run_result": dict(batch_summary["run_result"]),
         **({"sweep": dict(sweep_payload)} if sweep_payload is not None else {}),
     }
 
