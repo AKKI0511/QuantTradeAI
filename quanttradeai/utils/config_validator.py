@@ -40,7 +40,7 @@ from quanttradeai.utils.project_config import (
     normalize_live_risk_compatibility,
     resolve_paper_replay_window,
 )
-from quanttradeai.utils.sweeps import expand_agent_backtest_sweep
+from quanttradeai.utils.sweeps import expand_agent_backtest_sweep, expand_research_sweep
 
 
 DEFAULT_CONFIG_PATHS: Dict[str, Path] = {
@@ -461,7 +461,16 @@ def _validate_project_sweeps(
     for sweep in resolved.get("sweeps") or []:
         sweep_name = str(sweep.get("name") or "").strip() or "<unnamed>"
         try:
-            expansion = expand_agent_backtest_sweep(resolved, sweep_name)
+            sweep_kind = str(sweep.get("kind") or "").strip()
+            if sweep_kind == "agent_backtest":
+                expansion = expand_agent_backtest_sweep(resolved, sweep_name)
+            elif sweep_kind == "research_run":
+                expansion = expand_research_sweep(resolved, sweep_name)
+            else:
+                errors.append(
+                    f"Sweep '{sweep_name}' has unsupported kind '{sweep_kind}'."
+                )
+                continue
         except ValueError as exc:
             errors.append(str(exc))
             continue

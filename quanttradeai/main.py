@@ -395,6 +395,7 @@ def run_pipeline(
     features_config_path: str = "config/features_config.yaml",
     tuning_enabled: bool | None = None,
     optuna_trials: int | None = None,
+    experiment_dir: str | Path | None = None,
 ):
     """Run the end-to-end training pipeline.
 
@@ -437,9 +438,12 @@ def run_pipeline(
     model = MomentumClassifier(config_path)
 
     # Create experiment directory
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    experiment_dir = f"models/experiments/{timestamp}"
-    Path(experiment_dir).mkdir(parents=True, exist_ok=True)
+    experiment_path = (
+        Path(experiment_dir)
+        if experiment_dir is not None
+        else Path("models/experiments") / datetime.now().strftime("%Y%m%d_%H%M%S")
+    )
+    experiment_path.mkdir(parents=True, exist_ok=True)
 
     try:
         # 1. Fetch Data
@@ -448,7 +452,7 @@ def run_pipeline(
         data_dict = data_loader.fetch_data(refresh=refresh)
 
         # Validate data quality
-        validation_path = Path(experiment_dir) / "validation.json"
+        validation_path = experiment_path / "validation.json"
         _validate_or_raise(
             loader=data_loader,
             data=data_dict,
@@ -524,11 +528,11 @@ def run_pipeline(
             }
 
             # Save model
-            model_path = f"{experiment_dir}/{symbol}"
-            Path(model_path).mkdir(parents=True, exist_ok=True)
-            model.save_model(model_path)
+            model_path = experiment_path / symbol
+            model_path.mkdir(parents=True, exist_ok=True)
+            model.save_model(str(model_path))
             preprocessor_artifacts = _save_feature_preprocessor(
-                preprocessor, model_path
+                preprocessor, str(model_path)
             )
 
             logger.info(f"\n{symbol} Results:")
@@ -536,9 +540,9 @@ def run_pipeline(
             logger.info(f"Test Metrics: {test_metrics}")
             results[symbol]["artifacts"] = preprocessor_artifacts
 
-        coverage_path = Path(experiment_dir) / "test_window_coverage.json"
+        coverage_path = experiment_path / "test_window_coverage.json"
         _write_coverage_report(coverage_path, coverage_report)
-        preprocessing_path = Path(experiment_dir) / "preprocessing.json"
+        preprocessing_path = experiment_path / "preprocessing.json"
         with preprocessing_path.open("w", encoding="utf-8") as handle:
             json.dump(preprocessing_report, handle, indent=2)
         fallback_symbols = [
@@ -555,7 +559,7 @@ def run_pipeline(
         logger.info("Coverage report saved to %s", coverage_path)
 
         # Save experiment results
-        with open(f"{experiment_dir}/results.json", "w") as f:
+        with (experiment_path / "results.json").open("w", encoding="utf-8") as f:
             json.dump(results, f, indent=4)
 
         logger.info("\nPipeline completed successfully!")
@@ -567,7 +571,7 @@ def run_pipeline(
             return {
                 "results": results,
                 "coverage": coverage_info,
-                "experiment_dir": experiment_dir,
+                "experiment_dir": experiment_path.as_posix(),
                 "preprocessing": preprocessing_path.as_posix(),
             }
 
@@ -722,6 +726,7 @@ def run_model_backtest(
     *,
     model_config: str = "config/model_config.yaml",
     model_path: str,
+    features_config_path: str = "config/features_config.yaml",
     backtest_config: str | None = "config/backtest_config.yaml",
     risk_config: str | None = "config/risk_config.yaml",
     cost_bps: float | None = None,
@@ -748,7 +753,7 @@ def run_model_backtest(
         cfg = yaml.safe_load(f)
     setup_directories(cfg.get("data", {}).get("cache_dir", "data/raw"))
     loader = DataLoader(model_config)
-    processor = DataProcessor()
+    processor = DataProcessor(features_config_path)
     clf = MomentumClassifier(model_config)
     clf.load_model(model_path)
     preprocessor = _load_feature_preprocessor(model_path)

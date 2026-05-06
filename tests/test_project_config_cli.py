@@ -207,6 +207,37 @@ def test_validate_reports_sweep_count_for_valid_project(tmp_path: Path, monkeypa
     assert payload["summary"]["sweeps"] == 1
 
 
+def test_validate_accepts_research_run_sweep(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False)
+    )
+    config_payload["sweeps"] = [
+        {
+            "name": "rsi_research_grid",
+            "kind": "research_run",
+            "parameters": [
+                {"path": "research.labels.horizon", "values": [3, 5]},
+                {"path": "features.rsi_14.params.period", "values": [7, 14]},
+            ],
+        }
+    ]
+    cfg_path.write_text(
+        yaml.safe_dump(config_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
+
+    assert result.exit_code == 0, result.stdout
+    assert "sweeps=1" in result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{") :])
+    assert payload["summary"]["sweeps"] == 1
+
+
 def test_strategy_lab_template_includes_two_rule_agents_and_sweeps(
     tmp_path: Path, monkeypatch
 ):
@@ -1697,6 +1728,205 @@ def test_research_run_marks_placeholder_when_backtests_have_no_metrics(
 
     assert metrics_payload["status"] == "placeholder"
     assert metrics_payload["backtest_metrics_by_symbol"] == {}
+
+
+def test_research_run_sweep_writes_sparse_batch_and_child_runs(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False)
+    )
+    config_payload["research"]["backtest"]["costs"] = {"enabled": True, "bps": 5}
+    config_payload["sweeps"] = [
+        {
+            "name": "rsi_research_grid",
+            "kind": "research_run",
+            "parameters": [
+                {"path": "research.labels.horizon", "values": [3, 5]},
+                {"path": "features.rsi_14.params.period", "values": [7]},
+                {"path": "research.backtest.costs.bps", "values": [1, 5]},
+            ],
+        }
+    ]
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(yaml.safe_dump(config_payload, sort_keys=False), "utf-8")
+
+    def _fake_pipeline(config_path, *args, **kwargs):
+        runtime_cfg = yaml.safe_load(Path(config_path).read_text("utf-8"))
+        experiment_dir = Path(kwargs["experiment_dir"])
+        experiment_dir.mkdir(parents=True, exist_ok=True)
+        (experiment_dir / "AAPL").mkdir(parents=True, exist_ok=True)
+        (experiment_dir / "results.json").write_text("{}", encoding="utf-8")
+        (experiment_dir / "test_window_coverage.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        (experiment_dir / "preprocessing.json").write_text("{}", encoding="utf-8")
+        horizon = runtime_cfg["labels"]["horizon"]
+        return {
+            "results": {"AAPL": {"test_metrics": {"accuracy": horizon / 10.0}}},
+            "coverage": {
+                "path": str(experiment_dir / "test_window_coverage.json"),
+                "fallback_symbols": [],
+            },
+            "experiment_dir": str(experiment_dir),
+            "preprocessing": str(experiment_dir / "preprocessing.json"),
+        }
+
+    def _fake_backtest(**kwargs):
+        runtime_features = yaml.safe_load(
+            Path(kwargs["features_config_path"]).read_text("utf-8")
+        )
+        runtime_backtest = yaml.safe_load(
+            Path(kwargs["backtest_config"]).read_text("utf-8")
+        )
+        assert runtime_features["momentum_features"]["rsi_period"] == 7
+        bps = runtime_backtest["execution"]["transaction_costs"]["value"]
+        return {"AAPL": {"metrics": {"net_sharpe": 10.0 - float(bps), "net_pnl": 0.1}}}
+
+    monkeypatch.setattr("quanttradeai.cli.run_pipeline", _fake_pipeline)
+    monkeypatch.setattr("quanttradeai.cli.run_model_backtest", _fake_backtest)
+
+    result = runner.invoke(
+        app,
+        [
+            "research",
+            "run",
+            "--config",
+            str(cfg_path),
+            "--sweep",
+            "rsi_research_grid",
+            "--max-concurrency",
+            "2",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    batch_dir = Path(payload["run_dir"])
+    assert payload["run_type"] == "batch"
+    assert payload["mode"] == "research"
+    assert payload["run_id"] == f"research/batches/{batch_dir.name}"
+    assert payload["variant_count"] == 4
+    assert payload["winner"]["parameters"]["research.backtest.costs.bps"] == 1
+    assert payload["sweep"]["variant_count"] == 4
+    assert (batch_dir / "summary.json").is_file()
+    assert (batch_dir / "results.json").is_file()
+    assert (batch_dir / "scoreboard.json").is_file()
+    assert not (batch_dir / "batch_manifest.json").exists()
+    assert not (batch_dir / "scoreboard.txt").exists()
+    assert not (batch_dir / "experiment_brief.json").exists()
+
+    results_payload = json.loads((batch_dir / "results.json").read_text("utf-8"))
+    scoreboard_payload = json.loads((batch_dir / "scoreboard.json").read_text("utf-8"))
+    assert results_payload["batch_type"] == "research_sweep"
+    assert results_payload["scoreboard_sort_by"] == "net_sharpe"
+    assert scoreboard_payload["sort_by"] == "net_sharpe"
+    assert len(results_payload["results"]) == 4
+    assert (
+        results_payload["results"][0]["parameters"]["research.backtest.costs.bps"] == 1
+    )
+    assert results_payload["results"][0]["scoreboard"]["net_sharpe"] == 9.0
+
+    for entry in results_payload["results"]:
+        run_dir = Path(entry["run_dir"])
+        runtime_model = yaml.safe_load(
+            (run_dir / "runtime_model_config.yaml").read_text("utf-8")
+        )
+        runtime_features = yaml.safe_load(
+            (run_dir / "runtime_features_config.yaml").read_text("utf-8")
+        )
+        runtime_backtest = yaml.safe_load(
+            (run_dir / "runtime_backtest_config.yaml").read_text("utf-8")
+        )
+        assert (
+            runtime_model["labels"]["horizon"]
+            == entry["parameters"]["research.labels.horizon"]
+        )
+        assert (
+            runtime_features["momentum_features"]["rsi_period"]
+            == entry["parameters"]["features.rsi_14.params.period"]
+        )
+        assert (
+            runtime_backtest["execution"]["transaction_costs"]["value"]
+            == entry["parameters"]["research.backtest.costs.bps"]
+        )
+        assert (run_dir / "summary.json").is_file()
+        assert Path(entry["artifacts"]["experiment_dir"]).is_dir()
+
+    runs_result = runner.invoke(app, ["runs", "list", "--type", "batch", "--json"])
+    assert runs_result.exit_code == 0, runs_result.stdout
+    run_records = json.loads(runs_result.stdout)
+    assert run_records[0]["run_id"] == f"research/batches/{batch_dir.name}"
+
+
+def test_research_run_sweep_falls_back_to_accuracy_scoreboard(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = Path("config/project.yaml")
+
+    config_payload = yaml.safe_load(
+        yaml.safe_dump(PROJECT_TEMPLATES["research"], sort_keys=False)
+    )
+    config_payload["sweeps"] = [
+        {
+            "name": "label_grid",
+            "kind": "research_run",
+            "parameters": [
+                {"path": "research.labels.horizon", "values": [3, 5]},
+            ],
+        }
+    ]
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(yaml.safe_dump(config_payload, sort_keys=False), "utf-8")
+
+    def _fake_pipeline(config_path, *args, **kwargs):
+        runtime_cfg = yaml.safe_load(Path(config_path).read_text("utf-8"))
+        experiment_dir = Path(kwargs["experiment_dir"])
+        experiment_dir.mkdir(parents=True, exist_ok=True)
+        (experiment_dir / "AAPL").mkdir(parents=True, exist_ok=True)
+        (experiment_dir / "results.json").write_text("{}", encoding="utf-8")
+        (experiment_dir / "test_window_coverage.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        horizon = runtime_cfg["labels"]["horizon"]
+        return {
+            "results": {"AAPL": {"test_metrics": {"accuracy": horizon / 10.0}}},
+            "coverage": {
+                "path": str(experiment_dir / "test_window_coverage.json"),
+                "fallback_symbols": [],
+            },
+            "experiment_dir": str(experiment_dir),
+        }
+
+    monkeypatch.setattr("quanttradeai.cli.run_pipeline", _fake_pipeline)
+    monkeypatch.setattr(
+        "quanttradeai.cli.run_model_backtest",
+        lambda **kwargs: {"AAPL": {"error": "no metrics"}},
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "research",
+            "run",
+            "--config",
+            str(cfg_path),
+            "--sweep",
+            "label_grid",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    batch_dir = Path(payload["run_dir"])
+    results_payload = json.loads((batch_dir / "results.json").read_text("utf-8"))
+    assert results_payload["scoreboard_sort_by"] == "accuracy"
+    assert results_payload["results"][0]["parameters"]["research.labels.horizon"] == 5
+    assert results_payload["results"][0]["scoreboard"]["accuracy"] == 0.5
 
 
 def test_research_run_forwards_label_settings_to_runtime_model_config(

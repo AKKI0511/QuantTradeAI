@@ -37,7 +37,9 @@ class FakeProcessor:
     def process_data(self, df: pd.DataFrame) -> pd.DataFrame:
         return df
 
-    def generate_labels(self, df: pd.DataFrame, forward_returns: int = 1, threshold: float = 0.0) -> pd.DataFrame:
+    def generate_labels(
+        self, df: pd.DataFrame, forward_returns: int = 1, threshold: float = 0.0
+    ) -> pd.DataFrame:
         df = df.copy()
         df["forward_returns"] = df["Close"].shift(-1) / df["Close"] - 1
         df["label"] = 0
@@ -87,6 +89,9 @@ def test_run_model_backtest_happy_path():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         model_cfg = _make_config(tmpdir)
+        features_cfg = os.path.join(tmpdir, "features_config.yaml")
+        with open(features_cfg, "w") as f:
+            yaml.safe_dump({}, f)
         # Ensure model directory exists
         model_dir = os.path.join(tmpdir, "fake_model")
         os.makedirs(model_dir, exist_ok=True)
@@ -114,29 +119,43 @@ def test_run_model_backtest_happy_path():
                 return fake_metrics_portfolio
             return fake_metrics_symbol
 
-        with patch("quanttradeai.main.DataLoader.fetch_data", return_value={"AAA": _mock_data()}), \
-            patch("quanttradeai.main.DataProcessor", FakeProcessor), \
-            patch("quanttradeai.main.MomentumClassifier", FakeClassifier), \
+        processor_paths: list[str | None] = []
+
+        class CapturingProcessor(FakeProcessor):
+            def __init__(self, *args, **kwargs):
+                processor_paths.append(args[0] if args else None)
+                super().__init__(*args, **kwargs)
+
+        with (
+            patch(
+                "quanttradeai.main.DataLoader.fetch_data",
+                return_value={"AAA": _mock_data()},
+            ),
+            patch("quanttradeai.main.DataProcessor", CapturingProcessor),
+            patch("quanttradeai.main.MomentumClassifier", FakeClassifier),
             patch(
                 "quanttradeai.main.simulate_trades",
                 return_value={
                     "AAA": fake_symbol_result,
                     "portfolio": fake_portfolio_result,
                 },
-            ) as mock_sim, \
+            ) as mock_sim,
             patch(
                 "quanttradeai.main.compute_metrics",
                 side_effect=_metrics_side_effect,
-            ) as mock_metrics:
+            ) as mock_metrics,
+        ):
 
             summary = run_model_backtest(
                 model_config=model_cfg,
                 model_path=model_dir,
+                features_config_path=features_cfg,
                 backtest_config=None,
                 skip_validation=True,
             )
 
         mock_sim.assert_called_once()
+        assert processor_paths == [features_cfg]
         kwargs = mock_sim.call_args.kwargs
         assert isinstance(kwargs["portfolio"], PortfolioManager)
         assert kwargs["portfolio"].initial_capital == 100_000.0
@@ -162,10 +181,15 @@ def test_run_model_backtest_missing_features_sets_error():
         model_dir = os.path.join(tmpdir, "fake_model")
         os.makedirs(model_dir, exist_ok=True)
 
-        with patch("quanttradeai.main.DataLoader.fetch_data", return_value={"AAA": _mock_data()}), \
-            patch("quanttradeai.main.DataProcessor", FakeProcessor), \
-            patch("quanttradeai.main.MomentumClassifier", MissingFeatureClassifier), \
-            patch("quanttradeai.main.simulate_trades") as mock_sim:
+        with (
+            patch(
+                "quanttradeai.main.DataLoader.fetch_data",
+                return_value={"AAA": _mock_data()},
+            ),
+            patch("quanttradeai.main.DataProcessor", FakeProcessor),
+            patch("quanttradeai.main.MomentumClassifier", MissingFeatureClassifier),
+            patch("quanttradeai.main.simulate_trades") as mock_sim,
+        ):
 
             summary = run_model_backtest(
                 model_config=model_cfg,
@@ -178,4 +202,3 @@ def test_run_model_backtest_missing_features_sets_error():
         assert "AAA" in summary
         assert "missing required features" in summary["AAA"]["error"].lower()
         assert "portfolio" not in summary
-
