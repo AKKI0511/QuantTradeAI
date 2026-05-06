@@ -31,6 +31,7 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 | I want to... | Best path today | What I get |
 | --- | --- | --- |
 | Research a strategy end to end | `init` -> `validate` -> `research run` -> `promote --run research/<run_id>` | Time-aware evaluation, backtests, metrics, run records, and a stable promoted model path |
+| Sweep research parameters | `research run --sweep <name> --max-concurrency 4` | Many YAML-defined research variants with normal child runs plus sparse batch `results.json` and `scoreboard.json` |
 | Compare multiple deterministic strategies | `init --template strategy-lab` -> `validate` -> `agent run --all --mode backtest` -> `agent run --sweep ...` -> `promote` | RSI reversion and SMA trend agents, reusable sweeps, run scoreboards, and promotion without Python, LLM keys, or broker credentials |
 | Run a deterministic rule agent | `init --template rule-agent` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | A YAML-only agent that can move through backtest, paper, and live with explicit promotion gates |
 | Run a trained model as an agent | `init --template model-agent` -> `validate` -> `agent run --mode backtest` -> `promote` -> `agent run --mode paper` -> `promote --to live` -> `agent run --mode live` | One YAML-defined model agent wired to a stable `models/promoted/...` path that can be backtested, promoted, paper-run, and live-run |
@@ -67,6 +68,7 @@ QuantTradeAI is one framework with two connected tracks:
 | Workflow | Status |
 | --- | --- |
 | `research run` from `project.yaml` | Supported |
+| `research run --sweep <name>` from `project.yaml` | Supported |
 | `agent run` for `rule` agents in `backtest` | Supported |
 | `agent run` for `rule` agents in `paper` | Supported |
 | `agent run` for `rule` agents in `live` | Supported |
@@ -115,6 +117,7 @@ Use this if you want the simplest end-to-end quant workflow.
 poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai research run -c config/project.yaml --sweep <sweep_name> --max-concurrency 4
 poetry run quanttradeai runs list
 poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
 poetry run quanttradeai runs list --compare research/<run_id_a> --compare research/<run_id_b>
@@ -426,6 +429,9 @@ For the full shape, field reference, and supported agent modes, see [Project YAM
 
 Sweep batch artifacts:
 
+- `runs/research/batches/<timestamp>_<project>_<sweep>/summary.json`
+- `runs/research/batches/<timestamp>_<project>_<sweep>/results.json`
+- `runs/research/batches/<timestamp>_<project>_<sweep>/scoreboard.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/summary.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/results.json`
 - `runs/agent/batches/<timestamp>_<project>_<sweep>_backtest/scoreboard.json`

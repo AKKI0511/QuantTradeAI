@@ -96,6 +96,7 @@ def compact_cli_result(summary: dict[str, Any]) -> dict[str, Any]:
         for key in (
             "batch_type",
             "agent_count",
+            "variant_count",
             "success_count",
             "failure_count",
         ):
@@ -106,7 +107,9 @@ def compact_cli_result(summary: dict[str, Any]) -> dict[str, Any]:
             payload["sweep"] = _drop_none(
                 {
                     "name": sweep.get("name"),
+                    "kind": sweep.get("kind"),
                     "base_agent_name": sweep.get("base_agent_name"),
+                    "variant_count": sweep.get("variant_count"),
                 }
             )
     else:
@@ -279,6 +282,7 @@ def _compact_winner(winner: Any) -> dict[str, Any]:
         {
             "agent_name": winner.get("agent_name"),
             "run_id": winner.get("run_id"),
+            "parameters": winner.get("parameters"),
             "score": winner.get("score"),
         }
     )

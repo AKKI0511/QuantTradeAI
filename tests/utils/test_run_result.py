@@ -181,6 +181,7 @@ def test_batch_sweep_winner_failures_and_compact_output_are_sparse():
         "winner": {
             "agent_name": "high",
             "run_id": "agent/backtest/high",
+            "parameters": {"rule.buy_below": 25.0},
             "score": 2.5,
         },
         "batch_type": "sweep",
