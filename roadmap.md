@@ -367,6 +367,7 @@ Status on 2026-05-02:
 - `quanttradeai agent run --all -c config/project.yaml --mode backtest` is implemented for local multi-agent backtest batches, with bounded concurrency, preserved child runs, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
 - `quanttradeai agent run --all -c config/project.yaml --mode paper` is implemented for local multi-agent paper batches, reusing the existing replay-backed paper path, preserving child runs under `runs/agent/paper/...`, and writing batch-level manifests plus scoreboards under `runs/agent/batches/...`.
 - `quanttradeai agent run --sweep <name> -c config/project.yaml --mode backtest` is implemented for backtest-only parameter sweeps defined under `sweeps:` in `config/project.yaml`, with deterministic variant expansion, preserved child runs, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
+- `quanttradeai research run -c config/project.yaml --sweep <name>` is implemented for research parameter sweeps defined under `sweeps:` in `config/project.yaml`, with deterministic variant expansion, bounded concurrency, preserved child research runs, and sparse batch scoreboards under `runs/research/batches/...`.
 - `quanttradeai promote --run agent/backtest/<sweep_child_run_id> -c config/project.yaml` is implemented for materializing a winning sweep child into the base agent's canonical config and promoting that base agent to paper mode.
 - `quanttradeai agent run --all -c config/project.yaml --mode live --acknowledge-live <project_name>` is implemented for local multi-agent live batches, requiring an explicit project-name acknowledgement, live-mode agent configs, live runtime prerequisites, preserved child runs under `runs/agent/live/...`, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
 - `quanttradeai init --template strategy-lab -o config/project.yaml` is implemented as a YAML-only multi-strategy lab with `rsi_reversion`, `sma_trend`, replay-enabled paper settings, top-level risk/runtime defaults, and starter sweeps for RSI thresholds and SMA risk sizing.
@@ -420,6 +421,7 @@ Status on 2026-05-05:
 
 - Research, agent, batch, and sweep runs now attach sparse `run_result` analysis to `summary.json`, and completion-oriented CLI commands print one compact JSON object with `run_id`, `status`, `run_dir`, and derived metrics for coding-agent context.
 - Agent batch and sweep runs keep only the required high-level batch artifacts: `summary.json`, `results.json`, and `scoreboard.json`. Redundant experiment brief, text scoreboard, and batch manifest files are replaced by non-prescriptive `summary.json.run_result` ranking and failure summaries.
+- Research sweep batches also keep only sparse `summary.json`, `results.json`, and `scoreboard.json` artifacts while preserving normal child research runs.
 - `quanttradeai runs list --type batch --json` is implemented for local batch run discovery.
 
 ## Golden Workflows

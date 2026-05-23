@@ -35,6 +35,7 @@ poetry run quanttradeai validate -c config/project.yaml
 
 # Run canonical research workflow
 poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai research run -c config/project.yaml --sweep rsi_research_grid --max-concurrency 4
 poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
 poetry run quanttradeai runs list
 poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
@@ -102,6 +103,11 @@ Canonical research artifacts:
 - `runs/research/<timestamp>_<project>/summary.json`
 - `runs/research/<timestamp>_<project>/metrics.json`
 - `runs/research/<timestamp>_<project>/backtest_summary.json`
+
+Canonical research sweep batch artifacts:
+- `runs/research/batches/<timestamp>_<project>_<sweep>/summary.json`
+- `runs/research/batches/<timestamp>_<project>_<sweep>/results.json`
+- `runs/research/batches/<timestamp>_<project>_<sweep>/scoreboard.json`
 
 Canonical agent backtest artifacts:
 - `runs/agent/backtest/<timestamp>_<agent>/resolved_project_config.yaml`
@@ -333,10 +339,10 @@ Use these pages instead of copying large config blocks out of the quick referenc
 
 Quick decision rule:
 
-- Use `config/project.yaml` for `validate`, `research run`, `agent run`, and `agent run --sweep`
+- Use `config/project.yaml` for `validate`, `research run`, `research run --sweep`, `agent run`, and `agent run --sweep`
 - Use `data.streaming.replay` for deterministic local paper runs; keep provider/websocket fields in place for later deployment or live promotion
 - Use `quanttradeai runs list --scoreboard` to rank local runs, then `quanttradeai runs list --compare ...` to inspect shortlisted runs by metrics and config deltas
-- For sweeps, use the `promote_command` in batch `results.json` or `quanttradeai promote --run agent/backtest/<winner_run_id> -c config/project.yaml` to materialize the winner into the base agent before paper mode
+- For agent sweeps, use the `promote_command` in batch `results.json` or `quanttradeai promote --run agent/backtest/<winner_run_id> -c config/project.yaml` to materialize the winner into the base agent before paper mode
 - Use the generated runtime YAML snapshots under each run directory to inspect what actually executed
 
 ## Time-Aware Splitting

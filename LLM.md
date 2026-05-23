@@ -12,6 +12,7 @@ Use the small CLI surface first:
 poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai research run -c config/project.yaml --sweep <sweep_name> --max-concurrency 4
 poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
 poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
 ```

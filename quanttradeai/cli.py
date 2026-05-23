@@ -8,11 +8,14 @@ paths.
 from __future__ import annotations
 
 import json
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 import typer
+import yaml
 from .utils.config_validator import validate_project_config
 from .utils.project_paths import infer_project_root
 from .utils.project_config import (
@@ -34,6 +37,7 @@ from .utils.run_scoreboard import (
     sort_run_records,
 )
 from .utils.run_result import attach_run_result, compact_cli_result
+from .utils.sweeps import expand_research_sweep
 
 
 app = typer.Typer(add_completion=False, help="QuantTradeAI command line interface")
@@ -848,37 +852,70 @@ def _render_runs_table(records: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-@research_app.command("run")
-def cmd_research_run(
-    config: str = typer.Option(
-        "config/project.yaml", "-c", "--config", help="Path to project config YAML"
-    ),
-    skip_validation: bool = typer.Option(
-        False,
-        "--skip-validation",
-        help="Skip data-quality validation before training",
-    ),
-):
-    """Run the canonical research workflow from project.yaml."""
+def _slugify(value: str | None) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", (value or "run").strip())
+    return normalized.strip("_").lower() or "run"
 
-    import yaml
 
-    project_path = Path(config)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+def _write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _write_yaml(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
+def _child_run_timestamp(batch_timestamp: str, index: int) -> str:
+    return f"{batch_timestamp}_{index:02d}"
+
+
+def _research_run_name(
+    *,
+    config_path: Path,
+    project_config_override: dict[str, Any] | None,
+    explicit_name: str | None,
+) -> tuple[str, list[str]]:
+    if explicit_name:
+        return explicit_name, []
+    if project_config_override is not None:
+        return (
+            ((project_config_override.get("project") or {}).get("name"))
+            or config_path.stem,
+            [],
+        )
     try:
-        loaded_project = load_project_config(config_path=project_path)
-        run_name = (
-            (loaded_project.raw.get("project") or {}).get("name")
-        ) or project_path.stem
-        initial_warnings = list(loaded_project.warnings)
+        loaded_project = load_project_config(config_path=config_path)
+        run_name = (loaded_project.raw.get("project") or {}).get("name")
+        return run_name or config_path.stem, list(loaded_project.warnings)
     except Exception:
-        run_name = project_path.stem
-        initial_warnings = []
+        return config_path.stem, []
+
+
+def _run_research_workflow(
+    *,
+    project_config_path: str | Path = "config/project.yaml",
+    skip_validation: bool = False,
+    project_config_override: dict[str, Any] | None = None,
+    run_timestamp: str | None = None,
+    run_name: str | None = None,
+    experiment_output_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Run one canonical research workflow and persist normal run artifacts."""
+
+    project_path = Path(project_config_path)
+    timestamp = run_timestamp or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    resolved_run_name, initial_warnings = _research_run_name(
+        config_path=project_path,
+        project_config_override=project_config_override,
+        explicit_name=run_name,
+    )
 
     run_dir, run_id = create_run_dir(
         run_type="research",
         mode="research",
-        name=run_name,
+        name=resolved_run_name,
         timestamp=timestamp,
     )
 
@@ -899,7 +936,7 @@ def cmd_research_run(
         run_dir=run_dir,
         run_type="research",
         mode="research",
-        name=run_name,
+        name=resolved_run_name,
     )
     summary["run_id"] = run_id
 
@@ -907,6 +944,7 @@ def cmd_research_run(
         validation = validate_project_config(
             config_path=project_path,
             output_dir=run_dir / "validation",
+            project_config_override=project_config_override,
             timestamp_subdir=False,
         )
         summary["warnings"] = list(
@@ -940,15 +978,9 @@ def cmd_research_run(
         runtime_model_path = run_dir / "runtime_model_config.yaml"
         runtime_features_path = run_dir / "runtime_features_config.yaml"
         runtime_backtest_path = run_dir / "runtime_backtest_config.yaml"
-        runtime_model_path.write_text(
-            yaml.safe_dump(model_cfg, sort_keys=False), encoding="utf-8"
-        )
-        runtime_features_path.write_text(
-            yaml.safe_dump(features_cfg, sort_keys=False), encoding="utf-8"
-        )
-        runtime_backtest_path.write_text(
-            yaml.safe_dump(backtest_cfg, sort_keys=False), encoding="utf-8"
-        )
+        _write_yaml(runtime_model_path, model_cfg)
+        _write_yaml(runtime_features_path, features_cfg)
+        _write_yaml(runtime_backtest_path, backtest_cfg)
         summary["artifacts"]["runtime_model_config"] = str(runtime_model_path)
         summary["artifacts"]["runtime_features_config"] = str(runtime_features_path)
         summary["artifacts"]["runtime_backtest_config"] = str(runtime_backtest_path)
@@ -961,6 +993,11 @@ def cmd_research_run(
             features_config_path=str(runtime_features_path),
             tuning_enabled=bool(training_cfg.get("tune_hyperparameters", True)),
             optuna_trials=int(training_cfg.get("optuna_trials", 50)),
+            experiment_dir=(
+                str(experiment_output_dir)
+                if experiment_output_dir is not None
+                else None
+            ),
         )
 
         results = (
@@ -1012,6 +1049,7 @@ def cmd_research_run(
                 symbol_backtest = run_model_backtest(
                     model_config=str(runtime_model_path),
                     model_path=str(model_path),
+                    features_config_path=str(runtime_features_path),
                     backtest_config=str(runtime_backtest_path),
                     risk_config=None,
                     skip_validation=skip_validation,
@@ -1022,10 +1060,7 @@ def cmd_research_run(
 
         if backtest_payload:
             backtest_summary_path = run_dir / "backtest_summary.json"
-            backtest_summary_path.write_text(
-                json.dumps(backtest_payload, indent=2),
-                encoding="utf-8",
-            )
+            _write_json(backtest_summary_path, backtest_payload)
             summary["artifacts"]["backtest_summary"] = str(backtest_summary_path)
 
         summary["warnings"] = list(dict.fromkeys(summary["warnings"]))
@@ -1035,7 +1070,7 @@ def cmd_research_run(
             run_dir=run_dir,
             run_type="research",
             mode="research",
-            name=summary.get("project_name") or run_name,
+            name=run_name or summary.get("project_name") or resolved_run_name,
         )
 
         backtest_metrics_by_symbol = {}
@@ -1078,39 +1113,282 @@ def cmd_research_run(
             run_dir=run_dir,
             run_type="research",
             mode="research",
-            name=summary.get("project_name") or run_name,
+            name=run_name or summary.get("project_name") or resolved_run_name,
         )
         metrics_payload = {
             "status": "placeholder",
             "message": "Research pipeline did not complete successfully.",
             "error": str(exc),
         }
-        attach_run_result(
-            summary,
-            project_config_path=project_path,
-            metrics_payload=metrics_payload,
-        )
 
-        (run_dir / "metrics.json").write_text(
-            json.dumps(metrics_payload, indent=2), encoding="utf-8"
-        )
-        (run_dir / "summary.json").write_text(
-            json.dumps(summary, indent=2), encoding="utf-8"
-        )
-        typer.echo(f"Research run failed: {exc}", err=True)
-        raise typer.Exit(code=1)
-
+    metrics_path = run_dir / "metrics.json"
+    summary_path = run_dir / "summary.json"
+    summary["artifacts"]["metrics"] = str(metrics_path)
+    summary["artifacts"]["summary"] = str(summary_path)
     attach_run_result(
         summary,
         project_config_path=project_path,
         metrics_payload=metrics_payload,
     )
-    (run_dir / "summary.json").write_text(
-        json.dumps(summary, indent=2), encoding="utf-8"
+    _write_json(metrics_path, metrics_payload)
+    _write_json(summary_path, summary)
+    return summary
+
+
+def _research_sweep_sort_field(records: list[dict[str, Any]]) -> str:
+    if any(
+        (record.get("scoreboard") or {}).get("net_sharpe") is not None
+        for record in records
+    ):
+        return "net_sharpe"
+    return "accuracy"
+
+
+def _sort_research_sweep_results(
+    entries: list[dict[str, Any]],
+    *,
+    scoreboard_order: list[str],
+) -> list[dict[str, Any]]:
+    order_index = {run_id: index for index, run_id in enumerate(scoreboard_order)}
+    return sorted(
+        entries,
+        key=lambda entry: (
+            order_index.get(str(entry.get("run_id") or ""), len(scoreboard_order)),
+            int(entry.get("display_order") or 0),
+        ),
     )
-    (run_dir / "metrics.json").write_text(
-        json.dumps(metrics_payload, indent=2), encoding="utf-8"
+
+
+def _run_research_sweep_batch(
+    *,
+    project_config_path: str = "config/project.yaml",
+    sweep_name: str,
+    skip_validation: bool = False,
+    max_concurrency: int = 1,
+) -> dict[str, Any]:
+    """Run a research sweep through normal child research runs."""
+
+    if max_concurrency < 1:
+        raise ValueError("--max-concurrency must be at least 1.")
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    started_at = datetime.now(timezone.utc).isoformat()
+    original_project_path = Path(project_config_path).resolve()
+    loaded_project = load_project_config(config_path=original_project_path)
+    project_name = (loaded_project.raw.get("project") or {}).get("name") or Path(
+        original_project_path
+    ).stem
+    batch_name = f"{timestamp}_{_slugify(project_name)}_{_slugify(sweep_name)}"
+    batch_dir = Path("runs") / "research" / "batches" / batch_name
+    batch_dir.mkdir(parents=True, exist_ok=True)
+
+    validation = validate_project_config(
+        config_path=original_project_path,
+        output_dir=batch_dir / "validation",
+        timestamp_subdir=False,
     )
+    resolved_validation_path = Path(validation["artifacts"]["resolved_config"])
+    resolved_project_path = batch_dir / "resolved_project_config.yaml"
+    _copy_artifact(resolved_validation_path, resolved_project_path)
+    resolved_project = (
+        yaml.safe_load(resolved_project_path.read_text(encoding="utf-8")) or {}
+    )
+    expansion = expand_research_sweep(resolved_project, sweep_name)
+
+    specs: list[dict[str, Any]] = []
+    for index, variant in enumerate(expansion["variants"], start=1):
+        variant_name = str(variant["name"])
+        specs.append(
+            {
+                "variant_name": variant_name,
+                "parameters": dict(variant["parameters"]),
+                "project_config_override": dict(variant["project_config"]),
+                "run_timestamp": _child_run_timestamp(timestamp, index),
+                "display_order": index,
+                "experiment_output_dir": Path("models")
+                / "experiments"
+                / f"{batch_name}_{index:03d}_{_slugify(variant_name)}",
+            }
+        )
+
+    def _run_one(spec: dict[str, Any]) -> dict[str, Any]:
+        summary = _run_research_workflow(
+            project_config_path=original_project_path,
+            skip_validation=skip_validation,
+            project_config_override=dict(spec["project_config_override"]),
+            run_timestamp=str(spec["run_timestamp"]),
+            run_name=str(spec["variant_name"]),
+            experiment_output_dir=spec["experiment_output_dir"],
+        )
+        return {**spec, "summary": summary, "status": summary.get("status")}
+
+    results: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+        futures = [executor.submit(_run_one, spec) for spec in specs]
+        for future in as_completed(futures):
+            results.append(future.result())
+
+    results.sort(key=lambda item: int(item["display_order"]))
+    scoreboard_records = attach_scoreboard([item["summary"] for item in results])
+    scoreboard_sort_by = _research_sweep_sort_field(scoreboard_records)
+    scoreboard_records = sort_run_records(
+        scoreboard_records,
+        sort_by=scoreboard_sort_by,
+        ascending=False,
+    )
+    scoreboard_order = [
+        str(record.get("run_id") or "") for record in scoreboard_records
+    ]
+    scoreboard_by_run_id = {
+        str(record.get("run_id") or ""): dict(record.get("scoreboard") or {})
+        for record in scoreboard_records
+    }
+
+    result_entries = [
+        {
+            "variant_name": item["variant_name"],
+            "parameters": item["parameters"],
+            "status": item["status"],
+            "warnings": list(item["summary"].get("warnings") or []),
+            "error": item["summary"].get("error"),
+            "artifacts": dict(item["summary"].get("artifacts") or {}),
+            "run_timestamp": item["run_timestamp"],
+            "run_id": item["summary"].get("run_id"),
+            "run_dir": item["summary"].get("run_dir"),
+            "display_order": item["display_order"],
+            "scoreboard": scoreboard_by_run_id.get(
+                str(item["summary"].get("run_id") or ""), {}
+            ),
+        }
+        for item in results
+    ]
+    result_entries = _sort_research_sweep_results(
+        result_entries,
+        scoreboard_order=scoreboard_order,
+    )
+    for entry in result_entries:
+        entry.pop("display_order", None)
+
+    results_payload = {
+        "batch_type": "research_sweep",
+        "mode": "research",
+        "scoreboard_sort_by": scoreboard_sort_by,
+        "scoreboard_order": scoreboard_order,
+        "sweep": {
+            "name": expansion["name"],
+            "kind": expansion["kind"],
+            "variant_count": len(expansion["variants"]),
+            "parameters": list(expansion["parameters"]),
+        },
+        "results": result_entries,
+    }
+    scoreboard_payload = {
+        "sort_by": scoreboard_sort_by,
+        "records": scoreboard_records,
+    }
+
+    results_path = batch_dir / "results.json"
+    scoreboard_json_path = batch_dir / "scoreboard.json"
+    summary_path = batch_dir / "summary.json"
+    _write_json(results_path, results_payload)
+    _write_json(scoreboard_json_path, scoreboard_payload)
+
+    success_count = sum(1 for item in results if item["status"] == "success")
+    failure_count = len(results) - success_count
+    batch_status = "success" if failure_count == 0 else "failed"
+    completed_at = datetime.now(timezone.utc).isoformat()
+    batch_artifacts = {
+        "results": str(results_path),
+        "scoreboard_json": str(scoreboard_json_path),
+        "summary": str(summary_path),
+        "resolved_project_config": str(resolved_project_path),
+    }
+    batch_summary = {
+        "batch_type": "research_sweep",
+        "project_name": project_name,
+        "status": batch_status,
+        "timestamps": {
+            "started_at": started_at,
+            "completed_at": completed_at,
+        },
+        "symbols": list((resolved_project.get("data") or {}).get("symbols") or []),
+        "warnings": list(dict.fromkeys(validation.get("warnings", []))),
+        "artifacts": dict(batch_artifacts),
+        "run_dir": str(batch_dir),
+        "variant_count": len(results),
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "scoreboard_sort_by": scoreboard_sort_by,
+        "scoreboard_order": scoreboard_order,
+        "sweep": dict(results_payload["sweep"]),
+    }
+    apply_required_run_fields(
+        batch_summary,
+        run_dir=batch_dir,
+        run_type="batch",
+        mode="research",
+        name=batch_dir.name,
+    )
+    batch_summary["run_id"] = f"research/batches/{batch_dir.name}"
+    attach_run_result(
+        batch_summary,
+        project_config_path=original_project_path.as_posix(),
+        batch_results=result_entries,
+        scoreboard_order=scoreboard_order,
+        scoreboard_sort_by=scoreboard_sort_by,
+    )
+    _write_json(summary_path, batch_summary)
+    return batch_summary
+
+
+@research_app.command("run")
+def cmd_research_run(
+    config: str = typer.Option(
+        "config/project.yaml", "-c", "--config", help="Path to project config YAML"
+    ),
+    skip_validation: bool = typer.Option(
+        False,
+        "--skip-validation",
+        help="Skip data-quality validation before training",
+    ),
+    sweep: Optional[str] = typer.Option(
+        None,
+        "--sweep",
+        help="Run every expanded variant for the named research sweep.",
+    ),
+    max_concurrency: int = typer.Option(
+        1,
+        "--max-concurrency",
+        min=1,
+        help="Maximum concurrent child runs when using --sweep.",
+    ),
+):
+    """Run the canonical research workflow from project.yaml."""
+
+    if sweep:
+        try:
+            batch_summary = _run_research_sweep_batch(
+                project_config_path=config,
+                sweep_name=sweep,
+                skip_validation=skip_validation,
+                max_concurrency=max_concurrency,
+            )
+        except Exception as exc:
+            typer.echo(f"Research sweep failed: {exc}", err=True)
+            raise typer.Exit(code=1)
+
+        _echo_compact_result(batch_summary)
+        if batch_summary["status"] != "success":
+            raise typer.Exit(code=1)
+        return
+
+    summary = _run_research_workflow(
+        project_config_path=config,
+        skip_validation=skip_validation,
+    )
+    if summary["status"] != "success":
+        typer.echo(f"Research run failed: {summary.get('error')}", err=True)
+        raise typer.Exit(code=1)
 
     _echo_compact_result(summary)
 

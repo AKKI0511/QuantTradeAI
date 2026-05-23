@@ -65,6 +65,15 @@ LLM and hybrid live runs also write `prompt_samples.json`.
 
 ## Batch Runs
 
+`quanttradeai research run --sweep` writes batch-level artifacts under `runs/research/batches/...`, including:
+
+- `resolved_project_config.yaml`
+- `summary.json` with `run_result`
+- `results.json`
+- `scoreboard.json`
+
+Child variants keep their normal per-run research artifacts under `runs/research/...`.
+
 `quanttradeai agent run --all` and `quanttradeai agent run --sweep` write batch-level artifacts under `runs/agent/batches/...`, including:
 
 - `resolved_project_config.yaml`

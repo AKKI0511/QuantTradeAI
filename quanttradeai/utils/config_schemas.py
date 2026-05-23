@@ -903,15 +903,17 @@ class ProjectSweepParameterConfig(BaseModel):
 
 class ProjectSweepConfig(BaseModel):
     name: str
-    kind: Literal["agent_backtest"]
-    agent: str
+    kind: Literal["agent_backtest", "research_run"]
+    agent: Optional[str] = None
     parameters: List[ProjectSweepParameterConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_sweep(self) -> "ProjectSweepConfig":
         if not self.name.strip():
             raise ValueError("sweeps[].name must not be blank.")
-        if not self.agent.strip():
+        if self.kind == "agent_backtest" and (
+            self.agent is None or not self.agent.strip()
+        ):
             raise ValueError("sweeps[].agent must not be blank.")
         if not self.parameters:
             raise ValueError("sweeps[].parameters must define at least one parameter.")
@@ -987,7 +989,7 @@ class ProjectConfigSchema(BaseModel):
             if sweep.name in seen_sweeps:
                 raise ValueError(f"sweeps[].name '{sweep.name}' must be unique.")
             seen_sweeps.add(sweep.name)
-            if sweep.agent not in agent_names:
+            if sweep.kind == "agent_backtest" and sweep.agent not in agent_names:
                 raise ValueError(
                     f"sweeps[].agent '{sweep.agent}' must reference an existing agent."
                 )

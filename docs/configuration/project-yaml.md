@@ -7,6 +7,7 @@ It drives:
 - `quanttradeai init`
 - `quanttradeai validate`
 - `quanttradeai research run`
+- `quanttradeai research run --sweep <name>` for research parameter sweeps
 - `quanttradeai agent run` for project-defined agents in `backtest`, `paper`, and `live`
 - `quanttradeai agent run --all` for multi-agent batches in `backtest`, `paper`, and `live`
 - `quanttradeai agent run --sweep <name>` for backtest-only parameter sweeps
@@ -25,6 +26,7 @@ If an agent sets `execution.backend: alpaca`, QuantTradeAI switches paper/live e
 poetry run quanttradeai init --template research -o config/project.yaml
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
+poetry run quanttradeai research run -c config/project.yaml --sweep rsi_research_grid --max-concurrency 4
 poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
 ```
 
@@ -714,7 +716,7 @@ Behavior:
 
 ### `sweeps`
 
-Optional backtest-only parameter sweeps defined in the canonical project config.
+Optional parameter sweeps defined in the canonical project config.
 
 Supported MVP shape:
 
@@ -728,19 +730,30 @@ sweeps:
         values: [25.0, 30.0]
       - path: "rule.sell_above"
         values: [70.0, 75.0]
+
+  - name: "rsi_research_grid"
+    kind: "research_run"
+    parameters:
+      - path: "research.labels.horizon"
+        values: [3, 5, 10]
+      - path: "features.rsi_14.params.period"
+        values: [7, 14, 21]
+      - path: "research.backtest.costs.bps"
+        values: [1, 5]
 ```
 
 Rules:
 
-- `kind` currently supports only `agent_backtest`
-- `agent` must reference an existing project-defined agent
-- `parameters[].path` is a dotted path relative to that agent, not the whole project config
-- each path must resolve to an existing scalar leaf
-- sweeps may not modify `name`, `kind`, or `mode`
+- `kind` supports `agent_backtest` and `research_run`
+- `agent` must reference an existing project-defined agent for `agent_backtest`
+- `parameters[].path` must resolve to an existing scalar leaf
+- agent sweep paths are dotted paths relative to the selected agent and may not modify `name`, `kind`, or `mode`
+- research sweep paths are whole-project paths limited to research labels/costs/tuning/evaluation, selected data fields, and `features.<feature_name>.params.<param>`
 - variants expand as a Cartesian product in the order parameters are declared
-- each sweep child run records a `promote_command` in batch `results.json`
+- each agent sweep child run records a `promote_command` in batch `results.json`
 - promoting a successful sweep child materializes its parameter values into the base agent in `config/project.yaml` and sets the base agent to `mode: paper`
 - sweep child runs cannot promote directly to live; run the materialized paper agent first, then promote that paper run to live
+- research sweeps do not mutate `config/project.yaml`; each variant writes a normal child research run plus sparse batch `summary.json`, `results.json`, and `scoreboard.json`
 
 ### `risk`
 
@@ -793,6 +806,12 @@ Alongside `summary.json` and `metrics.json`, QuantTradeAI writes:
 - `backtest_summary.json` when automatic post-train backtests produce output
 
 Successful research runs also record `artifacts.experiment_dir` in `summary.json`, which is the source used by `quanttradeai promote --run research/<run_id>`.
+
+### `quanttradeai research run --sweep <name>`
+
+Writes a batch directory under `runs/research/batches/<timestamp>_<project>_<sweep>/` and one normal child research run under `runs/research/...` for each expanded variant.
+
+Research sweep batches write `summary.json`, `results.json`, and `scoreboard.json`. Scoreboards sort by `net_sharpe` when automatic backtests produce Sharpe metrics, otherwise by research `accuracy`.
 
 ### `quanttradeai promote`
 
