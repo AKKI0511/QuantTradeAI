@@ -30,7 +30,7 @@ agents:
 poetry run quanttradeai --help
 
 # Initialize and validate canonical project config
-poetry run quanttradeai init --template research -o config/project.yaml
+poetry run quanttradeai init --template research
 poetry run quanttradeai validate -c config/project.yaml
 
 # Run canonical research workflow
@@ -43,7 +43,7 @@ poetry run quanttradeai runs list --compare research/<run_id_a> --compare resear
 poetry run quanttradeai runs list --compare agent/backtest/<run_id_a> --compare agent/backtest/<run_id_b> --sort-by net_sharpe
 
 # Start a YAML-only strategy lab with RSI and SMA rule agents
-poetry run quanttradeai init --template strategy-lab -o config/project.yaml
+poetry run quanttradeai init --template strategy-lab
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest --max-concurrency 4
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
@@ -52,7 +52,7 @@ poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
 poetry run quanttradeai promote --run agent/backtest/<winner_run_id> -c config/project.yaml
 
 # Run a YAML-defined llm or hybrid agent
-poetry run quanttradeai init --template llm-agent -o config/project.yaml
+poetry run quanttradeai init --template llm-agent
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 # Promote the successful backtest run before starting paper mode
@@ -258,7 +258,7 @@ metrics = compute_metrics(df_trades, risk_free_rate=0.02)
 ### Backtest a Model Agent
 ```bash
 # Use the model-agent template and point agents[].model.path at a promoted model
-poetry run quanttradeai init --template model-agent -o config/project.yaml
+poetry run quanttradeai init --template model-agent
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
 

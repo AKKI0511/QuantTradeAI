@@ -57,10 +57,11 @@ def test_compile_research_runtime_configs_can_disable_configured_test_window():
 
 def test_init_creates_each_template(tmp_path: Path):
     for template_name, expected in PROJECT_TEMPLATES.items():
-        output = tmp_path / f"{template_name}.yaml"
+        workspace = tmp_path / template_name
+        output = workspace / "config" / "project.yaml"
         result = runner.invoke(
             app,
-            ["init", "--template", template_name, "--output", str(output)],
+            ["init", str(workspace), "--template", template_name],
         )
 
         assert result.exit_code == 0, result.stdout
@@ -82,16 +83,18 @@ def test_init_refuses_existing_without_force_and_overwrites_with_force(tmp_path:
     output = tmp_path / "config" / "project.yaml"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("project:\n  name: old\n", encoding="utf-8")
+    agents_path = tmp_path / "AGENTS.md"
+    agents_path.write_text("old agent notes\n", encoding="utf-8")
 
     fail_result = runner.invoke(
         app,
-        ["init", "--template", "research", "--output", str(output)],
+        ["init", str(tmp_path), "--template", "research"],
     )
     assert fail_result.exit_code == 1
 
     pass_result = runner.invoke(
         app,
-        ["init", "--template", "research", "--output", str(output), "--force"],
+        ["init", str(tmp_path), "--template", "research", "--force"],
     )
     assert pass_result.exit_code == 0
 
@@ -99,14 +102,116 @@ def test_init_refuses_existing_without_force_and_overwrites_with_force(tmp_path:
     assert (
         rendered["project"]["name"] == PROJECT_TEMPLATES["research"]["project"]["name"]
     )
+    assert "QuantTradeAI Workspace" in agents_path.read_text(encoding="utf-8")
+
+
+def test_init_current_directory_uses_strategy_lab_by_default(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["init"])
+
+    assert result.exit_code == 0, result.stdout
+    cfg_path = Path("config/project.yaml")
+    assert cfg_path.is_file()
+    rendered = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    assert (
+        rendered["project"]["name"]
+        == PROJECT_TEMPLATES["strategy-lab"]["project"]["name"]
+    )
+
+
+def test_init_preserves_existing_agent_context_without_force(tmp_path: Path):
+    agents_path = tmp_path / "AGENTS.md"
+    claude_path = tmp_path / "CLAUDE.md"
+    agents_path.write_text("existing agent notes\n", encoding="utf-8")
+    claude_path.write_text("existing claude notes\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["init", str(tmp_path), "--template", "research"])
+
+    assert result.exit_code == 0, result.stdout
+    assert (tmp_path / "config" / "project.yaml").is_file()
+    assert agents_path.read_text(encoding="utf-8") == "existing agent notes\n"
+    assert claude_path.read_text(encoding="utf-8") == "existing claude notes\n"
+    assert (
+        tmp_path / ".claude" / "skills" / "quanttradeai-research" / "SKILL.md"
+    ).is_file()
+    assert (tmp_path / ".quanttradeai" / "workspace.yaml").is_file()
+
+
+def test_init_preserves_existing_template_assets_without_force(tmp_path: Path):
+    prompt_path = tmp_path / "prompts" / "breakout.md"
+    prompt_path.parent.mkdir(parents=True)
+    prompt_path.write_text("existing prompt\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["init", str(tmp_path), "--template", "llm-agent"])
+
+    assert result.exit_code == 0, result.stdout
+    assert (tmp_path / "config" / "project.yaml").is_file()
+    assert prompt_path.read_text(encoding="utf-8") == "existing prompt\n"
+
+
+def test_init_named_workspace_writes_agent_context_and_metadata(tmp_path: Path):
+    workspace = tmp_path / "my-lab"
+
+    result = runner.invoke(app, ["init", str(workspace)])
+
+    assert result.exit_code == 0, result.stdout
+    expected_files = [
+        "config/project.yaml",
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".claude/skills/quanttradeai-research/SKILL.md",
+        ".claude/skills/quanttradeai-research/workflow.md",
+        ".claude/skills/quanttradeai-research/artifacts.md",
+        ".claude/skills/quanttradeai-research/safety.md",
+        ".quanttradeai/workspace.yaml",
+    ]
+    for relative_path in expected_files:
+        assert (workspace / relative_path).is_file()
+
+    agents_text = (workspace / "AGENTS.md").read_text(encoding="utf-8")
+    assert "This is a QuantTradeAI workspace" in agents_text
+    assert "config/project.yaml" in agents_text
+    assert "Never run `live` mode" in agents_text
+    assert "summary.json.run_result" in agents_text
+    assert "scoreboard.json" in agents_text
+    assert "Do not edit QuantTradeAI package or framework internals" in agents_text
+
+    claude_text = (workspace / "CLAUDE.md").read_text(encoding="utf-8")
+    assert claude_text.startswith("@AGENTS.md")
+    assert ".claude/skills/quanttradeai-research/SKILL.md" in claude_text
+
+    skill_text = (
+        workspace / ".claude/skills/quanttradeai-research/SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "name: quanttradeai-research" in skill_text
+    assert "description: Use QuantTradeAI CLI" in skill_text
+
+    metadata = yaml.safe_load(
+        (workspace / ".quanttradeai/workspace.yaml").read_text(encoding="utf-8")
+    )
+    assert metadata == {
+        "version": 1,
+        "template": "strategy-lab",
+        "project_config": "config/project.yaml",
+        "agent_context": {
+            "agents_md": "AGENTS.md",
+            "claude_md": "CLAUDE.md",
+            "skill": ".claude/skills/quanttradeai-research/SKILL.md",
+        },
+        "created_by": "quanttradeai",
+    }
 
 
 def test_validate_passes_for_generated_templates(tmp_path: Path):
     for template_name in PROJECT_TEMPLATES:
-        cfg_path = tmp_path / template_name / "project.yaml"
+        workspace = tmp_path / template_name
+        cfg_path = workspace / "config" / "project.yaml"
         init_result = runner.invoke(
             app,
-            ["init", "--template", template_name, "--output", str(cfg_path)],
+            ["init", str(workspace), "--template", template_name],
         )
         assert init_result.exit_code == 0, init_result.stdout
 
@@ -246,7 +351,7 @@ def test_strategy_lab_template_includes_two_rule_agents_and_sweeps(
 
     result = runner.invoke(
         app,
-        ["init", "--template", "strategy-lab", "--output", str(cfg_path)],
+        ["init", "--template", "strategy-lab"],
     )
 
     assert result.exit_code == 0, result.stdout
@@ -568,15 +673,16 @@ def test_init_writes_prompt_assets_for_agent_templates(tmp_path: Path, monkeypat
     }
 
     for template_name, prompt_files in expected_assets.items():
-        cfg_path = Path("config") / template_name / "project.yaml"
+        workspace = tmp_path / template_name
         result = runner.invoke(
             app,
-            ["init", "--template", template_name, "--output", str(cfg_path)],
+            ["init", str(workspace), "--template", template_name],
         )
 
         assert result.exit_code == 0, result.stdout
+        assert (workspace / "config" / "project.yaml").is_file()
         for prompt_file in prompt_files:
-            assert (tmp_path / "config" / template_name / prompt_file).is_file()
+            assert (workspace / prompt_file).is_file()
 
 
 def test_model_agent_template_includes_canonical_streaming_block(
@@ -587,7 +693,7 @@ def test_model_agent_template_includes_canonical_streaming_block(
 
     result = runner.invoke(
         app,
-        ["init", "--template", "model-agent", "--output", str(cfg_path)],
+        ["init", "--template", "model-agent"],
     )
 
     assert result.exit_code == 0, result.stdout
@@ -612,7 +718,7 @@ def test_rule_agent_template_includes_canonical_streaming_block(
 
     result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+        ["init", "--template", "rule-agent"],
     )
 
     assert result.exit_code == 0, result.stdout
@@ -639,7 +745,7 @@ def test_llm_and_hybrid_templates_include_canonical_streaming_block(
         cfg_path = Path("config/project.yaml")
         result = runner.invoke(
             app,
-            ["init", "--template", template_name, "--output", str(cfg_path)],
+            ["init", "--template", template_name, "--force"],
         )
 
         assert result.exit_code == 0, result.stdout
@@ -661,7 +767,7 @@ def test_research_and_hybrid_templates_include_research_promotion_targets(
         cfg_path = Path("config/project.yaml")
         result = runner.invoke(
             app,
-            ["init", "--template", template_name, "--output", str(cfg_path)],
+            ["init", "--template", template_name, "--force"],
         )
 
         assert result.exit_code == 0, result.stdout
@@ -684,7 +790,7 @@ def test_hybrid_template_is_prewired_to_promoted_model_signal(
 
     result = runner.invoke(
         app,
-        ["init", "--template", "hybrid", "--output", str(cfg_path)],
+        ["init", "--template", "hybrid"],
     )
 
     assert result.exit_code == 0, result.stdout
@@ -707,7 +813,7 @@ def test_agent_templates_include_live_risk_and_position_manager_defaults(
         cfg_path = Path("config/project.yaml")
         result = runner.invoke(
             app,
-            ["init", "--template", template_name, "--output", str(cfg_path)],
+            ["init", "--template", template_name, "--force"],
         )
 
         assert result.exit_code == 0, result.stdout
@@ -727,7 +833,7 @@ def test_validate_fails_when_model_agent_path_missing(tmp_path: Path, monkeypatc
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "model-agent", "--output", str(cfg_path)],
+        ["init", "--template", "model-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -748,7 +854,7 @@ def test_validate_passes_for_rule_agent_template(tmp_path: Path, monkeypatch):
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1000,7 +1106,7 @@ def test_validate_passes_when_live_agent_has_canonical_risk_and_position_manager
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1025,7 +1131,7 @@ def test_validate_fails_when_live_agent_streaming_is_disabled(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1051,7 +1157,7 @@ def test_validate_defaults_agent_execution_backend_to_simulated(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1145,7 +1251,7 @@ def test_validate_fails_when_live_agent_missing_top_level_risk(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1174,7 +1280,7 @@ def test_validate_fails_when_live_agent_drawdown_protection_is_disabled(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1200,7 +1306,7 @@ def test_validate_fails_when_live_agent_position_manager_is_invalid(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1226,7 +1332,7 @@ def test_validate_warns_for_legacy_nested_live_risk_compatibility(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", str(cfg_path)],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1570,7 +1676,7 @@ def test_research_run_happy_path_writes_run_artifacts(tmp_path: Path, monkeypatc
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "research", "--output", str(cfg_path)],
+        ["init", "--template", "research"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1690,7 +1796,7 @@ def test_research_run_marks_placeholder_when_backtests_have_no_metrics(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "research", "--output", str(cfg_path)],
+        ["init", "--template", "research"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 

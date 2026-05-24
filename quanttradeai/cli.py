@@ -16,6 +16,8 @@ from typing import Any, Optional
 
 import typer
 import yaml
+
+from .init_context import INIT_CONTEXT_FILES
 from .utils.config_validator import validate_project_config
 from .utils.project_paths import infer_project_root
 from .utils.project_config import (
@@ -698,6 +700,97 @@ def _write_template_assets(template_name: str, output_path: Path, force: bool) -
             continue
         asset_path.parent.mkdir(parents=True, exist_ok=True)
         asset_path.write_text(content.strip() + "\n", encoding="utf-8")
+
+
+def _resolve_init_workspace(project_dir: Path | None) -> Path:
+    if project_dir is None:
+        return Path.cwd().resolve()
+    return project_dir.expanduser().resolve()
+
+
+def _project_config_path(workspace: Path) -> Path:
+    return workspace / "config" / "project.yaml"
+
+
+def _template_asset_paths(template_name: str, project_config_path: Path) -> list[Path]:
+    project_root = infer_project_root(project_config_path)
+    return [
+        project_root / relative_path
+        for relative_path in PROJECT_TEMPLATE_PROMPTS.get(template_name, {})
+    ]
+
+
+def _init_owned_paths(template_name: str, project_config_path: Path) -> list[Path]:
+    workspace = infer_project_root(project_config_path)
+    paths = [project_config_path]
+    paths.extend(workspace / relative_path for relative_path in INIT_CONTEXT_FILES)
+    paths.append(workspace / ".quanttradeai" / "workspace.yaml")
+    paths.extend(_template_asset_paths(template_name, project_config_path))
+    return list(dict.fromkeys(paths))
+
+
+def _format_path_list(paths: list[Path]) -> str:
+    return ", ".join(path.as_posix() for path in paths)
+
+
+def _init_overwrite_guard_paths(project_config_path: Path) -> list[Path]:
+    workspace = infer_project_root(project_config_path)
+    return [project_config_path, workspace / ".quanttradeai" / "workspace.yaml"]
+
+
+def _check_can_write(
+    paths: list[Path], force: bool, overwrite_guard_paths: list[Path] | None = None
+) -> None:
+    blocking_dirs = [path for path in paths if path.exists() and path.is_dir()]
+    if blocking_dirs:
+        raise ValueError(
+            "Cannot initialize because generated file path is a directory: "
+            f"{_format_path_list(blocking_dirs)}"
+        )
+
+    guarded_paths = overwrite_guard_paths or paths
+    existing = [path for path in guarded_paths if path.exists()]
+    if existing and not force:
+        raise ValueError(
+            "Refusing to overwrite existing QuantTradeAI file(s): "
+            f"{_format_path_list(existing)}. Run again with --force to overwrite them."
+        )
+
+
+def _write_project_template(template_name: str, project_config_path: Path) -> None:
+    project_config_path.parent.mkdir(parents=True, exist_ok=True)
+    with project_config_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(PROJECT_TEMPLATES[template_name], handle, sort_keys=False)
+
+
+def _write_text_file(path: Path, content: str, force: bool = True) -> None:
+    if path.exists() and not force:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content.strip() + "\n", encoding="utf-8")
+
+
+def _write_agent_context_files(workspace: Path, force: bool) -> None:
+    for relative_path, content in INIT_CONTEXT_FILES.items():
+        _write_text_file(workspace / relative_path, content, force=force)
+
+
+def _write_workspace_metadata(workspace: Path, template_name: str) -> None:
+    metadata = {
+        "version": 1,
+        "template": template_name,
+        "project_config": "config/project.yaml",
+        "agent_context": {
+            "agents_md": "AGENTS.md",
+            "claude_md": "CLAUDE.md",
+            "skill": ".claude/skills/quanttradeai-research/SKILL.md",
+        },
+        "created_by": "quanttradeai",
+    }
+    metadata_path = workspace / ".quanttradeai" / "workspace.yaml"
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    with metadata_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(metadata, handle, sort_keys=False)
 
 
 @app.command("fetch-data")
@@ -1739,37 +1832,50 @@ def cmd_agent_run(
 
 @app.command("init")
 def cmd_init(
+    project_dir: Optional[Path] = typer.Argument(
+        None, help="Workspace directory to initialize"
+    ),
     template: str = typer.Option(
-        ..., "--template", help="Project template to initialize"
+        "strategy-lab", "--template", help="Project template to initialize"
     ),
-    output: str = typer.Option(
-        "config/project.yaml",
-        "-o",
-        "--output",
-        help="Path for generated project config",
-    ),
-    force: bool = typer.Option(False, "--force", help="Overwrite existing file"),
+    force: bool = typer.Option(False, "--force", help="Overwrite generated files"),
 ):
-    """Initialize a canonical project config for the happy path."""
-
-    import yaml
+    """Initialize a QuantTradeAI workspace."""
 
     normalized = template.lower()
     if normalized not in PROJECT_TEMPLATES:
         valid = ", ".join(sorted(PROJECT_TEMPLATES))
         raise typer.BadParameter(f"template must be one of: {valid}")
 
-    output_path = Path(output)
-    if output_path.exists() and not force:
-        typer.echo(f"Refusing to overwrite existing file: {output_path}", err=True)
+    workspace = _resolve_init_workspace(project_dir)
+    if workspace.exists() and not workspace.is_dir():
+        typer.echo(
+            f"Workspace path exists and is not a directory: {workspace}", err=True
+        )
         raise typer.Exit(code=1)
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as handle:
-        yaml.safe_dump(PROJECT_TEMPLATES[normalized], handle, sort_keys=False)
-    _write_template_assets(normalized, output_path, force)
+    project_config_path = _project_config_path(workspace)
+    owned_paths = _init_owned_paths(normalized, project_config_path)
+    overwrite_guard_paths = _init_overwrite_guard_paths(project_config_path)
 
-    typer.echo(f"Wrote {normalized} template to {output_path}")
+    try:
+        _check_can_write(
+            owned_paths,
+            force=force,
+            overwrite_guard_paths=overwrite_guard_paths,
+        )
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1)
+
+    workspace.mkdir(parents=True, exist_ok=True)
+    _write_project_template(normalized, project_config_path)
+    _write_agent_context_files(workspace, force=force)
+    _write_workspace_metadata(workspace, normalized)
+    _write_template_assets(normalized, project_config_path, force)
+
+    typer.echo(f"Initialized QuantTradeAI workspace at {workspace}")
+    typer.echo(f"Wrote {normalized} template to {project_config_path}")
 
 
 @app.command("validate")

@@ -32,7 +32,7 @@ Use it for:
 ### Research
 
 ```bash
-poetry run quanttradeai init --template research -o config/project.yaml
+poetry run quanttradeai init --template research
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai runs list
@@ -41,7 +41,7 @@ poetry run quanttradeai runs list
 ### Agent Backtest
 
 ```bash
-poetry run quanttradeai init --template llm-agent -o config/project.yaml
+poetry run quanttradeai init --template llm-agent
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml

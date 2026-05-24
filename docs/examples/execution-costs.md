@@ -3,7 +3,7 @@
 Run a model agent backtest from `config/project.yaml`, then compare it with a second run after increasing `research.backtest.costs.bps`.
 
 ```bash
-poetry run quanttradeai init --template model-agent -o config/project.yaml
+poetry run quanttradeai init --template model-agent
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
 ```

@@ -2,6 +2,8 @@
 
 `config/project.yaml` is the canonical config entrypoint for QuantTradeAI.
 
+`quanttradeai init [PROJECT_DIR]` creates a workspace with this file at `config/project.yaml`. If `PROJECT_DIR` is omitted, the current directory is initialized. The default template is `strategy-lab`; use `--template research|strategy-lab|rule-agent|model-agent|llm-agent|hybrid` to choose another starter.
+
 It drives:
 
 - `quanttradeai init`
@@ -23,7 +25,7 @@ If an agent sets `execution.backend: alpaca`, QuantTradeAI switches paper/live e
 ### Research
 
 ```bash
-poetry run quanttradeai init --template research -o config/project.yaml
+poetry run quanttradeai init --template research
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml --sweep rsi_research_grid --max-concurrency 4
@@ -33,7 +35,7 @@ poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
 ### Strategy Lab
 
 ```bash
-poetry run quanttradeai init --template strategy-lab -o config/project.yaml
+poetry run quanttradeai init --template strategy-lab
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest --max-concurrency 4
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
@@ -47,7 +49,7 @@ The `strategy-lab` template defines two deterministic rule agents, `rsi_reversio
 ### Model Agents
 
 ```bash
-poetry run quanttradeai init --template model-agent -o config/project.yaml
+poetry run quanttradeai init --template model-agent
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
@@ -61,7 +63,7 @@ The `model-agent` template also creates a placeholder model artifact at `models/
 ### Rule Agents
 
 ```bash
-poetry run quanttradeai init --template rule-agent -o config/project.yaml
+poetry run quanttradeai init --template rule-agent
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
@@ -73,7 +75,7 @@ poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml -
 ### LLM And Hybrid Agents
 
 ```bash
-poetry run quanttradeai init --template llm-agent -o config/project.yaml
+poetry run quanttradeai init --template llm-agent
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
@@ -87,7 +89,7 @@ The `llm-agent` and `hybrid` templates also create starter prompt files under `p
 Hybrid projects add the research promotion handoff before agent runs:
 
 ```bash
-poetry run quanttradeai init --template hybrid -o config/project.yaml
+poetry run quanttradeai init --template hybrid
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml

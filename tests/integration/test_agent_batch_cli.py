@@ -58,13 +58,13 @@ def _seed_agent_assets(tmp_path: Path) -> Path:
 
     llm_init = runner.invoke(
         app,
-        ["init", "--template", "llm-agent", "--output", str(config_path)],
+        ["init", "--template", "llm-agent"],
     )
     assert llm_init.exit_code == 0, llm_init.stdout
 
     hybrid_init = runner.invoke(
         app,
-        ["init", "--template", "hybrid", "--output", str(config_path), "--force"],
+        ["init", "--template", "hybrid", "--force"],
     )
     assert hybrid_init.exit_code == 0, hybrid_init.stdout
 
@@ -89,7 +89,7 @@ def _seed_sweep_assets(tmp_path: Path) -> Path:
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", str(config_path)],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -343,7 +343,7 @@ def test_agent_run_all_errors_when_project_has_no_agents(tmp_path: Path, monkeyp
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "research", "--output", str(config_path)],
+        ["init", "--template", "research"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -495,7 +495,7 @@ def test_strategy_lab_agent_run_all_backtest_enumerates_both_agents(
     config_path = Path("config/project.yaml")
     init_result = runner.invoke(
         app,
-        ["init", "--template", "strategy-lab", "--output", str(config_path)],
+        ["init", "--template", "strategy-lab"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1283,7 +1283,7 @@ def test_agent_run_sweep_uses_canonical_project_root_for_llm_assets(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "llm-agent", "--output", str(config_path)],
+        ["init", "--template", "llm-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 

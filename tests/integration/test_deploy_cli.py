@@ -16,7 +16,7 @@ def _init_template(tmp_path: Path, monkeypatch, template: str) -> Path:
     config_path = Path("config/project.yaml")
     result = runner.invoke(
         app,
-        ["init", "--template", template, "--output", str(config_path)],
+        ["init", "--template", template],
     )
     assert result.exit_code == 0, result.stdout
     return config_path
