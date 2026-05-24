@@ -370,7 +370,8 @@ Status on 2026-05-02:
 - `quanttradeai research run -c config/project.yaml --sweep <name>` is implemented for research parameter sweeps defined under `sweeps:` in `config/project.yaml`, with deterministic variant expansion, bounded concurrency, preserved child research runs, and sparse batch scoreboards under `runs/research/batches/...`.
 - `quanttradeai promote --run agent/backtest/<sweep_child_run_id> -c config/project.yaml` is implemented for materializing a winning sweep child into the base agent's canonical config and promoting that base agent to paper mode.
 - `quanttradeai agent run --all -c config/project.yaml --mode live --acknowledge-live <project_name>` is implemented for local multi-agent live batches, requiring an explicit project-name acknowledgement, live-mode agent configs, live runtime prerequisites, preserved child runs under `runs/agent/live/...`, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
-- `quanttradeai init --template strategy-lab -o config/project.yaml` is implemented as a YAML-only multi-strategy lab with `rsi_reversion`, `sma_trend`, replay-enabled paper settings, top-level risk/runtime defaults, and starter sweeps for RSI thresholds and SMA risk sizing.
+- `quanttradeai init [PROJECT_DIR] --template strategy-lab` is implemented as the package-user workspace initializer, writing `config/project.yaml`, cross-agent `AGENTS.md`, a Claude adapter, a Claude project skill, and workspace metadata.
+- `strategy-lab` is the default init template and provides a YAML-only multi-strategy lab with `rsi_reversion`, `sma_trend`, replay-enabled paper settings, top-level risk/runtime defaults, and starter sweeps for RSI thresholds and SMA risk sizing.
 - `rule.preset: sma_crossover` is implemented for deterministic rule agents, using `rule.fast_feature` and `rule.slow_feature` from shared project feature definitions and agent context.
 
 Deliverables:
@@ -461,7 +462,7 @@ Do not expand it casually.
 ### Research track
 
 ```bash
-quanttradeai init --template research -o config/project.yaml
+quanttradeai init --template research
 quanttradeai validate -c config/project.yaml
 quanttradeai research run -c config/project.yaml
 quanttradeai runs list
@@ -471,7 +472,7 @@ quanttradeai promote --run research/<run_id> -c config/project.yaml
 ### Agent track
 
 ```bash
-quanttradeai init --template model-agent -o config/project.yaml
+quanttradeai init --template model-agent
 quanttradeai validate -c config/project.yaml
 quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
 quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
@@ -490,7 +491,7 @@ Current implementation note:
 ### Hybrid track
 
 ```bash
-quanttradeai init --template hybrid -o config/project.yaml
+quanttradeai init --template hybrid
 quanttradeai validate -c config/project.yaml
 quanttradeai research run -c config/project.yaml
 quanttradeai promote --run research/<run_id> -c config/project.yaml

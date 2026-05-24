@@ -10,10 +10,19 @@ cd QuantTradeAI
 poetry install --with dev
 ```
 
+For a package install, initialize a workspace and open that folder in your coding agent:
+
+```bash
+quanttradeai init my-lab
+cd my-lab
+```
+
+`quanttradeai init` writes `config/project.yaml`, `AGENTS.md`, `CLAUDE.md`, and the project skill under `.claude/skills/quanttradeai-research/`.
+
 ## Workflow 1: Research From `project.yaml`
 
 ```bash
-poetry run quanttradeai init --template research -o config/project.yaml
+poetry run quanttradeai init --template research
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai runs list
@@ -40,7 +49,7 @@ poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
 Use this when you want one QuantTradeAI project with multiple deterministic strategies, reusable sweeps, and promotion-ready run records without writing Python or setting LLM/broker credentials.
 
 ```bash
-poetry run quanttradeai init --template strategy-lab -o config/project.yaml
+poetry run quanttradeai init --template strategy-lab
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest --max-concurrency 4
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
@@ -66,7 +75,7 @@ poetry run quanttradeai agent run --agent <base_agent_name> -c config/project.ya
 ## Workflow 3: Model Agent From `project.yaml`
 
 ```bash
-poetry run quanttradeai init --template model-agent -o config/project.yaml
+poetry run quanttradeai init --template model-agent
 poetry run quanttradeai validate -c config/project.yaml
 ```
 
@@ -129,7 +138,7 @@ Live runs also write compiled `runtime_risk_config.yaml` and `runtime_position_m
 LLM and hybrid agents are supported in backtest, paper, and live mode from `project.yaml`.
 
 ```bash
-poetry run quanttradeai init --template llm-agent -o config/project.yaml
+poetry run quanttradeai init --template llm-agent
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
@@ -141,7 +150,7 @@ poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --
 Hybrid projects use the same pattern:
 
 ```bash
-poetry run quanttradeai init --template hybrid -o config/project.yaml
+poetry run quanttradeai init --template hybrid
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml

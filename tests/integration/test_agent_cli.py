@@ -146,7 +146,7 @@ def test_agent_run_backtest_writes_artifacts(tmp_path: Path, monkeypatch):
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "llm-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "llm-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -231,7 +231,7 @@ def test_llm_agent_backtest_context_blocks_include_orders_memory_news_and_notes(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "llm-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "llm-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -330,7 +330,7 @@ def test_agent_run_backtest_omits_ledger_artifact_when_no_trades(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "llm-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "llm-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -655,7 +655,7 @@ def test_hybrid_agent_run_includes_model_signals(tmp_path: Path, monkeypatch):
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "hybrid", "--output", "config/project.yaml"],
+        ["init", "--template", "hybrid"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -742,7 +742,7 @@ def test_rule_agent_backtest_writes_standardized_artifacts(tmp_path: Path, monke
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -819,7 +819,7 @@ def test_model_agent_backtest_writes_standardized_artifacts(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "model-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "model-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -896,7 +896,7 @@ def test_model_agent_paper_run_writes_metrics_and_execution_log(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "model-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "model-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -956,7 +956,7 @@ def test_model_agent_paper_run_uses_replay_manifest(tmp_path: Path, monkeypatch)
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "model-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "model-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1026,7 +1026,7 @@ def test_model_agent_live_run_writes_live_artifacts_and_risk_metrics(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "model-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "model-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1093,7 +1093,7 @@ def test_model_agent_live_run_with_alpaca_backend_writes_broker_artifacts(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "model-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "model-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1197,7 +1197,7 @@ def test_llm_agent_paper_run_writes_standardized_artifacts(tmp_path: Path, monke
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "llm-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "llm-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1307,7 +1307,7 @@ def test_llm_agent_paper_context_blocks_include_orders_memory_news_and_notes(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "llm-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "llm-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1432,7 +1432,7 @@ def test_llm_agent_paper_run_uses_replay_without_realtime_streaming(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "llm-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "llm-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1493,7 +1493,7 @@ def test_rule_agent_paper_run_writes_metrics_and_execution_log(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1604,7 +1604,7 @@ def test_rule_agent_paper_run_with_alpaca_backend_writes_broker_artifacts(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1711,7 +1711,7 @@ def test_rule_agent_paper_run_uses_replay_without_realtime_streaming(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1769,7 +1769,7 @@ def test_rule_agent_live_run_writes_live_artifacts_and_risk_metrics(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1878,7 +1878,7 @@ def test_hybrid_agent_paper_run_includes_model_signals_in_decisions(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "hybrid", "--output", "config/project.yaml"],
+        ["init", "--template", "hybrid"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -1990,7 +1990,7 @@ def test_hybrid_agent_paper_run_uses_replay_without_realtime_streaming(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "hybrid", "--output", "config/project.yaml"],
+        ["init", "--template", "hybrid"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -2076,7 +2076,7 @@ def test_agent_run_warns_when_cli_mode_differs_from_configured_mode(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "llm-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "llm-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -2135,7 +2135,7 @@ def test_agent_run_live_rejects_skip_validation(tmp_path: Path, monkeypatch):
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 
@@ -2174,7 +2174,7 @@ def test_agent_run_live_requires_agent_to_be_configured_live(
 
     init_result = runner.invoke(
         app,
-        ["init", "--template", "rule-agent", "--output", "config/project.yaml"],
+        ["init", "--template", "rule-agent"],
     )
     assert init_result.exit_code == 0, init_result.stdout
 

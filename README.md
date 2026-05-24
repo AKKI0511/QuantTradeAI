@@ -7,7 +7,7 @@ QuantTradeAI is a YAML-first, CLI-first framework for traders, researchers, and 
 [Getting Started](docs/getting-started.md) | [Project YAML](docs/configuration/project-yaml.md) | [Quick Reference](docs/quick-reference.md) | [Configuration](docs/configuration.md) | [Roadmap](roadmap.md) | [Contributing](CONTRIBUTING.md)
 
 > [!TIP]
-> New users should start with `config/project.yaml`. It is the canonical entrypoint for `init`, `validate`, `research run`, and `agent run`.
+> New users should run `quanttradeai init [PROJECT_DIR]`. It creates `config/project.yaml` plus agent guidance files so Claude Code, Cursor, Codex, and similar tools know how to use the CLI and YAML workflow.
 
 ## Start Here
 
@@ -101,7 +101,12 @@ poetry install --with dev
 poetry run quanttradeai --help
 ```
 
-If you prefer a package install, `pip install .` also works.
+If you prefer a package install, `pip install .` also works. After installing, initialize a workspace and open that folder in your coding agent:
+
+```bash
+quanttradeai init my-lab
+cd my-lab
+```
 
 ## Fastest Working Paths
 
@@ -114,7 +119,7 @@ If you want real broker submission for happy-path paper or live runs, set `agent
 Use this if you want the simplest end-to-end quant workflow.
 
 ```bash
-poetry run quanttradeai init --template research -o config/project.yaml
+poetry run quanttradeai init --template research
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml --sweep <sweep_name> --max-concurrency 4
@@ -143,7 +148,7 @@ poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
 Use this if you want the smallest deterministic agent workflow with no LLM dependency.
 
 ```bash
-poetry run quanttradeai init --template rule-agent -o config/project.yaml
+poetry run quanttradeai init --template rule-agent
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent rsi_reversion -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
@@ -173,7 +178,7 @@ agents:
 Use this when you want a ready-made QuantTradeAI lab that can compare more than one deterministic strategy from YAML.
 
 ```bash
-poetry run quanttradeai init --template strategy-lab -o config/project.yaml
+poetry run quanttradeai init --template strategy-lab
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest --max-concurrency 4
 poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
@@ -204,7 +209,7 @@ agents:
 Use this if you already have a trained model artifact and want one YAML-defined agent that can run in backtest, paper, and live mode.
 
 ```bash
-poetry run quanttradeai init --template model-agent -o config/project.yaml
+poetry run quanttradeai init --template model-agent
 poetry run quanttradeai validate -c config/project.yaml
 
 # Replace models/promoted/aapl_daily_classifier/ with a real trained model artifact
@@ -224,7 +229,7 @@ poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml 
 Use this if you want prompt-driven agent logic from YAML and want to move the same agent definition from backtest into paper and live mode.
 
 ```bash
-poetry run quanttradeai init --template llm-agent -o config/project.yaml
+poetry run quanttradeai init --template llm-agent
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
 poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
@@ -238,7 +243,7 @@ poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --
 Use this if you want to combine trained model signals and LLM reasoning in one project and then promote the same agent through paper and live mode.
 
 ```bash
-poetry run quanttradeai init --template hybrid -o config/project.yaml
+poetry run quanttradeai init --template hybrid
 poetry run quanttradeai validate -c config/project.yaml
 poetry run quanttradeai research run -c config/project.yaml
 poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
