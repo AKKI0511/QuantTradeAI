@@ -733,7 +733,14 @@ def _format_path_list(paths: list[Path]) -> str:
     return ", ".join(path.as_posix() for path in paths)
 
 
-def _check_can_write(paths: list[Path], force: bool) -> None:
+def _init_overwrite_guard_paths(project_config_path: Path) -> list[Path]:
+    workspace = infer_project_root(project_config_path)
+    return [project_config_path, workspace / ".quanttradeai" / "workspace.yaml"]
+
+
+def _check_can_write(
+    paths: list[Path], force: bool, overwrite_guard_paths: list[Path] | None = None
+) -> None:
     blocking_dirs = [path for path in paths if path.exists() and path.is_dir()]
     if blocking_dirs:
         raise ValueError(
@@ -741,7 +748,8 @@ def _check_can_write(paths: list[Path], force: bool) -> None:
             f"{_format_path_list(blocking_dirs)}"
         )
 
-    existing = [path for path in paths if path.exists()]
+    guarded_paths = overwrite_guard_paths or paths
+    existing = [path for path in guarded_paths if path.exists()]
     if existing and not force:
         raise ValueError(
             "Refusing to overwrite existing QuantTradeAI file(s): "
@@ -755,14 +763,16 @@ def _write_project_template(template_name: str, project_config_path: Path) -> No
         yaml.safe_dump(PROJECT_TEMPLATES[template_name], handle, sort_keys=False)
 
 
-def _write_text_file(path: Path, content: str) -> None:
+def _write_text_file(path: Path, content: str, force: bool = True) -> None:
+    if path.exists() and not force:
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content.strip() + "\n", encoding="utf-8")
 
 
-def _write_agent_context_files(workspace: Path) -> None:
+def _write_agent_context_files(workspace: Path, force: bool) -> None:
     for relative_path, content in INIT_CONTEXT_FILES.items():
-        _write_text_file(workspace / relative_path, content)
+        _write_text_file(workspace / relative_path, content, force=force)
 
 
 def _write_workspace_metadata(workspace: Path, template_name: str) -> None:
@@ -1846,16 +1856,21 @@ def cmd_init(
 
     project_config_path = _project_config_path(workspace)
     owned_paths = _init_owned_paths(normalized, project_config_path)
+    overwrite_guard_paths = _init_overwrite_guard_paths(project_config_path)
 
     try:
-        _check_can_write(owned_paths, force=force)
+        _check_can_write(
+            owned_paths,
+            force=force,
+            overwrite_guard_paths=overwrite_guard_paths,
+        )
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1)
 
     workspace.mkdir(parents=True, exist_ok=True)
     _write_project_template(normalized, project_config_path)
-    _write_agent_context_files(workspace)
+    _write_agent_context_files(workspace, force=force)
     _write_workspace_metadata(workspace, normalized)
     _write_template_assets(normalized, project_config_path, force)
 

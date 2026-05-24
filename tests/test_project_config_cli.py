@@ -122,6 +122,36 @@ def test_init_current_directory_uses_strategy_lab_by_default(
     )
 
 
+def test_init_preserves_existing_agent_context_without_force(tmp_path: Path):
+    agents_path = tmp_path / "AGENTS.md"
+    claude_path = tmp_path / "CLAUDE.md"
+    agents_path.write_text("existing agent notes\n", encoding="utf-8")
+    claude_path.write_text("existing claude notes\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["init", str(tmp_path), "--template", "research"])
+
+    assert result.exit_code == 0, result.stdout
+    assert (tmp_path / "config" / "project.yaml").is_file()
+    assert agents_path.read_text(encoding="utf-8") == "existing agent notes\n"
+    assert claude_path.read_text(encoding="utf-8") == "existing claude notes\n"
+    assert (
+        tmp_path / ".claude" / "skills" / "quanttradeai-research" / "SKILL.md"
+    ).is_file()
+    assert (tmp_path / ".quanttradeai" / "workspace.yaml").is_file()
+
+
+def test_init_preserves_existing_template_assets_without_force(tmp_path: Path):
+    prompt_path = tmp_path / "prompts" / "breakout.md"
+    prompt_path.parent.mkdir(parents=True)
+    prompt_path.write_text("existing prompt\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["init", str(tmp_path), "--template", "llm-agent"])
+
+    assert result.exit_code == 0, result.stdout
+    assert (tmp_path / "config" / "project.yaml").is_file()
+    assert prompt_path.read_text(encoding="utf-8") == "existing prompt\n"
+
+
 def test_init_named_workspace_writes_agent_context_and_metadata(tmp_path: Path):
     workspace = tmp_path / "my-lab"
 
