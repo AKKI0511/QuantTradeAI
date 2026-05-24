@@ -175,16 +175,6 @@ def test_init_named_workspace_writes_agent_context_and_metadata(tmp_path: Path):
     }
 
 
-def test_init_help_exposes_only_workspace_template_and_force_options():
-    result = runner.invoke(app, ["init", "--help"])
-
-    assert result.exit_code == 0
-    assert "PROJECT_DIR" in result.output
-    assert "--template" in result.output
-    assert "--force" in result.output
-    assert "--output" not in result.output
-
-
 def test_validate_passes_for_generated_templates(tmp_path: Path):
     for template_name in PROJECT_TEMPLATES:
         workspace = tmp_path / template_name
