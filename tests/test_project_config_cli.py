@@ -7,10 +7,22 @@ import pytest
 from typer.testing import CliRunner
 
 from quanttradeai.cli import PROJECT_TEMPLATES, _project_to_runtime_configs, app
+from quanttradeai.init_context import (
+    iter_init_context_templates,
+    read_init_context_template,
+    write_init_context_files,
+)
 from quanttradeai.utils.project_config import compile_research_runtime_configs
 
 
 runner = CliRunner()
+
+
+def _skill_frontmatter(markdown: str) -> dict:
+    lines = markdown.splitlines()
+    assert lines[0] == "---"
+    closing_index = lines[1:].index("---") + 1
+    return yaml.safe_load("\n".join(lines[1:closing_index]))
 
 
 def test_project_to_runtime_configs_maps_custom_features_to_supported_keys():
@@ -171,23 +183,36 @@ def test_init_named_workspace_writes_agent_context_and_metadata(tmp_path: Path):
     for relative_path in expected_files:
         assert (workspace / relative_path).is_file()
 
+    for relative_path in iter_init_context_templates():
+        rendered = (workspace / relative_path).read_text(encoding="utf-8")
+        expected = read_init_context_template(relative_path).rstrip() + "\n"
+        assert rendered == expected
+
     agents_text = (workspace / "AGENTS.md").read_text(encoding="utf-8")
     assert "This is a QuantTradeAI workspace" in agents_text
     assert "config/project.yaml" in agents_text
-    assert "Never run `live` mode" in agents_text
+    assert "quanttradeai validate -c config/project.yaml" in agents_text
     assert "summary.json.run_result" in agents_text
     assert "scoreboard.json" in agents_text
-    assert "Do not edit QuantTradeAI package or framework internals" in agents_text
+    assert "Live mode requires explicit human approval" in agents_text
+    assert "Broker-backed execution requires explicit human approval" in agents_text
+    assert "Do not edit QuantTradeAI package/framework internals" in agents_text
 
     claude_text = (workspace / "CLAUDE.md").read_text(encoding="utf-8")
     assert claude_text.startswith("@AGENTS.md")
     assert ".claude/skills/quanttradeai-research/SKILL.md" in claude_text
+    assert "broker-backed execution require explicit human approval" in claude_text
 
     skill_text = (
         workspace / ".claude/skills/quanttradeai-research/SKILL.md"
     ).read_text(encoding="utf-8")
-    assert "name: quanttradeai-research" in skill_text
-    assert "description: Use QuantTradeAI CLI" in skill_text
+    skill_metadata = _skill_frontmatter(skill_text)
+    assert skill_metadata["name"] == "quanttradeai-research"
+    assert skill_metadata["description"].startswith(
+        "Use QuantTradeAI CLI and config/project.yaml"
+    )
+    assert "find the best strategy" in skill_metadata["description"]
+    assert "allowed-tools" not in skill_metadata
 
     metadata = yaml.safe_load(
         (workspace / ".quanttradeai/workspace.yaml").read_text(encoding="utf-8")
@@ -203,6 +228,34 @@ def test_init_named_workspace_writes_agent_context_and_metadata(tmp_path: Path):
         },
         "created_by": "quanttradeai",
     }
+
+
+def test_init_context_resource_loader_works_from_temp_directory(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    template_paths = iter_init_context_templates()
+
+    assert template_paths == (
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".claude/skills/quanttradeai-research/SKILL.md",
+        ".claude/skills/quanttradeai-research/workflow.md",
+        ".claude/skills/quanttradeai-research/artifacts.md",
+        ".claude/skills/quanttradeai-research/safety.md",
+    )
+    assert read_init_context_template("AGENTS.md").startswith(
+        "# QuantTradeAI Workspace"
+    )
+
+    workspace = tmp_path / "workspace"
+    write_init_context_files(workspace, force=False)
+
+    assert (workspace / "AGENTS.md").is_file()
+    assert (
+        workspace / ".claude" / "skills" / "quanttradeai-research" / "SKILL.md"
+    ).is_file()
 
 
 def test_validate_passes_for_generated_templates(tmp_path: Path):

@@ -40,6 +40,9 @@ dependencies = [
 packages = [
     { include = "quanttradeai" }
 ]
+include = [
+    { path = "quanttradeai/templates/workspace_context/**", format = ["sdist", "wheel"] }
+]
 
 [project.scripts]
 quanttradeai = "quanttradeai.cli:app"

@@ -17,7 +17,7 @@ from typing import Any, Optional
 import typer
 import yaml
 
-from .init_context import INIT_CONTEXT_FILES
+from .init_context import iter_init_context_templates, write_init_context_files
 from .utils.config_validator import validate_project_config
 from .utils.project_paths import infer_project_root
 from .utils.project_config import (
@@ -723,7 +723,10 @@ def _template_asset_paths(template_name: str, project_config_path: Path) -> list
 def _init_owned_paths(template_name: str, project_config_path: Path) -> list[Path]:
     workspace = infer_project_root(project_config_path)
     paths = [project_config_path]
-    paths.extend(workspace / relative_path for relative_path in INIT_CONTEXT_FILES)
+    paths.extend(
+        workspace / Path(*Path(relative_path).parts)
+        for relative_path in iter_init_context_templates()
+    )
     paths.append(workspace / ".quanttradeai" / "workspace.yaml")
     paths.extend(_template_asset_paths(template_name, project_config_path))
     return list(dict.fromkeys(paths))
@@ -771,8 +774,7 @@ def _write_text_file(path: Path, content: str, force: bool = True) -> None:
 
 
 def _write_agent_context_files(workspace: Path, force: bool) -> None:
-    for relative_path, content in INIT_CONTEXT_FILES.items():
-        _write_text_file(workspace / relative_path, content, force=force)
+    write_init_context_files(workspace, force=force)
 
 
 def _write_workspace_metadata(workspace: Path, template_name: str) -> None:
