@@ -1,287 +1,268 @@
-# Feature Engineering
+# Features API
 
-API documentation for technical indicators and custom features.
+## Overview
+
+Feature helpers live under `quanttradeai.features`. The package exports modules, not individual functions, so import the module namespace you need. `DataProcessor` uses these helpers to build configured feature pipelines.
+
+## Public Imports
+
+```python
+from quanttradeai.features import technical, custom, sentiment
+
+from quanttradeai.features.technical import sma, ema, rsi, macd, stochastic
+from quanttradeai.features.custom import momentum_score, volatility_breakout
+from quanttradeai.features.sentiment import SentimentAnalyzer
+```
+
+## Main Classes and Functions
+
+| API | Import Path | Purpose |
+| --- | --- | --- |
+| `sma(series, period)` | `quanttradeai.features.technical` | Simple moving average |
+| `ema(series, period)` | `quanttradeai.features.technical` | Exponential moving average |
+| `rsi(series, period=14)` | `quanttradeai.features.technical` | Relative Strength Index |
+| `macd(series, fast=12, slow=26, signal=9)` | `quanttradeai.features.technical` | MACD, signal, histogram DataFrame |
+| `stochastic(high, low, close, k=14, d=3)` | `quanttradeai.features.technical` | Stochastic oscillator DataFrame |
+| `momentum_score(close, sma, rsi_series, macd, macd_signal)` | `quanttradeai.features.custom` | Weighted normalized momentum score |
+| `volatility_breakout(high, low, close, lookback=20, threshold=2.0)` | `quanttradeai.features.custom` | Binary breakout flag |
+| `SentimentAnalyzer(provider, model, api_key_env_var, extra=None)` | `quanttradeai.features.sentiment` | LiteLLM-backed sentiment scorer |
 
 ## Technical Indicators
 
 ### `sma(series: pd.Series, period: int) -> pd.Series`
 
-Calculates Simple Moving Average.
+Returns a simple moving average from `pandas_ta_classic.sma`.
 
-**Parameters:**
-- `series` (pd.Series): Price series
-- `period` (int): Moving average period
-
-**Returns:**
-- `pd.Series`: Simple moving average
-
-**Example:**
 ```python
 from quanttradeai.features.technical import sma
 
-# Calculate 20-period SMA
-sma_20 = sma(df['Close'], 20)
+df["sma_20"] = sma(df["Close"], 20)
 ```
 
 ### `ema(series: pd.Series, period: int) -> pd.Series`
 
-Calculates Exponential Moving Average.
+Returns an exponential moving average from `pandas_ta_classic.ema`.
 
-**Parameters:**
-- `series` (pd.Series): Price series
-- `period` (int): Moving average period
-
-**Returns:**
-- `pd.Series`: Exponential moving average
-
-**Example:**
 ```python
 from quanttradeai.features.technical import ema
 
-# Calculate 20-period EMA
-ema_20 = ema(df['Close'], 20)
+df["ema_20"] = ema(df["Close"], 20)
 ```
 
 ### `rsi(series: pd.Series, period: int = 14) -> pd.Series`
 
-Calculates Relative Strength Index.
+Returns RSI values from `pandas_ta_classic.rsi`.
 
-**Parameters:**
-- `series` (pd.Series): Price series
-- `period` (int): RSI period (default: 14)
-
-**Returns:**
-- `pd.Series`: RSI values
-
-**Example:**
 ```python
 from quanttradeai.features.technical import rsi
 
-# Calculate 14-period RSI
-rsi_14 = rsi(df['Close'], 14)
+df["rsi"] = rsi(df["Close"], period=14)
 ```
 
 ### `macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame`
 
-Calculates MACD indicator.
+Returns a DataFrame with stable column names:
 
-**Parameters:**
-- `series` (pd.Series): Price series
-- `fast` (int): Fast EMA period (default: 12)
-- `slow` (int): Slow EMA period (default: 26)
-- `signal` (int): Signal line period (default: 9)
+| Column | Meaning |
+| --- | --- |
+| `macd` | MACD line |
+| `signal` | Signal line |
+| `hist` | Histogram |
 
-**Returns:**
-- `pd.DataFrame`: DataFrame with 'macd', 'signal', and 'hist' columns
-
-**Example:**
 ```python
 from quanttradeai.features.technical import macd
 
-# Calculate MACD
-macd_df = macd(df['Close'])
-macd_line = macd_df['macd']
-signal_line = macd_df['signal']
-histogram = macd_df['hist']
+macd_frame = macd(df["Close"])
+df["macd"] = macd_frame["macd"]
+df["macd_signal"] = macd_frame["signal"]
+df["macd_hist"] = macd_frame["hist"]
 ```
 
-### `stochastic(high: pd.Series, low: pd.Series, close: pd.Series, k: int = 14, d: int = 3) -> pd.DataFrame`
+### `stochastic(high, low, close, k: int = 14, d: int = 3) -> pd.DataFrame`
 
-Calculates Stochastic Oscillator.
+Returns a DataFrame with stable column names:
 
-**Parameters:**
-- `high` (pd.Series): High prices
-- `low` (pd.Series): Low prices
-- `close` (pd.Series): Close prices
-- `k` (int): %K period (default: 14)
-- `d` (int): %D period (default: 3)
+| Column | Meaning |
+| --- | --- |
+| `stoch_k` | Stochastic %K |
+| `stoch_d` | Stochastic %D |
 
-**Returns:**
-- `pd.DataFrame`: DataFrame with 'stoch_k' and 'stoch_d' columns
-
-**Example:**
 ```python
 from quanttradeai.features.technical import stochastic
 
-# Calculate Stochastic Oscillator
-stoch_df = stochastic(df['High'], df['Low'], df['Close'])
-stoch_k = stoch_df['stoch_k']
-stoch_d = stoch_df['stoch_d']
+stoch = stochastic(df["High"], df["Low"], df["Close"], k=14, d=3)
+df = df.join(stoch)
 ```
+
+**Expected inputs**
+
+All technical functions expect numeric `pandas.Series` inputs. Insufficient lookback history produces NaNs, which `DataProcessor.generate_features` later cleans after indicator warm-up.
 
 ## Custom Features
 
-### `momentum_score(close: pd.Series, sma: pd.Series, rsi_series: pd.Series, macd: pd.Series, macd_signal: pd.Series) -> pd.Series`
+### `momentum_score(...) -> pd.Series`
 
-Computes a simple momentum score from multiple indicators.
+**Signature**
 
-**Parameters:**
-- `close` (pd.Series): Close prices
-- `sma` (pd.Series): Simple moving average
-- `rsi_series` (pd.Series): RSI values
-- `macd` (pd.Series): MACD line
-- `macd_signal` (pd.Series): MACD signal line
+```python
+def momentum_score(
+    close: pd.Series,
+    sma: pd.Series,
+    rsi_series: pd.Series,
+    macd: pd.Series,
+    macd_signal: pd.Series,
+) -> pd.Series
+```
 
-**Returns:**
-- `pd.Series`: Normalized momentum score
+Computes a weighted score:
 
-**Example:**
+- `close > sma`: weight `0.3`
+- `rsi_series > 50`: weight `0.3`
+- `macd > macd_signal`: weight `0.4`
+
+The score is then standardized by subtracting its mean and dividing by its standard deviation.
+
 ```python
 from quanttradeai.features.custom import momentum_score
 
-# Calculate momentum score
-score = momentum_score(df['Close'], df['sma_20'], df['rsi'], df['macd'], df['macd_signal'])
+df["momentum_score"] = momentum_score(
+    df["Close"],
+    df["sma_20"],
+    df["rsi"],
+    df["macd"],
+    df["macd_signal"],
+)
 ```
 
-### `volatility_breakout(high: pd.Series, low: pd.Series, close: pd.Series, lookback: int = 20, threshold: float = 2.0) -> pd.Series`
+**Edge case**
 
-Flags days when price breaks above the previous high plus a threshold.
+If the underlying weighted score has zero standard deviation, the normalized result can contain NaNs.
 
-**Parameters:**
-- `high` (pd.Series): High prices
-- `low` (pd.Series): Low prices
-- `close` (pd.Series): Close prices
-- `lookback` (int): Lookback period (default: 20)
-- `threshold` (float): Breakout threshold (default: 2.0)
+### `volatility_breakout(...) -> pd.Series`
 
-**Returns:**
-- `pd.Series`: Binary breakout signals
+**Signature**
 
-**Example:**
+```python
+def volatility_breakout(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    lookback: int = 20,
+    threshold: float = 2.0,
+) -> pd.Series
+```
+
+Flags rows where `close` breaks above the previous rolling high plus `threshold * (rolling_high - rolling_low)`.
+
 ```python
 from quanttradeai.features.custom import volatility_breakout
 
-# Calculate volatility breakout signals
-breakout = volatility_breakout(df['High'], df['Low'], df['Close'])
-```
-
-## Feature Generation Patterns
-
-### Moving Averages
-```python
-from quanttradeai.features.technical import sma, ema
-
-# Generate multiple moving averages
-periods = [5, 10, 20, 50, 200]
-for period in periods:
-    df[f'sma_{period}'] = sma(df['Close'], period)
-    df[f'ema_{period}'] = ema(df['Close'], period)
-```
-
-### Momentum Indicators
-```python
-from quanttradeai.features.technical import rsi, macd, stochastic
-
-# Generate momentum indicators
-df['rsi'] = rsi(df['Close'], 14)
-macd_df = macd(df['Close'])
-df['macd'] = macd_df['macd']
-df['macd_signal'] = macd_df['signal']
-
-stoch_df = stochastic(df['High'], df['Low'], df['Close'])
-df['stoch_k'] = stoch_df['stoch_k']
-df['stoch_d'] = stoch_df['stoch_d']
-```
-
-### Custom Features
-```python
-from quanttradeai.features.custom import momentum_score, volatility_breakout
-
-# Generate custom features
-df['momentum_score'] = momentum_score(
-    df['Close'], 
-    df['sma_20'], 
-    df['rsi'], 
-    df['macd'], 
-    df['macd_signal']
-)
-
-df['volatility_breakout'] = volatility_breakout(
-    df['High'], 
-    df['Low'], 
-    df['Close']
+df["volatility_breakout_20"] = volatility_breakout(
+    df["High"],
+    df["Low"],
+    df["Close"],
+    lookback=20,
+    threshold=2.0,
 )
 ```
 
-## Configuration
+Returns a binary integer Series with `1` for breakout rows and `0` otherwise.
 
-### Feature Configuration Example
-```yaml
-price_features:
-  sma_periods: [5, 10, 20, 50, 200]
-  ema_periods: [5, 10, 20, 50, 200]
+## Sentiment
 
-momentum_features:
-  rsi_period: 14
-  macd_params:
-    fast: 12
-    slow: 26
-    signal: 9
-  stoch_params:
-    k: 14
-    d: 3
+### `SentimentAnalyzer`
 
-volatility_features:
-  bollinger_bands:
-    period: 20
-    std_dev: 2
+**Signature**
 
-volume_features:
-  volume_sma:
-    periods: [5, 10, 20]
-  volume_ema:
-    periods: [5, 10, 20]
-
-feature_combinations:
-  cross_indicators:
-    - ['sma_5', 'sma_20']
-    - ['ema_5', 'ema_20']
-    - ['close', 'sma_50']
-  ratio_indicators:
-    - ['volume', 'volume_sma_5']
-    - ['close', 'sma_20']
-    - ['high', 'low']
-```
-
-## Error Handling
-
-### Missing Data
 ```python
-# Check for NaN values in indicators
-print(df[['sma_20', 'rsi', 'macd']].isnull().sum())
+class SentimentAnalyzer:
+    def __init__(
+        self,
+        provider: str,
+        model: str,
+        api_key_env_var: str,
+        extra: dict[str, Any] | None = None,
+    ) -> None
 
-# Handle missing values
-df = df.fillna(method='ffill')
+    def score(self, text: str) -> float
 ```
 
-### Invalid Parameters
+`SentimentAnalyzer` uses LiteLLM to ask a configured provider for a numeric sentiment score between `-1` and `1`.
+
 ```python
-try:
-    # Calculate RSI with valid period
-    rsi_14 = rsi(df['Close'], 14)
-except Exception as e:
-    print(f"Error calculating RSI: {e}")
+from quanttradeai.features.sentiment import SentimentAnalyzer
+
+analyzer = SentimentAnalyzer(
+    provider="openai",
+    model="provider-model",
+    api_key_env_var="OPENAI_API_KEY",
+)
+
+score = analyzer.score("Earnings beat expectations and guidance improved.")
 ```
 
-## Performance Tips
+**Errors and edge cases**
 
-### Vectorized Operations
+- Raises `ValueError` if `provider` or `model` is blank.
+- Raises `ValueError` if `api_key_env_var` is not set in the environment.
+- Raises `ValueError` if the model response cannot be parsed as a float.
+- Network/provider errors from LiteLLM are re-raised.
+
+## `DataProcessor` Feature Pipeline
+
+`quanttradeai.data.processor.DataProcessor` composes the feature helpers above. Depending on config, it can add:
+
+| Group | Generated Columns |
+| --- | --- |
+| Price ratios | `close_to_open`, `high_to_low`, `close_to_high`, `close_to_low`, `price_range` |
+| Momentum | `sma_*`, `ema_*`, `rsi`, `macd`, `macd_signal`, `macd_hist`, `stoch_k`, `stoch_d` |
+| Volatility | `bb_lower`, `bb_middle`, `bb_upper`, `atr_*`, `keltner_*` |
+| Returns | `daily_return`, `weekly_return`, `monthly_return`, `volatility_21d` |
+| Volume | `volume_sma_*`, `volume_ema_*`, volume ratios, `obv`, `volume_price_trend` |
+| Custom | `price_momentum_*`, `volume_momentum_*`, `mean_reversion_*`, `volatility_breakout_*`, `momentum_score` |
+| Sentiment | `sentiment_score` when enabled and `text` exists |
+
 ```python
-# Use vectorized operations for better performance
-df['price_change'] = df['Close'].pct_change()
-df['volume_ratio'] = df['Volume'] / df['Volume'].rolling(20).mean()
+from quanttradeai import DataProcessor
+
+processor = DataProcessor("config/features_config.yaml")
+features = processor.generate_features(df)
 ```
 
-### Memory Optimization
+## Minimal Examples
+
+### Manual Indicator Set
+
 ```python
-# Drop unnecessary columns to save memory
-columns_to_keep = ['Open', 'High', 'Low', 'Close', 'Volume', 'sma_20', 'rsi', 'macd']
-df = df[columns_to_keep]
+from quanttradeai.features import technical
+
+features = df.copy()
+features["sma_20"] = technical.sma(features["Close"], 20)
+features["rsi"] = technical.rsi(features["Close"], 14)
+features = features.join(technical.macd(features["Close"]))
 ```
 
-## Related Documentation
+### Configured Feature Generation
 
-- **[Data Loading](data.md)** - Data fetching and processing
-- **[Machine Learning](models.md)** - Model training and evaluation
-- **[Configuration](../configuration.md)** - Configuration guide
-- **[Quick Reference](../quick-reference.md)** - Common patterns
+```python
+from quanttradeai import DataProcessor
+
+processor = DataProcessor("config/features_config.yaml")
+features = processor.generate_features(df)
+```
+
+## Related CLI/YAML Docs
+
+- [CLI docs](../cli/)
+- [Config docs](../config/)
+- [Examples](../examples/)
+
+The CLI research workflow uses the same `DataProcessor` feature generation path after compiling project YAML into runtime feature settings.
+
+## Common Mistakes
+
+- Importing `sma` from `quanttradeai.features` directly; import from `quanttradeai.features.technical`.
+- Passing DataFrames where helper functions expect Series.
+- Forgetting indicator warm-up rows; rolling indicators produce NaNs until enough history exists.
+- Enabling sentiment without a `text` column or without the configured provider key environment variable.
+- Recomputing feature preprocessing independently for training and serving instead of reusing a fitted preprocessor.
