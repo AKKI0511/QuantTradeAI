@@ -37,7 +37,7 @@ Research RSI mean-reversion and SMA crossover strategies on AAPL and MSFT from 2
 | `features.definitions` | Keep `rsi_14`. Add SMA definitions that match the windows being tested, such as `sma_10`, `sma_20`, `sma_50`, and `sma_100`. |
 | `agents` | Keep one `rule` agent for `rsi_threshold` and one `rule` agent for `sma_crossover`. Make sure each agent's `context.features` includes every feature it may use during a sweep. |
 | `agents[].risk` | Add realistic scalar sizing values, for example `max_position_pct`, so sweeps can compare conservative versus more aggressive exposure. |
-| `sweeps` | Use `agent_backtest` sweeps. RSI sweeps should vary `rule.buy_below`, `rule.sell_above`, and risk sizing. SMA sweeps should vary `rule.fast_feature`, `rule.slow_feature`, and risk sizing. |
+| `sweeps` | Use `agent_backtest` sweeps. RSI sweeps should vary `rule.buy_below`, `rule.sell_above`, and risk sizing. Keep the generated `sma_risk_grid` sweep name and expand its parameters so it varies `rule.fast_feature`, `rule.slow_feature`, and risk sizing. |
 
 > [!NOTE]
 > Agent sweeps mutate scalar leaves under the selected agent in generated child configs. They do not edit the source YAML and they do not change top-level feature generation settings unless the agent first defines the needed features.
@@ -47,11 +47,11 @@ Research RSI mean-reversion and SMA crossover strategies on AAPL and MSFT from 2
 ```bash
 quanttradeai validate -c config/project.yaml
 quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
-quanttradeai agent run --sweep sma_window_risk_grid -c config/project.yaml --mode backtest --max-concurrency 4
+quanttradeai agent run --sweep sma_risk_grid -c config/project.yaml --mode backtest --max-concurrency 4
 quanttradeai runs list --type agent --mode backtest --scoreboard --sort-by net_sharpe
 ```
 
-The exact sweep names can differ, but each configured sweep should run with `--mode backtest`.
+The exact parameters can differ, but each configured sweep should run with `--mode backtest`.
 
 ## Artifacts to inspect
 
