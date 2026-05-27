@@ -362,7 +362,7 @@ portfolio_curve = results["portfolio"]["equity_curve"]
 - [CLI docs](../cli/)
 - [Config docs](../config/)
 - [Artifacts](../artifacts.md)
-- [Execution cost examples](../examples/execution-costs.md)
+- [Examples](../examples/)
 
 The research and agent backtest CLI paths call the same simulation and metrics functions after preparing labeled data.
 

@@ -45,7 +45,7 @@ You give the research objective. The agent uses `config/project.yaml`, the `quan
 | [CLI](cli/) | Commands, when to use them, inputs, outputs, and artifacts. |
 | [Config](config/) | `project.yaml` and supported data, research, agent, and execution sections. |
 | [API](api/) | Python API reference for advanced users. |
-| [Examples](examples/) | Lightweight working patterns for strategy research and iteration. |
+| [Examples](examples/) | Agent-native working patterns for strategy sweeps and model promotion. |
 
 ## Safety model
 

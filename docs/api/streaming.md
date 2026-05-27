@@ -395,7 +395,7 @@ Paper and live agent runners compile project streaming settings, construct gatew
 
 - [CLI agent docs](../cli/agents.md)
 - [Streaming config](../config/data-and-streaming.md)
-- [Streaming examples](../examples/streaming.md)
+- [Examples](../examples/)
 - [Artifacts](../artifacts.md)
 
 ## Common Mistakes
