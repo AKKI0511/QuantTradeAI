@@ -1,5 +1,3 @@
-<div align="center">
-
 # Getting Started
 
 <p><strong>Create an agent-ready QuantTradeAI workspace.</strong></p>
@@ -11,8 +9,6 @@
   <a href="#templates"><strong>Templates</strong></a> &middot;
   <a href="#where-to-go-next"><strong>Next</strong></a>
 </p>
-
-</div>
 
 ---
 
