@@ -1,5 +1,3 @@
-<div align="center">
-
 # QuantTradeAI Docs
 
 ### Give your coding agent a quant research lab, not a blank terminal.
@@ -12,8 +10,6 @@
   <a href="api/"><strong>API</strong></a> &middot;
   <a href="examples/"><strong>Examples</strong></a>
 </p>
-
-</div>
 
 ---
 
