@@ -1,10 +1,48 @@
-# Backtesting Framework
+# Backtesting API
 
-API documentation for trade simulation and performance metrics.
+## Overview
 
-## Trade Simulation
+The backtesting API simulates label-driven strategies, computes gross and net metrics, and models execution effects such as transaction costs, slippage, liquidity, borrow fees, intrabar fills, and market impact.
 
-### `simulate_trades(
+## Public Imports
+
+```python
+from quanttradeai import (
+    simulate_trades,
+    compute_metrics,
+    BacktestEngine,
+    MarketImpactModel,
+    LinearImpactModel,
+    SquareRootImpactModel,
+    AlmgrenChrissModel,
+    ImpactCalculator,
+    DynamicSpreadModel,
+)
+
+from quanttradeai.backtest import simulate_trades, compute_metrics, BacktestEngine
+from quanttradeai.backtest.impact import ImpactCalculator, LinearImpactModel
+```
+
+## Main Classes and Functions
+
+| API | Import Path | Purpose |
+| --- | --- | --- |
+| `simulate_trades` | `quanttradeai.backtest.backtester` | Simulate strategy returns from `label` signals |
+| `compute_metrics` | `quanttradeai.backtest.backtester` | Compute gross/net performance metrics |
+| `BacktestEngine` | `quanttradeai.backtest.engine` | Thin wrapper around `simulate_trades` with portfolio/risk wiring |
+| `MarketImpactModel` | `quanttradeai.backtest.impact` | Protocol for impact model implementations |
+| `LinearImpactModel` | `quanttradeai.backtest.impact` | Temporary square-root and permanent linear impact |
+| `SquareRootImpactModel` | `quanttradeai.backtest.impact` | Temporary and permanent square-root impact |
+| `AlmgrenChrissModel` | `quanttradeai.backtest.impact` | Basic Almgren-Chriss style impact model |
+| `ImpactCalculator` | `quanttradeai.backtest.impact` | Applies impact model, spread, asymmetry, and decay |
+| `DynamicSpreadModel` | `quanttradeai.backtest.impact` | Computes adaptive spread from volatility, volume, and time of day |
+
+## `simulate_trades`
+
+**Signature**
+
+```python
+def simulate_trades(
     df: pd.DataFrame | dict[str, pd.DataFrame],
     stop_loss_pct: float | None = None,
     take_profit_pct: float | None = None,
@@ -12,291 +50,327 @@ API documentation for trade simulation and performance metrics.
     slippage: float = 0.0,
     execution: dict | None = None,
     portfolio: PortfolioManager | None = None,
-) -> pd.DataFrame | dict[str, pd.DataFrame]`
-
-Simulates trades using label signals.  The ``transaction_cost`` and ``slippage``
-arguments are shorthand for populating the ``execution`` configuration, which
-can also specify liquidity, market impact, borrow fees, and intrabar simulation
-parameters. The engine supports market, limit, and stop orders with partial
-fills.
-
-**Parameters:**
-- `df` (pd.DataFrame or dict[str, pd.DataFrame]): Single DataFrame or mapping of symbol to DataFrame with Close prices and label column
-- `stop_loss_pct` (float, optional): Stop-loss percentage as decimal
-- `take_profit_pct` (float, optional): Take-profit percentage as decimal
-- `transaction_cost` (float, optional): Transaction cost in decimal bps
-- `slippage` (float, optional): Slippage cost in decimal bps
-- `execution` (dict, optional): Detailed execution settings including `transaction_costs`, `slippage`, `liquidity`, `impact`,
-  `borrow_fee`, and `intrabar`
-- `portfolio` (PortfolioManager, optional): Portfolio manager required when `df` is a dictionary
-
-**Returns:**
-- `pd.DataFrame` or `dict[str, pd.DataFrame]`: Trade results with strategy_return and equity_curve columns. When multiple symbols are provided, a `"portfolio"` key contains the aggregated results.
-
-**Example:**
-```python
-from quanttradeai import simulate_trades
-
-# Simulate trades with intrabar fills and borrow fees
-df_with_trades = simulate_trades(
-    df,
-    execution={
-        "impact": {
-            "enabled": True,
-            "model": "linear",
-            "alpha": 0.5,
-            "beta": 0.0,
-            "average_daily_volume": 1_000_000,
-            "spread": 0.02,
-        },
-        "intrabar": {"enabled": True, "synthetic_ticks": 20, "volatility": 0.01},
-        "borrow_fee": {"enabled": True, "rate_bps": 100},
-    },
-)
+    drawdown_guard: DrawdownGuard | None = None,
+) -> pd.DataFrame | dict[str, pd.DataFrame]
 ```
 
-### `compute_metrics(data: pd.DataFrame, risk_free_rate: float = 0.0) -> dict`
+`simulate_trades` expects a `label` column where `1` means long, `-1` means short, and `0` means flat. It computes one-period-ahead strategy returns based on the current position.
 
-Calculates gross and net performance metrics, including cost breakdowns.
+| Input | Required | Notes |
+| --- | --- | --- |
+| `Close` | Yes | Used as the default reference price |
+| `label` | Yes | Signal/target direction |
+| `Volume` | Optional | Used for liquidity and impact; defaults to effectively unlimited volume |
+| `Mid` | Optional | Used when slippage reference price is `mid` |
+| `order_type` | Optional | `market`, `limit`, or `stop`; defaults to `market` |
+| `limit_price` | Optional | Used for limit orders |
+| `stop_price` | Optional | Used for stop orders |
+| `Volatility` | Optional | Used by dynamic spread/impact; defaults to `0.0` |
+| `ticks` | Optional | Used by intrabar execution when configured |
 
-**Parameters:**
-- `data` (pd.DataFrame): Output from `simulate_trades`
-- `risk_free_rate` (float): Annual risk-free rate for Sharpe ratio
+**Returns**
 
-**Returns:**
-- `dict`: Summary with keys like `gross_pnl`, `net_pnl`, `total_costs`, `total_slippage_cost`, and `total_impact_cost`
+For a single DataFrame, returns a copy with:
 
-**Example:**
+| Column or Attr | Meaning |
+| --- | --- |
+| `gross_return` | Strategy return before execution costs |
+| `strategy_return` | Strategy return after execution costs |
+| `gross_equity_curve` | Cumulative gross equity |
+| `equity_curve` | Cumulative net equity |
+| `data.attrs["ledger"]` | Per-fill execution ledger as a DataFrame |
+
+For a `dict[str, DataFrame]`, returns per-symbol results plus a `"portfolio"` DataFrame with aggregated `strategy_return` and `equity_curve`. Multi-symbol simulation requires a `PortfolioManager`.
+
 ```python
-from quanttradeai import compute_metrics
+from quanttradeai import simulate_trades, compute_metrics
 
-metrics = compute_metrics(df_with_trades, risk_free_rate=0.02)
-print(f"Impact Cost: {metrics['total_impact_cost']:.6f}")
-print(f"Net PnL: {metrics['net_pnl']:.4f}")
+results = simulate_trades(
+    labeled_bars,
+    stop_loss_pct=0.02,
+    take_profit_pct=0.04,
+    execution={
+        "transaction_costs": {"enabled": True, "mode": "bps", "value": 1.0},
+        "slippage": {"enabled": True, "mode": "bps", "value": 2.0},
+    },
+)
+
+metrics = compute_metrics(results)
+ledger = results.attrs["ledger"]
+```
+
+### Execution Config
+
+`execution` is a nested dictionary. The simulator currently reads these sections:
+
+| Section | Key Behavior |
+| --- | --- |
+| `transaction_costs` | Adds bps, fixed-notional, or per-share costs |
+| `slippage` | Adds bps or fixed price slippage |
+| `liquidity` | Caps fills by participation and optional order book depth |
+| `impact` | Enables `ImpactCalculator` and optional dynamic spread |
+| `borrow_fee` | Adds fee rows while short |
+| `intrabar` | Uses `ticks` column or synthetic ticks for fills |
+
+The scalar `transaction_cost` and `slippage` arguments are shortcuts that are converted to bps execution config values.
+
+## `compute_metrics`
+
+**Signature**
+
+```python
+def compute_metrics(data: pd.DataFrame, risk_free_rate: float = 0.0) -> dict
+```
+
+Delegates to `quanttradeai.utils.metrics.compute_performance`. It expects `strategy_return` and `equity_curve`; when present, `gross_return` and `gross_equity_curve` are used for gross metrics.
+
+**Returns**
+
+```python
+{
+    "gross_pnl": float,
+    "total_costs": float,
+    "total_slippage_cost": float,
+    "total_impact_cost": float,
+    "net_pnl": float,
+    "gross_sharpe": float,
+    "net_sharpe": float,
+    "gross_cagr": float,
+    "net_cagr": float,
+    "gross_mdd": float,
+    "net_mdd": float,
+    "cumulative_return": float,
+    "sharpe_ratio": float,
+    "max_drawdown": float,
+}
+```
+
+```python
+metrics = compute_metrics(results, risk_free_rate=0.03)
+```
+
+## `BacktestEngine`
+
+**Signature**
+
+```python
+@dataclass
+class BacktestEngine:
+    portfolio: PortfolioManager | None = None
+    risk_manager: RiskManager | None = None
+
+    def run(
+        self,
+        data: pd.DataFrame | dict[str, pd.DataFrame],
+        execution: dict | None = None,
+        **kwargs,
+    ) -> pd.DataFrame | dict[str, pd.DataFrame]
+```
+
+`BacktestEngine` forwards to `simulate_trades`. If both `portfolio` and `risk_manager` are provided, the portfolio is wired to use the risk manager and the risk manager's drawdown guard is passed into the simulation.
+
+```python
+from quanttradeai import BacktestEngine
+from quanttradeai.trading import PortfolioManager, RiskManager
+
+engine = BacktestEngine(
+    portfolio=PortfolioManager(capital=100_000),
+    risk_manager=RiskManager(),
+)
+
+results = engine.run(labeled_bars)
 ```
 
 ## Market Impact Models
 
-QuantTradeAI includes several market impact models for estimating execution
-price effects.  They are available through the public API:
+### `MarketImpactModel`
 
-- `LinearImpactModel`
-- `SquareRootImpactModel`
-- `AlmgrenChrissModel`
-- `ImpactCalculator`
+**Signature**
 
-These models can be configured via the `execution.impact` section of the
-backtest configuration or passed directly through the `execution` argument in
-`simulate_trades`.
-
-## Complete Backtesting Workflow
-
-### Basic Backtesting
 ```python
-from quanttradeai import simulate_trades, compute_metrics
-
-# Simulate trades
-df_trades = simulate_trades(df_labeled)
-
-# Calculate metrics
-metrics = compute_metrics(df_trades)
-
-print(f"Total Return: {metrics['cumulative_return']:.2%}")
-print(f"Sharpe Ratio: {metrics['sharpe_ratio']:.2f}")
-print(f"Max Drawdown: {metrics['max_drawdown']:.2%}")
+class MarketImpactModel(Protocol):
+    alpha: float
+    beta: float
+    def temporary(self, trade_volume: float, adv: float) -> float: ...
+    def permanent(self, trade_volume: float, adv: float) -> float: ...
 ```
 
-### Backtesting with Risk Management
-```python
-from quanttradeai import simulate_trades, compute_metrics, apply_stop_loss_take_profit
+Implement this protocol when adding custom impact models. `adv` is average daily volume or another volume baseline chosen by the caller.
 
-# Apply risk management rules
-df_with_risk = apply_stop_loss_take_profit(
-    df_labeled, 
-    stop_loss_pct=0.02, 
-    take_profit_pct=0.04
+### `LinearImpactModel`
+
+**Signature**
+
+```python
+@dataclass
+class LinearImpactModel:
+    alpha: float = 0.0
+    beta: float = 0.0
+```
+
+Behavior:
+
+- `temporary(trade_volume, adv)`: `alpha * sqrt(trade_volume / adv)`
+- `permanent(trade_volume, adv)`: `beta * (trade_volume / adv)`
+- If `adv <= 0`, the ratio is treated as `0.0`.
+
+### `SquareRootImpactModel`
+
+**Signature**
+
+```python
+@dataclass
+class SquareRootImpactModel(LinearImpactModel):
+    alpha: float = 0.0
+    beta: float = 0.0
+```
+
+Behavior:
+
+- `temporary(...)`: `alpha * sqrt(trade_volume / adv)`
+- `permanent(...)`: `beta * sqrt(trade_volume / adv)`
+
+### `AlmgrenChrissModel`
+
+**Signature**
+
+```python
+@dataclass
+class AlmgrenChrissModel(LinearImpactModel):
+    alpha: float = 0.0
+    beta: float = 0.0
+    gamma: float = 0.0
+```
+
+Behavior:
+
+- `temporary(...)`: `alpha * ratio + beta * sqrt(ratio)`
+- `permanent(...)`: `gamma * ratio`
+
+### `DynamicSpreadModel`
+
+**Signature**
+
+```python
+class DynamicSpreadModel:
+    def __init__(
+        self,
+        base: float = 0.0,
+        vol_coeff: float = 0.0,
+        volume_coeff: float = 0.0,
+        tod: dict[int, float] | None = None,
+    ) -> None
+
+    def value(self, volatility: float, volume: float, ts: datetime) -> float
+```
+
+Computes:
+
+```text
+base + vol_coeff * volatility + volume_coeff / volume
+```
+
+The volume term is applied only when `volume > 0`. The result is then multiplied by an optional time-of-day multiplier from `tod` by `ts.hour`.
+
+### `ImpactCalculator`
+
+**Signature**
+
+```python
+@dataclass
+class ImpactCalculator:
+    model: MarketImpactModel
+    decay: float = 0.0
+    decay_volume_coeff: float = 0.0
+    spread: float = 0.0
+    spread_model: DynamicSpreadModel | None = None
+    alpha_buy: float | None = None
+    alpha_sell: float | None = None
+    beta_buy: float | None = None
+    beta_sell: float | None = None
+    cross_alpha: float = 0.0
+    cross_beta: float = 0.0
+    horizon_decay: float = 0.0
+
+    def impact_per_share(...) -> tuple[float, float, float]
+    def impact_cost(...) -> dict[str, float]
+```
+
+`impact_per_share` and `impact_cost` accept:
+
+```python
+trade_volume: float
+adv: float
+side: int = 1
+volatility: float = 0.0
+volume: float = 0.0
+timestamp: datetime | None = None
+cross_volume: float = 0.0
+```
+
+`impact_cost` returns:
+
+```python
+{
+    "temp": float,
+    "perm": float,
+    "spread": float,
+    "total": float,
+}
+```
+
+```python
+from quanttradeai import ImpactCalculator, LinearImpactModel
+
+impact = ImpactCalculator(
+    model=LinearImpactModel(alpha=0.1, beta=0.02),
+    spread=0.01,
 )
 
-# Simulate trades
-df_trades = simulate_trades(df_with_risk)
-
-# Calculate metrics
-metrics = compute_metrics(df_trades, risk_free_rate=0.02)
-
-print(f"Risk-Adjusted Return: {metrics['cumulative_return']:.2%}")
-print(f"Sharpe Ratio: {metrics['sharpe_ratio']:.2f}")
-print(f"Max Drawdown: {metrics['max_drawdown']:.2%}")
+cost = impact.impact_cost(trade_volume=10_000, adv=1_000_000, side=1)
 ```
 
-### Multi-Asset Backtesting
+## Minimal Examples
+
+### Single Symbol
+
 ```python
 from quanttradeai import simulate_trades, compute_metrics
 
-# Backtest multiple assets
-results = {}
-for symbol, df in data_dict.items():
-    # Process data and generate labels
-    df_processed = processor.process_data(df)
-    df_labeled = processor.generate_labels(df_processed)
-    
-    # Simulate trades
-    df_trades = simulate_trades(df_labeled)
-    
-    # Calculate metrics
-    metrics = compute_metrics(df_trades)
-    results[symbol] = metrics
-
-# Compare results
-for symbol, metrics in results.items():
-    print(f"{symbol}: Return={metrics['cumulative_return']:.2%}, "
-          f"Sharpe={metrics['sharpe_ratio']:.2f}, "
-          f"MDD={metrics['max_drawdown']:.2%}")
+prepared = features[["Close", "Volume", "label"]].copy()
+results = simulate_trades(prepared)
+metrics = compute_metrics(results)
 ```
 
-## Performance Analysis
+### Multi-Symbol Portfolio
 
-### Equity Curve Analysis
 ```python
-import matplotlib.pyplot as plt
+from quanttradeai import simulate_trades
+from quanttradeai.trading import PortfolioManager
 
-# Simulate trades
-df_trades = simulate_trades(df_labeled)
+portfolio = PortfolioManager(capital=100_000)
+results = simulate_trades(
+    {"AAPL": aapl_bars, "MSFT": msft_bars},
+    portfolio=portfolio,
+)
 
-# Plot equity curve
-plt.figure(figsize=(12, 6))
-plt.plot(df_trades.index, df_trades['equity_curve'])
-plt.title('Strategy Equity Curve')
-plt.xlabel('Date')
-plt.ylabel('Portfolio Value')
-plt.grid(True)
-plt.show()
-
-# Calculate drawdown
-cumulative_max = df_trades['equity_curve'].cummax()
-drawdown = (df_trades['equity_curve'] - cumulative_max) / cumulative_max
-
-plt.figure(figsize=(12, 6))
-plt.fill_between(df_trades.index, drawdown, 0, alpha=0.3, color='red')
-plt.title('Strategy Drawdown')
-plt.xlabel('Date')
-plt.ylabel('Drawdown %')
-plt.grid(True)
-plt.show()
+portfolio_curve = results["portfolio"]["equity_curve"]
 ```
 
-### Trade Analysis
-```python
-# Analyze individual trades
-df_trades = simulate_trades(df_labeled)
+## Related CLI/YAML Docs
 
-# Calculate trade statistics
-trades = df_trades[df_trades['strategy_return'] != 0]
-winning_trades = trades[trades['strategy_return'] > 0]
-losing_trades = trades[trades['strategy_return'] < 0]
+- [CLI docs](../cli/)
+- [Config docs](../config/)
+- [Artifacts](../artifacts.md)
+- [Examples](../examples/)
 
-print(f"Total Trades: {len(trades)}")
-print(f"Winning Trades: {len(winning_trades)} ({len(winning_trades)/len(trades)*100:.1f}%)")
-print(f"Losing Trades: {len(losing_trades)} ({len(losing_trades)/len(trades)*100:.1f}%)")
-print(f"Average Win: {winning_trades['strategy_return'].mean():.2%}")
-print(f"Average Loss: {losing_trades['strategy_return'].mean():.2%}")
-```
+The research and agent backtest CLI paths call the same simulation and metrics functions after preparing labeled data.
 
-## Risk Management Integration
+## Common Mistakes
 
-### Stop-Loss and Take-Profit
-```python
-from quanttradeai import apply_stop_loss_take_profit
-
-# Apply different risk management scenarios
-scenarios = [
-    (None, None),           # No risk management
-    (0.02, None),          # 2% stop-loss only
-    (None, 0.04),          # 4% take-profit only
-    (0.02, 0.04),         # Both stop-loss and take-profit
-]
-
-for sl, tp in scenarios:
-    df_with_risk = apply_stop_loss_take_profit(df_labeled, sl, tp)
-    df_trades = simulate_trades(df_with_risk)
-    metrics = compute_metrics(df_trades)
-    
-    print(f"SL: {sl}, TP: {tp}")
-    print(f"  Return: {metrics['cumulative_return']:.2%}")
-    print(f"  Sharpe: {metrics['sharpe_ratio']:.2f}")
-    print(f"  MDD: {metrics['max_drawdown']:.2%}")
-```
-
-## Configuration
-
-### Backtesting Configuration
-```yaml
-trading:
-  position_size: 0.2
-  stop_loss: 0.02
-  take_profit: 0.04
-  max_positions: 5
-  transaction_cost: 0.001
-```
-
-## Error Handling
-
-### Data Validation
-```python
-# Check required columns
-required_cols = ['Close', 'label']
-missing_cols = [col for col in required_cols if col not in df.columns]
-if missing_cols:
-    raise ValueError(f"Missing required columns: {missing_cols}")
-
-# Check label values
-valid_labels = [-1, 0, 1]
-invalid_labels = df['label'].unique()
-invalid_labels = [l for l in invalid_labels if l not in valid_labels]
-if invalid_labels:
-    raise ValueError(f"Invalid label values: {invalid_labels}")
-```
-
-### Performance Issues
-```python
-try:
-    # Simulate trades
-    df_trades = simulate_trades(df_labeled)
-    metrics = compute_metrics(df_trades)
-except Exception as e:
-    print(f"Backtesting error: {e}")
-    # Check data quality
-    print(f"Data shape: {df_labeled.shape}")
-    print(f"Label distribution: {df_labeled['label'].value_counts()}")
-```
-
-## Performance Tips
-
-### Memory Optimization
-```python
-# Use smaller date ranges for testing
-df_sample = df_labeled['2023-01-01':'2023-12-31']
-df_trades = simulate_trades(df_sample)
-```
-
-### Parallel Processing
-```python
-# Backtest multiple assets in parallel
-from concurrent.futures import ProcessPoolExecutor
-
-def backtest_asset(symbol_data):
-    symbol, df = symbol_data
-    df_trades = simulate_trades(df)
-    return symbol, compute_metrics(df_trades)
-
-with ProcessPoolExecutor() as executor:
-    results = list(executor.map(backtest_asset, data_dict.items()))
-```
-
-## Related Documentation
-
-- **[Data Loading](data.md)** - Data fetching and processing
-- **[Feature Engineering](features.md)** - Technical indicators and features
-- **[Machine Learning](models.md)** - Model training and evaluation
-- **[Trading Utilities](trading.md)** - Risk management and position sizing
-- **[Configuration](../configuration.md)** - Configuration guide
-- **[Quick Reference](../quick-reference.md)** - Common patterns
+- Missing `label` or `Close` columns before calling `simulate_trades`.
+- Passing a multi-symbol dictionary without a `PortfolioManager`.
+- Comparing `gross_sharpe` to `net_sharpe` without checking `total_costs`, `total_slippage_cost`, and `total_impact_cost`.
+- Assuming scalar `transaction_cost` and `slippage` are raw dollars; they are decimal fractions converted to bps.
+- Enabling liquidity or impact without realistic `Volume` or `average_daily_volume` values.
+- Reading only `equity_curve` and ignoring the execution ledger stored in `result.attrs["ledger"]`.

@@ -1,308 +1,262 @@
-# Machine Learning Models
+# Models API
 
-API documentation for the MomentumClassifier and training utilities.
+## Overview
 
-## MomentumClassifier Class
+The current model API centers on `MomentumClassifier`, a scikit-learn voting classifier that combines logistic regression, random forest, and XGBoost estimators. It is used by the research workflow and by model agents that load saved artifacts.
 
-### `MomentumClassifier(config_path: str = "config/model_config.yaml")`
+## Public Imports
 
-Voting Classifier for momentum trading strategy using Logistic Regression, Random Forest, and XGBoost.
+```python
+from quanttradeai import MomentumClassifier
+from quanttradeai.models import MomentumClassifier
+from quanttradeai.models.classifier import MomentumClassifier
+```
 
-**Parameters:**
-- `config_path` (str): Path to model configuration file
+`MomentumClassifier` is a lazy top-level export. If importing the model stack fails at the root package path, `quanttradeai.MomentumClassifier` resolves to `None`; direct imports from `quanttradeai.models.classifier` will raise the underlying import error.
 
-**Example:**
+## Main Classes and Methods
+
+| API | Import Path | Purpose |
+| --- | --- | --- |
+| `MomentumClassifier` | `quanttradeai.models.classifier` | Train, tune, evaluate, save, and load a voting classifier |
+| `prepare_data(df)` | method | Split feature columns from `label` |
+| `optimize_hyperparameters(X, y, n_trials=100)` | method | Tune model parameters with Optuna and time-series CV |
+| `train(X, y, params=None)` | method | Fit scaler and voting classifier |
+| `predict(X)` | method | Predict labels with a trained model |
+| `evaluate(X, y)` | method | Return classification metrics |
+| `save_model(path)` | method | Write joblib artifacts |
+| `load_model(path)` | method | Load joblib artifacts |
+
+## `MomentumClassifier`
+
+**Signature**
+
+```python
+class MomentumClassifier:
+    def __init__(self, config_path: str = "config/model_config.yaml")
+```
+
+The constructor reads YAML from `config_path`, creates a `StandardScaler`, and initializes `model` and `feature_columns` to `None`.
+
 ```python
 from quanttradeai import MomentumClassifier
 
-# Initialize classifier
 classifier = MomentumClassifier("config/model_config.yaml")
 ```
 
-### `prepare_data(df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]`
+**Configuration used directly**
 
-Prepares data for training/prediction.
+| Config Path | Used By |
+| --- | --- |
+| `training.cv_folds` | `optimize_hyperparameters` for `TimeSeriesSplit` |
 
-**Parameters:**
-- `df` (pd.DataFrame): DataFrame with features and labels
+Other config values are primarily consumed upstream by data loading, feature generation, labels, and research orchestration.
 
-**Returns:**
-- `Tuple[np.ndarray, np.ndarray]`: Tuple of features array and labels array
+## `prepare_data`
 
-**Example:**
+**Signature**
+
 ```python
-# Prepare data for training
-X, y = classifier.prepare_data(labeled_df)
-print(f"Features shape: {X.shape}")
-print(f"Labels shape: {y.shape}")
+def prepare_data(self, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]
 ```
 
-### `optimize_hyperparameters(X: np.ndarray, y: np.ndarray, n_trials: int = 100) -> Dict`
+Builds `X` and `y` from a labeled feature DataFrame.
 
-Optimizes hyperparameters using Optuna with `TimeSeriesSplit(n_splits=training.cv_folds)` to avoid look‑ahead bias.
+| Input Requirement | Behavior |
+| --- | --- |
+| `label` column | Required as the target vector |
+| Feature columns | All columns except `Open`, `High`, `Low`, `Close`, `Volume`, `forward_returns`, and `label` |
+| Return | `(X, y)` NumPy arrays |
 
-**Parameters:**
-- `X` (np.ndarray): Feature matrix
-- `y` (np.ndarray): Labels array
-- `n_trials` (int): Number of optimization trials
+`prepare_data` also sets `self.feature_columns` to the selected feature column names.
 
-**Returns:**
-- `Dict`: Dictionary of best parameters
-
-**Example:**
 ```python
-# Optimize hyperparameters
-best_params = classifier.optimize_hyperparameters(X_train, y_train, n_trials=50)
-print(f"Best parameters: {best_params}")
+X, y = classifier.prepare_data(labeled_features)
 ```
 
-### `train(X: np.ndarray, y: np.ndarray, params: Dict[str, Any] = None)`
+## `optimize_hyperparameters`
 
-Trains the voting classifier.
+**Signature**
 
-**Parameters:**
-- `X` (np.ndarray): Feature matrix
-- `y` (np.ndarray): Labels array
-- `params` (Dict[str, Any], optional): Hyperparameters
-
-**Example:**
 ```python
-# Train with optimized parameters
-classifier.train(X_train, y_train, params=best_params)
-
-# Train with default parameters
-classifier.train(X_train, y_train)
+def optimize_hyperparameters(
+    self,
+    X: np.ndarray,
+    y: np.ndarray,
+    n_trials: int = 100,
+) -> dict
 ```
 
-### `predict(X: np.ndarray) -> np.ndarray`
+Runs an Optuna study using weighted F1 from `cross_val_score` with `TimeSeriesSplit`. It tunes:
 
-Makes predictions using the trained model.
+| Estimator | Tuned Parameters |
+| --- | --- |
+| Logistic regression | `lr_C` |
+| Random forest | `rf_n_estimators`, `rf_max_depth`, `rf_min_samples_split` |
+| XGBoost | `xgb_n_estimators`, `xgb_max_depth`, `xgb_learning_rate`, `xgb_subsample`, `xgb_colsample_bytree` |
 
-**Parameters:**
-- `X` (np.ndarray): Feature matrix
-
-**Returns:**
-- `np.ndarray`: Array of predictions
-
-**Example:**
 ```python
-# Make predictions
+params = classifier.optimize_hyperparameters(X, y, n_trials=25)
+```
+
+## `train`
+
+**Signature**
+
+```python
+def train(
+    self,
+    X: np.ndarray,
+    y: np.ndarray,
+    params: dict[str, Any] | None = None,
+) -> None
+```
+
+Fits the internal `StandardScaler`, creates a soft-voting classifier, and trains it.
+
+If `params` is omitted, defaults are used:
+
+```python
+{
+    "lr_C": 1.0,
+    "rf_n_estimators": 100,
+    "rf_max_depth": 10,
+    "rf_min_samples_split": 2,
+    "xgb_n_estimators": 100,
+    "xgb_max_depth": 6,
+    "xgb_learning_rate": 0.1,
+    "xgb_subsample": 0.8,
+    "xgb_colsample_bytree": 0.8,
+}
+```
+
+```python
+classifier.train(X, y, params=params)
+```
+
+## `predict`
+
+**Signature**
+
+```python
+def predict(self, X: np.ndarray) -> np.ndarray
+```
+
+Transforms `X` with the fitted scaler and returns predicted labels.
+
+```python
 predictions = classifier.predict(X_test)
-print(f"Predictions: {predictions}")
 ```
 
-### `evaluate(X: np.ndarray, y: np.ndarray) -> Dict[str, float]`
+**Errors**
 
-Evaluates model performance.
+Raises `ValueError("Model not trained yet")` when `self.model` is `None`.
 
-**Parameters:**
-- `X` (np.ndarray): Feature matrix
-- `y` (np.ndarray): True labels
+## `evaluate`
 
-**Returns:**
-- `Dict[str, float]`: Dictionary of performance metrics
+**Signature**
 
-**Example:**
 ```python
-# Evaluate model
+def evaluate(self, X: np.ndarray, y: np.ndarray) -> dict[str, float]
+```
+
+Calls `predict(X)` and returns `classification_metrics(y, predictions)` with:
+
+| Metric | Source |
+| --- | --- |
+| `accuracy` | `sklearn.metrics.accuracy_score` |
+| `precision` | weighted precision |
+| `recall` | weighted recall |
+| `f1` | weighted F1 |
+
+```python
 metrics = classifier.evaluate(X_test, y_test)
-print(f"Accuracy: {metrics['accuracy']:.4f}")
-print(f"F1 Score: {metrics['f1']:.4f}")
 ```
 
-### `save_model(path: str)`
+## Persistence
 
-Saves the trained model and scaler.
+### `save_model`
 
-**Parameters:**
-- `path` (str): Directory path to save model
+**Signature**
 
-**Example:**
 ```python
-# Save model
-classifier.save_model("models/trained/AAPL")
+def save_model(self, path: str) -> None
 ```
 
-### `load_model(path: str)`
+Writes three joblib files under `path`:
 
-Loads a trained model and scaler.
+| File | Contents |
+| --- | --- |
+| `voting_classifier.joblib` | Fitted `VotingClassifier` |
+| `scaler.joblib` | Fitted `StandardScaler` |
+| `feature_columns.joblib` | List of selected feature columns |
 
-**Parameters:**
-- `path` (str): Directory path containing saved model
+`save_model` does not create `path`; create the directory before calling it.
 
-**Example:**
 ```python
-# Load model
-classifier.load_model("models/trained/AAPL")
+classifier.save_model("models/aapl_momentum")
 ```
 
-## Model Architecture
+### `load_model`
 
-### Voting Classifier
-The MomentumClassifier uses a voting ensemble with three base models:
-
-1. **Logistic Regression** - Linear model for baseline performance
-2. **Random Forest** - Ensemble of decision trees
-3. **XGBoost** - Gradient boosting for complex patterns
-
-### Hyperparameter Optimization
-The framework optimizes hyperparameters for each base model:
+**Signature**
 
 ```python
-# Logistic Regression parameters
-lr_params = {
-    "C": trial.suggest_float("lr_C", 1e-5, 100, log=True),
-    "max_iter": 1000,
-    "class_weight": "balanced",
-}
-
-# Random Forest parameters
-rf_params = {
-    "n_estimators": trial.suggest_int("rf_n_estimators", 50, 300),
-    "max_depth": trial.suggest_int("rf_max_depth", 3, 15),
-    "min_samples_split": trial.suggest_int("rf_min_samples_split", 2, 10),
-    "class_weight": "balanced",
-}
-
-# XGBoost parameters
-xgb_params = {
-    "n_estimators": trial.suggest_int("xgb_n_estimators", 50, 300),
-    "max_depth": trial.suggest_int("xgb_max_depth", 3, 15),
-    "learning_rate": trial.suggest_float("xgb_learning_rate", 1e-3, 0.1, log=True),
-    "subsample": trial.suggest_float("xgb_subsample", 0.6, 1.0),
-    "colsample_bytree": trial.suggest_float("xgb_colsample_bytree", 0.6, 1.0),
-}
+def load_model(self, path: str) -> None
 ```
 
-## Training Workflow
+Loads the three joblib artifacts written by `save_model`.
 
-### Complete Training Example
 ```python
-from quanttradeai import MomentumClassifier
-import numpy as np
-
-# Initialize classifier
 classifier = MomentumClassifier("config/model_config.yaml")
-
-# Prepare data
-X, y = classifier.prepare_data(df_labeled)
-# Chronological split (example). CLI uses config-driven date windows.
-split_idx = int(len(X) * 0.8)
-X_train, y_train = X[:split_idx], y[:split_idx]
-X_test, y_test = X[split_idx:], y[split_idx:]
-
-# Optimize hyperparameters
-best_params = classifier.optimize_hyperparameters(X_train, y_train, n_trials=50)
-
-# Train model
-classifier.train(X_train, y_train, params=best_params)
-
-# Evaluate performance
-train_metrics = classifier.evaluate(X_train, y_train)
-test_metrics = classifier.evaluate(X_test, y_test)
-
-# Save model
-classifier.save_model("models/trained/AAPL")
-
-print(f"Train Accuracy: {train_metrics['accuracy']:.4f}")
-print(f"Test Accuracy: {test_metrics['accuracy']:.4f}")
+classifier.load_model("models/aapl_momentum")
 ```
 
-### Model Persistence
+## Minimal Example
+
 ```python
-# Save model with metadata
-classifier.save_model("models/trained/AAPL")
+from pathlib import Path
 
-# Load model for inference
-classifier = MomentumClassifier("config/model_config.yaml")
-classifier.load_model("models/trained/AAPL")
+from quanttradeai import DataProcessor, MomentumClassifier
 
-# Make predictions
-predictions = classifier.predict(X_new)
+processor = DataProcessor("config/features_config.yaml")
+features = processor.generate_features(raw_bars)
+labeled = processor.generate_labels(features)
+
+model = MomentumClassifier("config/model_config.yaml")
+X, y = model.prepare_data(labeled)
+model.train(X, y)
+
+Path("models/example").mkdir(parents=True, exist_ok=True)
+model.save_model("models/example")
 ```
 
-## Configuration
+## Relationship to `quanttradeai research run`
 
-### Model Configuration Example
-```yaml
-models:
-  voting_classifier:
-    voting: 'soft'
-    weights: [1, 2, 2]
-  
-  logistic_regression:
-    C: 1.0
-    max_iter: 1000
-    class_weight: 'balanced'
-  
-  random_forest:
-    n_estimators: 100
-    max_depth: 10
-    min_samples_split: 2
-    class_weight: 'balanced'
-  
-  xgboost:
-    n_estimators: 100
-    max_depth: 6
-    learning_rate: 0.1
-    subsample: 0.8
-    colsample_bytree: 0.8
+The research CLI path handles the full sequence around `MomentumClassifier`:
 
-training:
-  test_size: 0.2
-  random_state: 42
-  cv_folds: 5
-```
+1. Load raw bars with `DataLoader`.
+2. Generate and preprocess features with `DataProcessor`.
+3. Generate labels.
+4. Split data in time order.
+5. Train, evaluate, backtest, and persist artifacts.
 
-## Error Handling
+Use the Python class directly when you need a custom notebook, a custom split, or an embedding in a larger Python research system.
 
-### Training Issues
-```python
-try:
-    # Train model
-    classifier.train(X_train, y_train)
-except ValueError as e:
-    print(f"Training error: {e}")
-    # Check data shapes and class distribution
-    print(f"X shape: {X_train.shape}")
-    print(f"y shape: {y_train.shape}")
-    print(f"Class distribution: {np.bincount(y_train)}")
-```
+## Optional Dependency Notes
 
-### Prediction Issues
-```python
-try:
-    # Make predictions
-    predictions = classifier.predict(X_test)
-except Exception as e:
-    print(f"Prediction error: {e}")
-    # Ensure model is trained
-    if classifier.model is None:
-        print("Model not trained yet")
-```
+The model module imports `scikit-learn`, `xgboost`, `optuna`, `numpy`, `pandas`, `yaml`, and `joblib`. These are package dependencies in the current project metadata. If a runtime environment omits one, importing or using `MomentumClassifier` will fail at the point that dependency is needed.
 
-## Performance Tips
+## Related CLI/YAML Docs
 
-### Memory Management
-```python
-# Use smaller data for hyperparameter optimization
-X_sample = X_train[:1000]
-y_sample = y_train[:1000]
-best_params = classifier.optimize_hyperparameters(X_sample, y_sample, n_trials=20)
-```
+- [CLI docs](../cli/)
+- [Config docs](../config/)
+- [Artifacts](../artifacts.md)
 
-### Parallel Processing
-```python
-# Use multiple workers for hyperparameter optimization
-import optuna
-study = optuna.create_study(direction="maximize")
-study.optimize(objective, n_trials=100, n_jobs=4)
-```
+## Common Mistakes
 
-## Related Documentation
-
-- **[Data Loading](data.md)** - Data fetching and processing
-- **[Feature Engineering](features.md)** - Technical indicators and features
-- **[Backtesting](backtesting.md)** - Trade simulation and evaluation
-- **[Configuration](../configuration.md)** - Configuration guide
-- **[Quick Reference](../quick-reference.md)** - Common patterns
+- Calling `prepare_data` before adding a `label` column.
+- Passing raw OHLCV data directly to `train`; train on generated feature columns.
+- Saving to a directory that does not exist.
+- Predicting with columns in a different order from `feature_columns`.
+- Using shuffled cross-validation for time series. `optimize_hyperparameters` uses `TimeSeriesSplit`; keep custom evaluation time-aware too.

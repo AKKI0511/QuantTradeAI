@@ -1,333 +1,293 @@
-# Trading Utilities
+# Trading API
 
-API documentation for risk management, position sizing, and live position control.
+## Overview
 
-## Position Manager
+The trading API provides portfolio accounting, position sizing, stop-loss/take-profit label adjustment, and live/paper risk controls. Only `PortfolioManager`, `apply_stop_loss_take_profit`, and `position_size` are top-level lazy exports from `quanttradeai`; the position and risk managers are available from `quanttradeai.trading`.
 
-### `PositionManager.from_config(config: PositionManagerConfig | dict | str | None = None) -> PositionManager`
+## Public Imports
 
-Thread-safe real-time position tracking that ties into the streaming gateway
-and enforces intraday risk limits.
-
-**Parameters:**
-- `config` (`PositionManagerConfig | dict | str | None`): A validated config object, a config dictionary, a YAML path, or `None` for defaults.
-
-**Example:**
 ```python
-from quanttradeai.streaming import StreamingGateway
-from quanttradeai.trading import PositionManager
+from quanttradeai import PortfolioManager, apply_stop_loss_take_profit, position_size
 
-gw = StreamingGateway("config/streaming.yaml")
-pm = PositionManager.from_config("config/position_manager.yaml")
-pm.bind_gateway(gw, ["AAPL", "MSFT"])
+from quanttradeai.trading import (
+    PortfolioManager,
+    PositionManager,
+    DrawdownGuard,
+    RiskManager,
+    apply_stop_loss_take_profit,
+    position_size,
+)
 ```
 
-The manager reconciles intraday and daily positions while applying
-drawdown protection and market-impact-aware execution.
+## Main Classes and Functions
 
-## Risk Management
+| API | Import Path | Purpose |
+| --- | --- | --- |
+| `PortfolioManager` | `quanttradeai.trading.portfolio` | Cash, positions, realized PnL, and risk-aware allocation |
+| `apply_stop_loss_take_profit` | `quanttradeai.trading.risk` | Adjust `label` signals after stop/take-profit triggers |
+| `position_size` | `quanttradeai.trading.risk` | Calculate integer quantity from account risk |
+| `PositionManager` | `quanttradeai.trading.position_manager` | Thread-safe live/paper position state and execution analytics |
+| `DrawdownGuard` | `quanttradeai.trading.drawdown_guard` | Drawdown and turnover protection |
+| `RiskManager` | `quanttradeai.trading.risk_manager` | Thin coordinator around risk guards |
 
-### `apply_stop_loss_take_profit(df: pd.DataFrame, stop_loss_pct: float | None = None, take_profit_pct: float | None = None) -> pd.DataFrame`
+## `PortfolioManager`
 
-Applies stop-loss and take-profit rules to trading signals.
+**Signature**
 
-**Parameters:**
-- `df` (pd.DataFrame): DataFrame with Close prices and label column
-- `stop_loss_pct` (float, optional): Stop-loss percentage as decimal
-- `take_profit_pct` (float, optional): Take-profit percentage as decimal
-
-**Returns:**
-- `pd.DataFrame`: DataFrame with adjusted label column
-
-**Example:**
 ```python
-from quanttradeai import apply_stop_loss_take_profit
-
-# Apply 2% stop-loss and 4% take-profit
-df_with_risk = apply_stop_loss_take_profit(df, stop_loss_pct=0.02, take_profit_pct=0.04)
-
-# Apply only stop-loss
-df_with_sl = apply_stop_loss_take_profit(df, stop_loss_pct=0.03)
-
-# Apply only take-profit
-df_with_tp = apply_stop_loss_take_profit(df, take_profit_pct=0.05)
+class PortfolioManager:
+    def __init__(
+        self,
+        capital: float,
+        max_risk_per_trade: float = 0.02,
+        max_portfolio_risk: float = 0.1,
+        risk_manager: RiskManager | None = None,
+        drawdown_guard: DrawdownGuard | None = None,
+    ) -> None
 ```
 
-### `position_size(capital: float, risk_per_trade: float, stop_loss_pct: float, price: float) -> int`
+`PortfolioManager` tracks cash, open long positions, realized PnL, and portfolio risk exposure.
 
-Calculates position size based on account risk parameters.
+| Property or Method | Signature | Return |
+| --- | --- | --- |
+| `portfolio_value` | property | `cash + market value of positions` |
+| `risk_exposure` | property | Portfolio risk fraction |
+| `estimate_open_position_qty` | `(price, stop_loss_pct=None, *, check_risk=True)` | Quantity that would be allocated |
+| `open_position` | `(symbol, price, stop_loss_pct=None)` | Quantity opened |
+| `close_position` | `(symbol, price)` | Quantity closed |
+| `close_all_positions` | `(prices=None)` | `dict[str, int]` closed by symbol |
+| `replace_state` | `(*, cash, positions, initial_capital=None, realized_pnl=None)` | `None` |
 
-**Parameters:**
-- `capital` (float): Available capital
-- `risk_per_trade` (float): Risk per trade as decimal
-- `stop_loss_pct` (float): Stop-loss percentage as decimal
-- `price` (float): Current price
-
-**Returns:**
-- `int`: Position size in units
-
-**Example:**
-```python
-from quanttradeai import position_size
-
-# Calculate position size
-qty = position_size(capital=10000, risk_per_trade=0.02, stop_loss_pct=0.05, price=150.0)
-print(f"Position size: {qty} shares")
-```
-
-### `PortfolioManager(capital: float, max_risk_per_trade: float = 0.02, max_portfolio_risk: float = 0.1, risk_manager: RiskManager | None = None, drawdown_guard: DrawdownGuard | None = None)`
-
-Manages capital allocation and risk across multiple symbols.
-
-**Parameters:**
-- `capital` (float): Initial portfolio capital
-- `max_risk_per_trade` (float, optional): Risk per trade as a fraction of portfolio value
-- `max_portfolio_risk` (float, optional): Maximum overall portfolio risk exposure
-- `risk_manager` (RiskManager, optional): Pre-configured risk coordinator used to enforce trading halts and position throttles.
-- `drawdown_guard` (DrawdownGuard, optional): Convenience shortcut to attach a guard without manually creating a `RiskManager`. Mutually exclusive with `risk_manager`.
-
-**Example:**
 ```python
 from quanttradeai import PortfolioManager
 
-# Create portfolio manager with $10,000 starting capital
-pm = PortfolioManager(10000, max_risk_per_trade=0.02, max_portfolio_risk=0.10)
-
-# Open a position without a stop loss
-qty = pm.open_position("AAPL", price=150)
-print(f"AAPL position: {qty} shares")
-```
-
-```python
-from quanttradeai.trading import DrawdownGuard, PortfolioManager
-
-# Wire a drawdown guard directly into the portfolio manager
-guard = DrawdownGuard({
-    "drawdown_protection": {
-        "max_drawdown_pct": 0.05,
-        "hard_stop_threshold": 1.0,
-    }
-})
-pm = PortfolioManager(10000, drawdown_guard=guard)
-```
-
-## Risk Management Workflows
-
-### Basic Risk Management
-```python
-from quanttradeai import apply_stop_loss_take_profit
-
-# Apply risk management to trading signals
-df_with_risk = apply_stop_loss_take_profit(
-    df_labeled, 
-    stop_loss_pct=0.02, 
-    take_profit_pct=0.04
+portfolio = PortfolioManager(
+    capital=100_000,
+    max_risk_per_trade=0.02,
+    max_portfolio_risk=0.10,
 )
 
-# Check risk-adjusted signals
-risk_adjusted_signals = df_with_risk['label'].value_counts()
-print(f"Risk-adjusted signals: {risk_adjusted_signals}")
+qty = portfolio.open_position("AAPL", price=180.0, stop_loss_pct=0.02)
+closed = portfolio.close_position("AAPL", price=185.0)
 ```
 
-### Dynamic Position Sizing
+**Errors and edge cases**
+
+- `open_position` raises `ValueError` if the symbol already has a position.
+- `open_position` returns `0` when risk guards block trading or cash is insufficient.
+- `drawdown_guard` and `risk_manager` are mutually exclusive constructor arguments.
+- Positions are represented internally as dictionaries with `qty`, `price`, `entry_price`, and `stop_loss_pct`.
+
+## `apply_stop_loss_take_profit`
+
+**Signature**
+
+```python
+def apply_stop_loss_take_profit(
+    df: pd.DataFrame,
+    stop_loss_pct: float | None = None,
+    take_profit_pct: float | None = None,
+) -> pd.DataFrame
+```
+
+Adjusts the `label` column based on `Close` price movement from the active entry price.
+
+| Input Column | Required |
+| --- | --- |
+| `Close` | Yes |
+| `label` | Yes |
+
+```python
+from quanttradeai import apply_stop_loss_take_profit
+
+adjusted = apply_stop_loss_take_profit(
+    labeled_bars,
+    stop_loss_pct=0.02,
+    take_profit_pct=0.04,
+)
+```
+
+**Return**
+
+Returns a copy of the input DataFrame with an adjusted `label` column.
+
+## `position_size`
+
+**Signature**
+
+```python
+def position_size(
+    capital: float,
+    risk_per_trade: float,
+    stop_loss_pct: float,
+    price: float,
+) -> int
+```
+
+Calculates:
+
+```text
+quantity = capital * risk_per_trade / (price * stop_loss_pct)
+```
+
+Then returns `max(int(quantity), 0)`.
+
 ```python
 from quanttradeai import position_size
 
-# Calculate position sizes for different scenarios
-scenarios = [
-    (10000, 0.01, 0.05, 150.0),  # Conservative
-    (10000, 0.02, 0.05, 150.0),  # Moderate
-    (10000, 0.03, 0.05, 150.0),  # Aggressive
-]
-
-for capital, risk, sl, price in scenarios:
-    qty = position_size(capital, risk, sl, price)
-    print(f"Capital: ${capital}, Risk: {risk*100}%, Position: {qty} shares")
+qty = position_size(
+    capital=100_000,
+    risk_per_trade=0.02,
+    stop_loss_pct=0.05,
+    price=50.0,
+)
 ```
 
-### Portfolio Risk Management
+**Errors**
+
+- Raises `ValueError` if `price <= 0`.
+- Raises `ValueError` if `stop_loss_pct <= 0`.
+
+## `PositionManager`
+
+**Signature**
+
+```python
+@dataclass
+class PositionManager:
+    risk_manager: RiskManager | None = None
+    impact: ImpactCalculator | None = None
+    reconciliation: dict[str, str] = {"intraday": "1m", "daily": "1d"}
+    mode: str = "paper"
+    cash: float = 0.0
+
+    @classmethod
+    def from_config(cls, config: PositionManagerConfig | dict | str | None = None) -> PositionManager
+```
+
+`PositionManager` is the live/paper state manager used around streaming execution. It is thread-safe and can bind to a streaming gateway.
+
+| Method | Signature | Return |
+| --- | --- | --- |
+| `from_config` | `(config=None)` | `PositionManager` |
+| `bind_gateway` | `(gateway, symbols)` | `None` |
+| `handle_market_data` | `(message)` | `None` |
+| `open_position` | `(symbol, qty, price, adv=None, timestamp=None)` | `None` |
+| `close_position` | `(symbol, price, adv=None, timestamp=None)` | Quantity closed |
+| `portfolio_value` | property | Cash plus market value |
+| `reconcile_positions` | `(now=None)` | `{"intraday": ..., "daily": ...}` |
+| `execution_metrics` | `()` | `{"trades": int, "total_impact_cost": float}` |
+| `replace_state` | `(*, cash, positions)` | `None` |
+
+```python
+from quanttradeai.trading import PositionManager
+
+positions = PositionManager.from_config("config/position_manager.yaml")
+positions.open_position("AAPL", qty=10, price=180.0)
+metrics = positions.execution_metrics()
+```
+
+**Expected market data message**
+
+`handle_market_data` reads:
+
+| Field | Notes |
+| --- | --- |
+| `symbol` | Required to update a position |
+| `price` or `last` or `close` | Required price source |
+| `timestamp` | Optional; defaults to current UTC time |
+
+## `DrawdownGuard`
+
+**Signature**
+
+```python
+class DrawdownGuard:
+    def __init__(
+        self,
+        config: DrawdownProtectionConfig | RiskManagementConfig | dict | None = None,
+        turnover_limits: TurnoverLimitsConfig | None = None,
+        config_path: str | None = None,
+    ) -> None
+```
+
+Monitors portfolio values and trade notional to update risk state.
+
+| Method | Return |
+| --- | --- |
+| `update_portfolio_value(current_value, timestamp)` | `None` |
+| `record_trade(notional, timestamp)` | `None` |
+| `check_drawdown_limits()` | Status dictionary |
+| `get_position_size_multiplier()` | `float` |
+| `should_halt_trading()` | `bool` |
+| `should_emergency_liquidate()` | `bool` |
+| `get_risk_metrics()` | Metrics dictionary |
+| `reset_high_water_mark()` | `None` |
+
+```python
+from datetime import datetime, UTC
+
+from quanttradeai.trading import DrawdownGuard
+
+guard = DrawdownGuard({"max_drawdown_pct": 0.10})
+guard.update_portfolio_value(100_000, datetime.now(UTC))
+guard.update_portfolio_value(92_000, datetime.now(UTC))
+status = guard.check_drawdown_limits()
+```
+
+## `RiskManager`
+
+**Signature**
+
+```python
+class RiskManager:
+    def __init__(self, drawdown_guard: DrawdownGuard | None = None) -> None
+```
+
+Coordinates one optional `DrawdownGuard` behind a small interface used by `PortfolioManager`, `PositionManager`, `BacktestEngine`, and live trading.
+
+```python
+from quanttradeai.trading import DrawdownGuard, RiskManager
+
+risk = RiskManager(drawdown_guard=DrawdownGuard({"max_drawdown_pct": 0.10}))
+```
+
+## Minimal Examples
+
+### Risk-Aware Portfolio Allocation
+
 ```python
 from quanttradeai import PortfolioManager
 
-# Manage risk across multiple positions using PortfolioManager
-pm = PortfolioManager(50000, max_risk_per_trade=0.02, max_portfolio_risk=0.10)
-
-# Open positions
-pm.open_position('AAPL', price=150.0, stop_loss_pct=0.05)
-pm.open_position('TSLA', price=250.0, stop_loss_pct=0.05)
-pm.open_position('META', price=300.0, stop_loss_pct=0.05)
-
-print(f"Current exposure: {pm.risk_exposure:.2%}")
+portfolio = PortfolioManager(capital=250_000, max_risk_per_trade=0.01)
+qty = portfolio.estimate_open_position_qty(price=125.0, stop_loss_pct=0.03)
 ```
 
-## Risk Analysis
+### Use in Multi-Symbol Backtest
 
-### Risk Metrics Calculation
 ```python
-import pandas as pd
-import numpy as np
+from quanttradeai import simulate_trades
+from quanttradeai.trading import PortfolioManager
 
-def calculate_risk_metrics(df_trades):
-    """Calculate comprehensive risk metrics."""
-    returns = df_trades['strategy_return']
-    
-    # Basic metrics
-    total_return = df_trades['equity_curve'].iloc[-1] - 1
-    volatility = returns.std() * np.sqrt(252)  # Annualized
-    sharpe_ratio = returns.mean() / returns.std() * np.sqrt(252)
-    
-    # Drawdown analysis
-    equity_curve = df_trades['equity_curve']
-    cumulative_max = equity_curve.cummax()
-    drawdown = (equity_curve - cumulative_max) / cumulative_max
-    max_drawdown = drawdown.min()
-    
-    # VaR (Value at Risk)
-    var_95 = np.percentile(returns, 5)
-    var_99 = np.percentile(returns, 1)
-    
-    return {
-        'total_return': total_return,
-        'volatility': volatility,
-        'sharpe_ratio': sharpe_ratio,
-        'max_drawdown': max_drawdown,
-        'var_95': var_95,
-        'var_99': var_99
-    }
-
-# Calculate risk metrics
-metrics = calculate_risk_metrics(df_trades)
-print(f"Total Return: {metrics['total_return']:.2%}")
-print(f"Volatility: {metrics['volatility']:.2%}")
-print(f"Sharpe Ratio: {metrics['sharpe_ratio']:.2f}")
-print(f"Max Drawdown: {metrics['max_drawdown']:.2%}")
-print(f"VaR (95%): {metrics['var_95']:.2%}")
-print(f"VaR (99%): {metrics['var_99']:.2%}")
+portfolio = PortfolioManager(capital=100_000)
+results = simulate_trades(
+    {"AAPL": aapl_labeled, "MSFT": msft_labeled},
+    portfolio=portfolio,
+)
 ```
 
-### Risk-Adjusted Performance
-```python
-def risk_adjusted_analysis(df_trades, risk_free_rate=0.02):
-    """Analyze risk-adjusted performance metrics."""
-    returns = df_trades['strategy_return']
-    
-    # Risk-adjusted metrics
-    excess_returns = returns - risk_free_rate / 252
-    sharpe_ratio = excess_returns.mean() / excess_returns.std() * np.sqrt(252)
-    
-    # Sortino ratio (downside deviation)
-    downside_returns = returns[returns < 0]
-    downside_deviation = downside_returns.std() * np.sqrt(252)
-    sortino_ratio = excess_returns.mean() / downside_deviation * np.sqrt(252)
-    
-    # Calmar ratio
-    equity_curve = df_trades['equity_curve']
-    cumulative_max = equity_curve.cummax()
-    drawdown = (equity_curve - cumulative_max) / cumulative_max
-    max_drawdown = abs(drawdown.min())
-    calmar_ratio = returns.mean() * 252 / max_drawdown
-    
-    return {
-        'sharpe_ratio': sharpe_ratio,
-        'sortino_ratio': sortino_ratio,
-        'calmar_ratio': calmar_ratio
-    }
+## Related CLI/YAML Docs
 
-# Calculate risk-adjusted metrics
-risk_metrics = risk_adjusted_analysis(df_trades)
-print(f"Sharpe Ratio: {risk_metrics['sharpe_ratio']:.2f}")
-print(f"Sortino Ratio: {risk_metrics['sortino_ratio']:.2f}")
-print(f"Calmar Ratio: {risk_metrics['calmar_ratio']:.2f}")
-```
+- [CLI docs](../cli/)
+- [Risk and position config](../config/risk-position-deployment.md)
+- [Artifacts](../artifacts.md)
 
-## Configuration
+Risk and position settings in YAML are compiled into the same manager classes for backtest, paper, and live agent runs.
 
-### Position Manager Configuration
-```yaml
-position_manager:
-  risk_management:
-    drawdown_protection:
-      enabled: true
-      max_drawdown_pct: 0.2
-  impact:
-    enabled: true
-    model: linear
-    alpha: 0.1
-    beta: 0.05
-  reconciliation:
-    intraday: "1m"
-    daily: "1d"
-  mode: paper
-```
+## Common Mistakes
 
-### Risk Management Configuration
-```yaml
-trading:
-  position_size: 0.2
-  stop_loss: 0.02
-  take_profit: 0.04
-  max_positions: 5
-  transaction_cost: 0.001
-  max_risk_per_trade: 0.02
-  max_portfolio_risk: 0.10
-```
-
-## Error Handling
-
-### Invalid Parameters
-```python
-try:
-    # Apply risk management with valid parameters
-    df_with_risk = apply_stop_loss_take_profit(df, stop_loss_pct=0.02)
-except ValueError as e:
-    print(f"Risk management error: {e}")
-    # Check parameter validity
-    if stop_loss_pct < 0 or stop_loss_pct > 1:
-        print("Stop-loss must be between 0 and 1")
-```
-
-### Position Sizing Errors
-```python
-try:
-    # Calculate position size
-    qty = position_size(capital=10000, risk_per_trade=0.02, 
-                       stop_loss_pct=0.05, price=150.0)
-except ValueError as e:
-    print(f"Position sizing error: {e}")
-    # Check parameter validity
-    if price <= 0:
-        print("Price must be positive")
-    if stop_loss_pct <= 0:
-        print("Stop-loss must be positive")
-```
-
-## Performance Tips
-
-### Efficient Risk Management
-```python
-# Apply risk management in batches for large datasets
-def apply_risk_batch(df, batch_size=1000):
-    """Apply risk management in batches."""
-    results = []
-    for i in range(0, len(df), batch_size):
-        batch = df.iloc[i:i+batch_size]
-        batch_with_risk = apply_stop_loss_take_profit(batch, stop_loss_pct=0.02)
-        results.append(batch_with_risk)
-    return pd.concat(results)
-```
-
-### Memory Optimization
-```python
-# Use smaller data types for large datasets
-df['label'] = df['label'].astype('int8')
-df['Close'] = df['Close'].astype('float32')
-```
-
-## Related Documentation
-
-- **[Data Loading](data.md)** - Data fetching and processing
-- **[Feature Engineering](features.md)** - Technical indicators and features
-- **[Machine Learning](models.md)** - Model training and evaluation
-- **[Backtesting](backtesting.md)** - Trade simulation and evaluation
-- **[Configuration](../configuration.md)** - Configuration guide
-- **[Quick Reference](../quick-reference.md)** - Common patterns
+- Passing both `risk_manager` and `drawdown_guard` to `PortfolioManager`.
+- Calling `position_size` with `stop_loss_pct=0`; use `PortfolioManager.estimate_open_position_qty` if you want allocation without a stop distance.
+- Expecting `apply_stop_loss_take_profit` to execute trades; it only adjusts labels before simulation.
+- Supplying short positions to `PortfolioManager`; it tracks long positions for portfolio allocation, while `simulate_trades` can simulate short labels internally.
+- Forgetting that `PositionManager.open_position` mutates cash and execution records immediately.

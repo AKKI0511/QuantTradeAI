@@ -6,8 +6,8 @@
 
 <p>
   <a href="docs/getting-started.md">Getting Started</a> ·
-  <a href="docs/configuration/project-yaml.md">Project YAML</a> ·
-  <a href="docs/quick-reference.md">Quick Reference</a> ·
+  <a href="docs/config/project-file.md">Project YAML</a> ·
+  <a href="docs/README.md">Docs</a> ·
   <a href="roadmap.md">Roadmap</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
@@ -138,7 +138,7 @@ Experiments start in backtest. Agents cannot self-promote to live trading.
 | Research-to-agent promotion pipeline | Supported |
 | Deployment bundles (local, Docker Compose, Render) | Supported |
 
-For the full list, see [Quick Reference](docs/quick-reference.md).
+For the full list, see the [docs](docs/README.md).
 
 ---
 
@@ -169,9 +169,9 @@ make test     # run test suite
 
 ## Documentation
 
-**Get started** — [Getting Started](docs/getting-started.md) · [Quick Reference](docs/quick-reference.md)
+**Get started** — [Getting Started](docs/getting-started.md) · [Docs](docs/README.md)
 
-**Configure** — [Project YAML](docs/configuration/project-yaml.md) · [Configuration Overview](docs/configuration.md)
+**Configure** — [Project YAML](docs/config/project-file.md) · [Config Overview](docs/config/)
 
 **Reference** — [API Docs](docs/api/) · [Roadmap](roadmap.md) · [Contributing](CONTRIBUTING.md)
 

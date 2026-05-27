@@ -1,216 +1,123 @@
+<div align="center">
+
 # Getting Started
 
-This guide covers the shortest working paths through QuantTradeAI.
+<p><strong>Create an agent-ready QuantTradeAI workspace.</strong></p>
+
+<p>
+  <a href="#install"><strong>Install</strong></a> &middot;
+  <a href="#create-a-workspace"><strong>Create</strong></a> &middot;
+  <a href="#use-with-a-coding-agent"><strong>Agent Setup</strong></a> &middot;
+  <a href="#templates"><strong>Templates</strong></a> &middot;
+  <a href="#where-to-go-next"><strong>Next</strong></a>
+</p>
+
+</div>
+
+---
+
+This page helps you create a QuantTradeAI workspace that is ready for both humans and AI coding agents. The workspace gives the agent a project config, local instructions, and the `quanttradeai` CLI entrypoint.
 
 ## Install
 
 ```bash
-git clone https://github.com/AKKI0511/QuantTradeAI.git
-cd QuantTradeAI
-poetry install --with dev
+pip install quanttradeai
 ```
 
-For a package install, initialize a workspace and open that folder in your coding agent:
+> [!NOTE]
+> Package publishing is being stabilized. Until PyPI is available, use the local development setup below.
+
+## Create A Workspace
 
 ```bash
 quanttradeai init my-lab
 cd my-lab
 ```
 
-`quanttradeai init` writes `config/project.yaml`, `AGENTS.md`, `CLAUDE.md`, and the project skill under `.claude/skills/quanttradeai-research/`.
-
-## Workflow 1: Research From `project.yaml`
+To initialize the current directory instead:
 
 ```bash
-poetry run quanttradeai init --template research
-poetry run quanttradeai validate -c config/project.yaml
-poetry run quanttradeai research run -c config/project.yaml
-poetry run quanttradeai runs list
-poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
-poetry run quanttradeai runs list --compare research/<run_id_a> --compare research/<run_id_b>
+quanttradeai init
 ```
 
-This path gives you:
+## What `init` Creates
 
-- one canonical project config
-- resolved-config validation output
-- a full research run with metrics and artifacts
-- standardized run records under `runs/research/...`
-- a scoreboard for ranking local runs and a compare flow for inspecting the shortlisted winners
+```text
+config/project.yaml
+AGENTS.md
+CLAUDE.md
+.claude/skills/quanttradeai-research/
+.quanttradeai/workspace.yaml
+```
 
-To promote a successful research run into the stable model path used by the `model-agent` and `hybrid` templates:
+| Path | Purpose |
+| :--- | :--- |
+| `config/project.yaml` | Canonical project config for data, features, research settings, agents, sweeps, and execution defaults. |
+| `AGENTS.md` | General instructions for coding agents working inside the workspace. |
+| `CLAUDE.md` | Claude Code-specific context and operating guidance. |
+| `.claude/skills/quanttradeai-research/` | Claude skill files that teach Claude Code how to run QuantTradeAI research tasks. |
+| `.quanttradeai/workspace.yaml` | Workspace metadata, including the selected template and init version. |
+
+## Use With A Coding Agent
+
+Open the workspace folder in Claude Code, Cursor, Codex, or a similar coding agent.
+
+Give the agent a natural request, for example:
+
+> "Research RSI and SMA crossover strategies on AAPL/MSFT and find the best one."
+
+The agent should use `AGENTS.md`, `CLAUDE.md`, the Claude skill, `config/project.yaml`, and the `quanttradeai` CLI instead of creating one-off scripts.
+
+## First Manual Check
+
+This is optional, but useful if you want to confirm the CLI is available:
 
 ```bash
-poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
+quanttradeai --help
 ```
 
-## Workflow 2: Strategy Lab From `project.yaml`
+Validation happens later when you or the agent starts editing or running the project.
 
-Use this when you want one QuantTradeAI project with multiple deterministic strategies, reusable sweeps, and promotion-ready run records without writing Python or setting LLM/broker credentials.
+## Templates
+
+Available templates:
+
+- `strategy-lab` default
+- `research`
+- `rule-agent`
+- `model-agent`
+- `llm-agent`
+- `hybrid`
+
+Example:
 
 ```bash
-poetry run quanttradeai init --template strategy-lab
-poetry run quanttradeai validate -c config/project.yaml
-poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest --max-concurrency 4
-poetry run quanttradeai agent run --sweep rsi_threshold_grid -c config/project.yaml --mode backtest --max-concurrency 4
-poetry run quanttradeai agent run --sweep sma_risk_grid -c config/project.yaml --mode backtest --max-concurrency 4
-poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
-poetry run quanttradeai promote --run agent/backtest/<winning_run_id> -c config/project.yaml
+quanttradeai init my-research-lab --template research
 ```
 
-The template defines:
+## Local Development Setup
 
-- `rsi_reversion`, an RSI threshold rule agent
-- `sma_trend`, an SMA crossover rule agent using `sma_20` and `sma_50`
-- replay-enabled paper settings for local follow-up runs
-- top-level `risk`, `position_manager`, and deployment defaults
-- `rsi_threshold_grid` and `sma_risk_grid` sweeps
-
-After promotion, run the materialized winner in paper mode with its base agent name:
+<table>
+  <tr>
+    <td><strong>Temporary/dev path</strong><br>Use this until package installation from PyPI is available.</td>
+  </tr>
+</table>
 
 ```bash
-poetry run quanttradeai agent run --agent <base_agent_name> -c config/project.yaml --mode paper
+git clone https://github.com/AKKI0511/QuantTradeAI.git
+cd QuantTradeAI
+poetry install --with dev
+poetry run quanttradeai init my-lab
 ```
 
-## Workflow 3: Model Agent From `project.yaml`
-
-```bash
-poetry run quanttradeai init --template model-agent
-poetry run quanttradeai validate -c config/project.yaml
-```
-
-The model-agent template creates:
-
-- a canonical `config/project.yaml`
-- a placeholder model artifact directory at `models/promoted/aapl_daily_classifier/`
-- a replay-enabled `data.streaming` block for local paper runs
-- top-level `risk` and `position_manager` defaults for later live promotion
-
-Replace the placeholder model directory with a promoted research model artifact or another compatible saved model before running the agent.
-
-### Backtest The Agent
-
-```bash
-poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode backtest
-```
-
-### Promote And Run The Same Agent In Paper Mode
-
-```bash
-poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
-poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode paper
-```
-
-Local paper mode uses deterministic historical replay by default. If you leave `data.streaming.replay.start_date` and `end_date` unset, QuantTradeAI resolves the replay window from `data.test_start` and `data.test_end`, then falls back to `data.start_date` and `data.end_date`.
-
-### Promote The Same Agent To Live
-
-```bash
-poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live paper_momentum
-poetry run quanttradeai agent run --agent paper_momentum -c config/project.yaml --mode live
-```
-
-### Generate A Deployment Bundle
-
-```bash
-poetry run quanttradeai deploy --agent paper_momentum -c config/project.yaml --target local
-poetry run quanttradeai deploy --agent paper_momentum -c config/project.yaml --target docker-compose
-poetry run quanttradeai deploy --agent paper_momentum -c config/project.yaml --target render -o deployments/paper_momentum-render
-```
-
-Generated local, Docker Compose, and Render deployment bundles are still real-time paper deployments. QuantTradeAI disables replay in the emitted `resolved_project_config.yaml` and requires the normal provider and websocket settings to be present in the source project config.
-
-Render bundles include `render.yaml`, a Dockerfile, and selected-agent assets under `assets/`. Use a tracked output path such as `deployments/<agent>-render` when you want to commit the Blueprint for Render.
-
-Paper and live runs write standardized artifacts under `runs/agent/paper/...` and `runs/agent/live/...`, including:
-
-- `summary.json`
-- `metrics.json`
-- `executions.jsonl`
-- compiled runtime YAML snapshots
-
-Replay-backed paper runs also write `replay_manifest.json`.
-
-Live runs also write compiled `runtime_risk_config.yaml` and `runtime_position_manager_config.yaml`.
-
-## Workflow 4: LLM Or Hybrid Agent
-
-LLM and hybrid agents are supported in backtest, paper, and live mode from `project.yaml`.
-
-```bash
-poetry run quanttradeai init --template llm-agent
-poetry run quanttradeai validate -c config/project.yaml
-poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
-poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
-poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
-poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live breakout_gpt
-poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode live
-```
-
-Hybrid projects use the same pattern:
-
-```bash
-poetry run quanttradeai init --template hybrid
-poetry run quanttradeai validate -c config/project.yaml
-poetry run quanttradeai research run -c config/project.yaml
-poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
-poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode backtest
-poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
-poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode paper
-poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live hybrid_swing_agent
-poetry run quanttradeai agent run --agent hybrid_swing_agent -c config/project.yaml --mode live
-```
-
-The hybrid template already points `model_signal_sources` at `models/promoted/aapl_daily_classifier`, so the happy path does not require editing timestamped experiment directories by hand.
-
-Deployment bundles for project-defined paper agents are written under `reports/deployments/<agent>/<timestamp>/` by default. Use `--target local` for a Python runner bundle, `--target docker-compose` for a Compose bundle, or `--target render` for a Render Background Worker Blueprint.
-
-## Workflow 5: Multi-Agent Batches
-
-Use this when one `config/project.yaml` already defines several agents and you want one local batch run across all of them.
-
-```bash
-poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest
-poetry run quanttradeai agent run --all -c config/project.yaml --mode backtest --max-concurrency 4
-poetry run quanttradeai agent run --all -c config/project.yaml --mode paper
-poetry run quanttradeai agent run --all -c config/project.yaml --mode paper --max-concurrency 4
-poetry run quanttradeai agent run --all -c config/project.yaml --mode live --acknowledge-live <project_name>
-```
-
-This workflow:
-
-- validates the project before enumeration
-- runs every configured agent through the existing backtest, paper, or live path
-- preserves the normal child runs under `runs/agent/backtest/...`, `runs/agent/paper/...`, or `runs/agent/live/...`
-- adds batch-level artifacts under `runs/agent/batches/<timestamp>_<project>_<mode>/`
-
-Batch artifacts include:
-
-- `summary.json` with `run_result`
-- `results.json`
-- `scoreboard.json`
-
-`summary.json.run_result` summarizes the batch ranking with one winner, other top candidates, and failed children without repeating artifact paths or prescribing a next command. Backtest batches rank by `net_sharpe`. Paper and live batches rank by `total_pnl`. Live batches require every configured agent to already have `mode: live` and require `--acknowledge-live` to match `project.name`.
-
-## Standalone Utility Commands
-
-These commands still exist for lower-level workflows that do not yet have a project-based replacement:
-
-```bash
-poetry run quanttradeai fetch-data -c config/model_config.yaml
-poetry run quanttradeai evaluate -m <model_dir> -c config/model_config.yaml
-poetry run quanttradeai backtest -c config/backtest_config.yaml
-```
-
-Important boundary:
-
-- project-defined paper agents default to replay from `config/project.yaml`
-- deployment bundles and live agents use real-time runtime YAML snapshots compiled from `config/project.yaml`
-- the product happy path is still `init` -> `validate` -> `research run` or `agent run`
+Open the generated `my-lab` folder in your coding agent.
 
 ## Where To Go Next
 
-- [Project YAML](configuration/project-yaml.md)
-- [Generated Runtime Files](configuration/live-runtime-files.md)
-- [Quick Reference](quick-reference.md)
-- [Roadmap](../roadmap.md)
+| Topic | Link |
+| :--- | :--- |
+| Run artifacts and outputs | [Artifacts](artifacts.md) |
+| CLI command reference | [CLI](cli/) |
+| Project configuration | [Config](config/) |
+| Example patterns | [Examples](examples/) |
+| Python API reference | [API](api/) |

@@ -1,302 +1,327 @@
-# Data Loading and Processing
+# Data API
 
-API documentation for data fetching, processing, and validation.
+## Overview
 
-## DataLoader Class
+The data API loads OHLCV bars, validates raw market data, attaches optional news text, and creates model-ready feature frames. The top-level imports below are lazy exports from `quanttradeai.__init__`; direct subpackage imports are also valid.
 
-### `DataLoader(config_path: str = "config/model_config.yaml", data_source: Optional[DataSource] = None)`
+## Public Imports
 
-Handles data fetching, caching, and validation for multiple financial instruments.
-
-**Parameters:**
-- `config_path` (str): Path to configuration file
-- `data_source` (DataSource, optional): Custom data source implementation
-- `timeframe` (str, optional): Interval defined in `config/model_config.yaml` (default `'1d'`)
-
-**Example:**
 ```python
-from quanttradeai import DataLoader
+from quanttradeai import (
+    DataSource,
+    YFinanceDataSource,
+    AlphaVantageDataSource,
+    WebSocketDataSource,
+    DataLoader,
+    DataProcessor,
+)
 
-# Initialize with default configuration (daily timeframe)
-loader = DataLoader("config/model_config.yaml")
-
-# Fetch data for all symbols
-data_dict = loader.fetch_data()
-
-# Fetch hourly data for specific symbols
-data_dict = loader.fetch_data(symbols=['AAPL', 'META'], refresh=True)
+from quanttradeai.data import DataLoader, DataProcessor
+from quanttradeai.data.datasource import DataSource, YFinanceDataSource
 ```
 
-### `fetch_data(symbols: Optional[List[str]] = None, refresh: Optional[bool] = None) -> Dict[str, pd.DataFrame]`
+## Main Classes
 
-Fetches OHLCV data for specified symbols with caching support.
+| API | Import Path | Purpose |
+| --- | --- | --- |
+| `DataSource` | `quanttradeai.data.datasource` | Abstract OHLCV provider interface |
+| `YFinanceDataSource` | `quanttradeai.data.datasource` | Historical Yahoo Finance OHLCV provider |
+| `AlphaVantageDataSource` | `quanttradeai.data.datasource` | Alpha Vantage daily/intraday OHLCV provider |
+| `WebSocketDataSource` | `quanttradeai.data.datasource` | Generic async WebSocket message source |
+| `DataLoader` | `quanttradeai.data.loader` | Config-driven fetch, cache, validation, and save orchestration |
+| `DataProcessor` | `quanttradeai.data.processor` | Feature generation, preprocessing, and label generation |
 
-**Parameters:**
-- `symbols` (List[str], optional): List of stock symbols. If None, uses symbols from config
-- `refresh` (bool, optional): Override cache and fetch fresh data when True
+## `DataSource`
 
-**Returns:**
-- `Dict[str, pd.DataFrame]`: Dictionary of DataFrames with OHLCV data for each symbol
+**Signature**
 
-**Example:**
 ```python
-# Fetch data for all configured symbols
-data = loader.fetch_data()
-
-# Fetch data for specific symbols with cache refresh
-data = loader.fetch_data(symbols=['AAPL', 'TSLA'], refresh=True)
-
-# Access data for a specific symbol
-aapl_data = data['AAPL']
-print(f"AAPL data shape: {aapl_data.shape}")
+class DataSource(ABC):
+    def fetch(
+        self,
+        symbol: str,
+        start: str,
+        end: str,
+        interval: str = "1d",
+    ) -> pd.DataFrame: ...
 ```
 
-### `validate_data(data_dict: Dict[str, pd.DataFrame]) -> tuple[bool, dict]`
+`DataSource` is the abstract interface used by `DataLoader`. Implementations must return a `pandas.DataFrame` indexed by datetime-like values and should include standard OHLCV columns when the data is intended for processing:
 
-Validates the fetched data meets requirements and returns a per-symbol report with
-missing columns, date span, NaN ratios, and pass/fail flags.
+| Column | Required By |
+| --- | --- |
+| `Open` | validation, technical features |
+| `High` | validation, stochastic, ATR, volatility features |
+| `Low` | validation, stochastic, ATR, volatility features |
+| `Close` | validation, labels, most indicators |
+| `Volume` | validation, volume features, liquidity simulation |
 
-**Parameters:**
-- `data_dict` (Dict[str, pd.DataFrame]): Dictionary of DataFrames with OHLCV data
+**Minimal custom provider**
 
-**Returns:**
-- `Tuple[bool, dict]`: Overall validity flag and a detailed report
-
-**Example:**
 ```python
-# Validate fetched data
-is_valid, report = loader.validate_data(data_dict)
-if not is_valid:
-    print("Data validation failed")
-    print(report)
+import pandas as pd
+from quanttradeai import DataSource
+
+
+class CsvDataSource(DataSource):
+    def fetch(self, symbol: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame:
+        df = pd.read_csv(f"data/raw/{symbol}.csv", parse_dates=["Date"])
+        df = df.set_index("Date").sort_index()
+        return df.loc[start:end]
 ```
 
-### `save_data(data_dict: Dict[str, pd.DataFrame], path: Optional[str] = None)`
+## `YFinanceDataSource`
 
-Saves the fetched data to disk in parquet format.
+**Signature**
 
-**Parameters:**
-- `data_dict` (Dict[str, pd.DataFrame]): Dictionary of DataFrames to save
-- `path` (str, optional): Custom save path
-
-**Example:**
 ```python
-# Save data to default cache directory
-loader.save_data(data_dict)
-
-# Save to custom location
-loader.save_data(data_dict, "data/custom_cache")
+class YFinanceDataSource(DataSource):
+    def fetch(
+        self,
+        symbol: str,
+        start: str,
+        end: str,
+        interval: str = "1d",
+    ) -> pd.DataFrame
 ```
 
-### `stream_data(processor, symbols: Optional[List[str]] = None, callback=None)`
+Uses `yfinance.Ticker(symbol).history(...)` and returns Yahoo Finance's DataFrame directly.
 
-Streams real-time data from a `WebSocketDataSource` and processes each update.
+**Supported intervals**
 
-**Parameters:**
-- `processor` (DataProcessor): Processor instance used to transform incoming data
-- `symbols` (List[str], optional): Symbols to subscribe to. Defaults to configured symbols
-- `callback` (Callable, optional): Optional function or coroutine invoked with each processed batch
+Common Yahoo intervals are supported, including `1m`, `2m`, `5m`, `15m`, `30m`, `60m`, `1h`, `1d`, `5d`, `1wk`, `1mo`, and `3mo`.
 
-**Example:**
-```python
-from quanttradeai import DataLoader, DataProcessor, WebSocketDataSource
-
-loader = DataLoader(data_source=WebSocketDataSource("wss://example"))
-processor = DataProcessor()
-
-# Print each processed update
-async def handle_update(df):
-    print(df)
-
-await loader.stream_data(processor, callback=handle_update)
-```
-
-## DataSource Classes
-
-### `DataSource` (Abstract Base Class)
-
-Abstract interface for price data providers.
-
-### `YFinanceDataSource`
-
-DataSource implementation using the yfinance package.
-
-**Example:**
 ```python
 from quanttradeai import YFinanceDataSource
 
-# Initialize YFinance data source
-data_source = YFinanceDataSource()
-
-# Fetch daily data for a symbol
-df = data_source.fetch("AAPL", "2023-01-01", "2023-12-31", interval="1d")
+source = YFinanceDataSource()
+bars = source.fetch("AAPL", "2024-01-01", "2024-06-01", interval="1d")
 ```
 
-### `AlphaVantageDataSource(api_key: Optional[str] = None)`
+**Edge cases**
 
-DataSource implementation for AlphaVantage API.
+- Empty vendor responses are returned as empty DataFrames; `DataLoader` logs the symbol and omits it from the returned mapping.
+- Column availability follows `yfinance`; adjusted or corporate-action columns may appear in addition to OHLCV.
 
-**Parameters:**
-- `api_key` (str, optional): AlphaVantage API key. If None, reads from environment variable
+## `AlphaVantageDataSource`
 
-**Example:**
+**Signature**
+
+```python
+class AlphaVantageDataSource(DataSource):
+    def __init__(self, api_key: Optional[str] = None) -> None
+    def fetch(
+        self,
+        symbol: str,
+        start: str,
+        end: str,
+        interval: str = "1d",
+    ) -> pd.DataFrame
+```
+
+Uses `alpha_vantage.timeseries.TimeSeries` and normalizes vendor columns to `Open`, `High`, `Low`, `Close`, and `Volume`.
+
+| Parameter | Meaning |
+| --- | --- |
+| `api_key` | Explicit Alpha Vantage API key. If omitted, `ALPHAVANTAGE_API_KEY` is used. |
+| `interval` | `1d`/`daily`, or intraday `1min`, `5min`, `15min`, `30min`, `60min`, `1h`. |
+
 ```python
 from quanttradeai import AlphaVantageDataSource
 
-# Initialize with API key
-data_source = AlphaVantageDataSource("YOUR_API_KEY")
-
-# Fetch hourly data
-df = data_source.fetch("AAPL", "2023-01-01", "2023-12-31", interval="1h")
+source = AlphaVantageDataSource()
+bars = source.fetch("MSFT", "2024-01-01", "2024-03-01", interval="1d")
 ```
 
-### `WebSocketDataSource(url: str)`
+**Errors and edge cases**
 
-Asynchronous data source for streaming market data over WebSocket.
+- Raises `ValueError` during construction if no API key is provided and `ALPHAVANTAGE_API_KEY` is unset.
+- Raises `ValueError` for unsupported intraday intervals.
+- Date filtering is applied after the full vendor response is loaded.
 
-**Parameters:**
-- `url` (str): WebSocket endpoint provided by the data vendor
+## `WebSocketDataSource`
 
-**Example:**
+**Signature**
+
+```python
+class WebSocketDataSource(DataSource):
+    def __init__(self, url: str) -> None
+    def fetch(self, symbol: str, start: str, end: str, interval: str = "1d") -> pd.DataFrame
+    async def connect(self) -> None
+    async def subscribe(self, symbols: list[str]) -> None
+    async def stream(self) -> AsyncIterator[dict]
+    async def close(self) -> None
+```
+
+`WebSocketDataSource` is a generic async source for JSON messages. It does not support historical `fetch`; calling `fetch` raises `NotImplementedError`.
+
 ```python
 from quanttradeai import WebSocketDataSource
 
-ws_source = WebSocketDataSource("wss://example")
-await ws_source.connect()
-await ws_source.subscribe(["AAPL"])
-async for msg in ws_source.stream():
-    print(msg)
+source = WebSocketDataSource("wss://example.test/market-data")
+await source.subscribe(["AAPL", "MSFT"])
+
+async for message in source.stream():
+    print(message)
+    break
+
+await source.close()
 ```
 
-## DataProcessor Class
+**Errors and edge cases**
 
-### `DataProcessor(config_path: str = "config/features_config.yaml")`
+- `stream()` raises `RuntimeError` if called before a connection exists.
+- `subscribe()` auto-connects if needed and sends `{"type": "subscribe", "symbols": symbols}` as JSON.
 
-Processes raw OHLCV data and generates required features for the trading strategy.
+## `DataLoader`
 
-**Parameters:**
-- `config_path` (str): Path to feature configuration file
+**Signature**
 
-**Example:**
+```python
+class DataLoader:
+    def __init__(
+        self,
+        config_path: str = "config/model_config.yaml",
+        data_source: Optional[DataSource] = None,
+        news_data_source: Optional[NewsDataSource] = None,
+    )
+
+    def fetch_data(
+        self,
+        symbols: Optional[list[str]] = None,
+        refresh: Optional[bool] = None,
+    ) -> dict[str, pd.DataFrame]
+
+    def validate_data(self, data_dict: dict[str, pd.DataFrame]) -> tuple[bool, dict]
+    def save_data(self, data_dict: dict[str, pd.DataFrame], path: Optional[str] = None) -> None
+    async def stream_data(self, processor, symbols: Optional[list[str]] = None, callback=None) -> None
+```
+
+`DataLoader` reads a runtime model config file validated by `ModelConfigSchema`. It fetches each configured symbol, optionally caches parquet files, validates missing dates, joins secondary timeframes, and can attach news text when the runtime config enables news.
+
+| Method | Returns | Notes |
+| --- | --- | --- |
+| `fetch_data(...)` | `dict[str, pd.DataFrame]` | Omits symbols that fail or return no data. |
+| `validate_data(...)` | `(bool, dict)` | Checks OHLCV columns, date span, and NaN ratios. |
+| `save_data(...)` | `None` | Writes `{SYMBOL}_data.parquet` files. |
+| `stream_data(...)` | `None` | Requires `data_source` to be `WebSocketDataSource`; calls `processor.process_data(...)`. |
+
+```python
+from quanttradeai import DataLoader, YFinanceDataSource
+
+loader = DataLoader(
+    config_path="config/model_config.yaml",
+    data_source=YFinanceDataSource(),
+)
+
+frames = loader.fetch_data(symbols=["AAPL"], refresh=True)
+passed, report = loader.validate_data(frames)
+```
+
+**Important behavior**
+
+- Constructor raises `FileNotFoundError` if `config_path` is missing.
+- Constructor raises `ValueError` if the config fails schema validation.
+- Cache files are named `{symbol}_{timeframe}_data.parquet`.
+- `max_workers > 1` fetches symbols concurrently through a thread pool.
+- `validate_data` requires at least one year of date span and a maximum OHLCV NaN ratio of `0.01`.
+
+## `DataProcessor`
+
+**Signature**
+
+```python
+class DataProcessor:
+    def __init__(self, config_path: str = "config/features_config.yaml")
+    def process_data(self, data: pd.DataFrame) -> pd.DataFrame
+    def generate_features(self, data: pd.DataFrame) -> pd.DataFrame
+    def create_preprocessor(self) -> FeaturePreprocessor
+    def generate_labels(
+        self,
+        df: pd.DataFrame,
+        forward_returns: int = 5,
+        threshold: float = 0.01,
+    ) -> pd.DataFrame
+```
+
+`DataProcessor` turns OHLCV frames into feature frames. It reads a runtime features config when present; if the file is missing it uses built-in defaults.
+
+| Method | Purpose | Return |
+| --- | --- | --- |
+| `generate_features(data)` | Adds causal technical, volume, custom, multi-timeframe, and optional sentiment features. | Feature DataFrame |
+| `create_preprocessor()` | Builds a `FeaturePreprocessor` from configured scaling/outlier/selection settings. | Preprocessor object |
+| `process_data(data)` | Convenience path that generates features and fits/transforms preprocessing on the same input. | Processed DataFrame |
+| `generate_labels(df, forward_returns=5, threshold=0.01)` | Adds `forward_returns` and `label`. | Labeled DataFrame |
+
 ```python
 from quanttradeai import DataProcessor
 
-# Initialize processor
+processor = DataProcessor("config/features_config.yaml")
+features = processor.generate_features(bars)
+labeled = processor.generate_labels(features, forward_returns=5, threshold=0.01)
+```
+
+For train/test work, prefer fitting preprocessing on the train slice and transforming the test slice:
+
+```python
+features = processor.generate_features(bars)
+train = features.loc[: "2024-06-30"]
+test = features.loc["2024-07-01" :]
+
+preprocessor = processor.create_preprocessor().fit(train)
+train_ready = preprocessor.transform(train)
+test_ready = preprocessor.transform(test)
+```
+
+**Expected columns**
+
+At minimum, `DataProcessor` expects `Open`, `High`, `Low`, `Close`, and `Volume` for the default indicator pipeline. Sentiment scoring also expects a `text` column when sentiment is enabled.
+
+**Important behavior**
+
+- `generate_features` drops the first 200 rows after feature generation, forward-fills remaining values, and then drops any remaining NaNs.
+- `generate_labels` creates labels: `1` for forward returns above `threshold`, `-1` below `-threshold`, and `0` otherwise.
+- Missing feature config files fall back to built-in defaults.
+- Schema validation errors raise `ValueError`; YAML parsing issues are logged and fall back to defaults.
+- Sentiment features require a configured `SentimentAnalyzer` and the referenced API key environment variable.
+
+## Minimal Examples
+
+### Fetch, Process, Label
+
+```python
+from quanttradeai import DataLoader, DataProcessor
+
+loader = DataLoader("config/model_config.yaml")
 processor = DataProcessor("config/features_config.yaml")
 
-# Process raw data
-processed_df = processor.process_data(raw_df)
+frames = loader.fetch_data(["AAPL"])
+features = processor.generate_features(frames["AAPL"])
+labeled = processor.generate_labels(features)
 ```
 
-### `process_data(data: pd.DataFrame) -> pd.DataFrame`
+### Use a Custom Provider
 
-Processes raw OHLCV data and generates all required features.
-
-**Parameters:**
-- `data` (pd.DataFrame): DataFrame with OHLCV data
-
-**Returns:**
-- `pd.DataFrame`: DataFrame with all technical indicators and features
-
-**Example:**
 ```python
-# Process raw OHLCV data
-processed_df = processor.process_data(raw_df)
-
-# Check generated features
-print(f"Generated {len(processed_df.columns)} features")
-print(f"Feature columns: {list(processed_df.columns)}")
+loader = DataLoader(
+    "config/model_config.yaml",
+    data_source=CsvDataSource(),
+)
+frames = loader.fetch_data(["AAPL"])
 ```
 
-### `generate_labels(df: pd.DataFrame, forward_returns: int = 5, threshold: float = 0.01) -> pd.DataFrame`
+## Related CLI/YAML Docs
 
-Generates trading signals based on forward returns.
+- [CLI docs](../cli/)
+- [Config docs](../config/)
+- [Examples](../examples/)
 
-**Parameters:**
-- `df` (pd.DataFrame): DataFrame with features
-- `forward_returns` (int): Number of days to look ahead
-- `threshold` (float): Return threshold for buy/sell signals
+The CLI research path compiles `config/project.yaml` into the runtime model and feature configs consumed by `DataLoader` and `DataProcessor`.
 
-**Returns:**
-- `pd.DataFrame`: DataFrame with added labels column (1=buy, 0=hold, -1=sell)
+## Common Mistakes
 
-**Example:**
-```python
-# Generate labels for 5-day forward returns with 1% threshold
-labeled_df = processor.generate_labels(processed_df, forward_returns=5, threshold=0.01)
-
-# Check label distribution
-print(labeled_df['label'].value_counts())
-```
-
-## Configuration
-
-### Data Configuration Example
-```yaml
-data:
-  symbols: ['AAPL', 'META', 'TSLA', 'JPM', 'AMZN']
-  start_date: '2015-01-01'
-  end_date: '2024-12-31'
-  timeframe: '1d'
-  cache_dir: 'data/raw'
-  cache_expiration_days: 7
-  use_cache: true
-  refresh: false
-  max_workers: 1
-```
-
-### Feature Configuration Example
-```yaml
-price_features:
-  sma_periods: [5, 10, 20, 50, 200]
-  ema_periods: [5, 10, 20, 50, 200]
-
-momentum_features:
-  rsi_period: 14
-  macd_params:
-    fast: 12
-    slow: 26
-    signal: 9
-
-preprocessing:
-  scaling:
-    method: 'standard'
-  outliers:
-    method: 'winsorize'
-    limits: [0.01, 0.99]
-```
-
-## Error Handling
-
-### Common Data Issues
-```python
-# Check cache directory
-import os
-print(os.path.exists("data/raw"))
-
-# Force refresh data
-data = loader.fetch_data(refresh=True)
-
-# Check for missing values
-print(df.isnull().sum())
-df = df.fillna(method='ffill')
-```
-
-### Validation Errors
-```python
-try:
-    # Validate data
-    is_valid, report = loader.validate_data(data_dict)
-    if not is_valid:
-        print("Data validation failed")
-        print(report)
-except Exception as e:
-    print(f"Validation error: {e}")
-```
-
-## Related Documentation
-
-- **[Feature Engineering](features.md)** - Technical indicators and custom features
-- **[Machine Learning](models.md)** - Model training and evaluation
-- **[Configuration](../configuration.md)** - Configuration guide
-- **[Quick Reference](../quick-reference.md)** - Common patterns
+- Passing lowercase `open/high/low/close/volume` columns into `DataProcessor`; the default pipeline expects title-case OHLCV columns.
+- Calling `WebSocketDataSource.fetch(...)`; streaming sources expose async `subscribe` and `stream`, not historical fetch.
+- Treating empty fetch results as exceptions; `DataLoader.fetch_data` logs and skips failed symbols.
+- Fitting preprocessing on the full dataset before time-based evaluation.
+- Forgetting that `generate_features` removes the first 200 rows for indicator warm-up.
