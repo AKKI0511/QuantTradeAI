@@ -1,17 +1,6 @@
 # QuantTradeAI Docs
 
-### Give your coding agent a quant research lab, not a blank terminal.
-
-<p>
-  <a href="getting-started.md"><strong>Getting Started</strong></a> &middot;
-  <a href="artifacts.md"><strong>Artifacts</strong></a> &middot;
-  <a href="cli/"><strong>CLI</strong></a> &middot;
-  <a href="config/"><strong>Config</strong></a> &middot;
-  <a href="api/"><strong>API</strong></a> &middot;
-  <a href="examples/"><strong>Examples</strong></a>
-</p>
-
----
+> **Give your coding agent a quant research lab, not a blank terminal.**
 
 QuantTradeAI is an agent-native workspace for researching trading strategies. It is built so Claude Code, Codex, Cursor, and similar coding agents can work from a structured lab instead of creating messy one-off scripts for every data pull, backtest, sweep, and comparison.
 

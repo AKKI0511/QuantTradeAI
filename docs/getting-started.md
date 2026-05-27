@@ -1,16 +1,6 @@
 # Getting Started
 
-<p><strong>Create an agent-ready QuantTradeAI workspace.</strong></p>
-
-<p>
-  <a href="#install"><strong>Install</strong></a> &middot;
-  <a href="#create-a-workspace"><strong>Create</strong></a> &middot;
-  <a href="#use-with-a-coding-agent"><strong>Agent Setup</strong></a> &middot;
-  <a href="#templates"><strong>Templates</strong></a> &middot;
-  <a href="#where-to-go-next"><strong>Next</strong></a>
-</p>
-
----
+> **Create an agent-ready QuantTradeAI workspace.**
 
 This page helps you create a QuantTradeAI workspace that is ready for both humans and AI coding agents. The workspace gives the agent a project config, local instructions, and the `quanttradeai` CLI entrypoint.
 
