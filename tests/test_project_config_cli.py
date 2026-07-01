@@ -88,9 +88,9 @@ def test_init_creates_each_template(tmp_path: Path):
 def test_init_refuses_existing_without_force_and_overwrites_with_force(tmp_path: Path):
     output = tmp_path / "config" / "project.yaml"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("project:\n  name: old\n", encoding="utf-8")
+    output.write_text("project:\n  name: existing\n", encoding="utf-8")
     agents_path = tmp_path / "AGENTS.md"
-    agents_path.write_text("old agent notes\n", encoding="utf-8")
+    agents_path.write_text("existing agent notes\n", encoding="utf-8")
 
     fail_result = runner.invoke(
         app,
@@ -143,24 +143,30 @@ def test_init_preserves_existing_agent_context_without_force(tmp_path: Path):
     assert (tmp_path / "config" / "project.yaml").is_file()
     assert agents_path.read_text(encoding="utf-8") == "existing agent notes\n"
     assert claude_path.read_text(encoding="utf-8") == "existing claude notes\n"
-    assert not (tmp_path / ".claude" / "skills" / "quanttradeai-research").exists()
     assert (tmp_path / "pyproject.toml").is_file()
     assert (tmp_path / ".quanttradeai" / "workspace.yaml").is_file()
 
 
-def test_init_force_removes_legacy_generated_skill_pack(tmp_path: Path):
-    legacy_skill = (
-        tmp_path / ".claude" / "skills" / "quanttradeai-research" / "SKILL.md"
-    )
-    legacy_skill.parent.mkdir(parents=True)
-    legacy_skill.write_text("old generated skill\n", encoding="utf-8")
+def test_init_force_overwrites_generated_workspace_files(tmp_path: Path):
+    project_config_path = tmp_path / "config" / "project.yaml"
+    project_config_path.parent.mkdir(parents=True)
+    project_config_path.write_text("project:\n  name: existing\n", encoding="utf-8")
+    pyproject_path = tmp_path / "pyproject.toml"
+    pyproject_path.write_text("existing project metadata\n", encoding="utf-8")
+    agents_path = tmp_path / "AGENTS.md"
+    agents_path.write_text("existing agent notes\n", encoding="utf-8")
 
     result = runner.invoke(app, ["init", str(tmp_path), "--force"])
 
     assert result.exit_code == 0, result.stdout
-    assert not (tmp_path / ".claude").exists()
-    assert (tmp_path / "AGENTS.md").is_file()
-    assert (tmp_path / "CLAUDE.md").is_file()
+    project_config = yaml.safe_load(project_config_path.read_text(encoding="utf-8"))
+    assert (
+        project_config["project"]["name"]
+        == PROJECT_TEMPLATES["strategy-lab"]["project"]["name"]
+    )
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    assert pyproject["project"]["name"] == tmp_path.name.lower()
+    assert "QuantTradeAI Project Workspace" in agents_path.read_text(encoding="utf-8")
 
 
 def test_init_preserves_existing_template_assets_without_force(tmp_path: Path):
@@ -194,7 +200,6 @@ def test_init_named_workspace_writes_agent_context_and_metadata(tmp_path: Path):
     for relative_path in expected_files:
         assert (workspace / relative_path).is_file()
     assert not (workspace / ".env").exists()
-    assert not (workspace / ".claude" / "skills").exists()
 
     for relative_path in iter_init_context_templates():
         rendered = (workspace / relative_path).read_text(encoding="utf-8")
@@ -222,16 +227,9 @@ def test_init_named_workspace_writes_agent_context_and_metadata(tmp_path: Path):
     assert "This is a disposable QuantTradeAI project workspace" in agents_text
     assert "config/project.yaml" in agents_text
     assert "uv run quanttradeai validate -c config/project.yaml" in agents_text
-    assert "globally installed QuantTradeAI plugin" in agents_text
-    assert "Do not copy or regenerate plugin skills" in agents_text
-    assert "summary.json.run_result" not in agents_text
-    assert "scoreboard.json" not in agents_text
 
     claude_text = (workspace / "CLAUDE.md").read_text(encoding="utf-8")
     assert claude_text.startswith("@AGENTS.md")
-    assert "globally installed QuantTradeAI plugin skills" in claude_text
-    assert ".claude/skills" in claude_text
-    assert ".claude/skills/quanttradeai-research/SKILL.md" not in claude_text
 
     metadata = yaml.safe_load(
         (workspace / ".quanttradeai/workspace.yaml").read_text(encoding="utf-8")
@@ -270,7 +268,6 @@ def test_init_context_resource_loader_works_from_temp_directory(
 
     assert (workspace / "AGENTS.md").is_file()
     assert (workspace / "CLAUDE.md").is_file()
-    assert not (workspace / ".claude").exists()
 
 
 def test_validate_passes_for_generated_templates(tmp_path: Path):

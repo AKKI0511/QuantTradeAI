@@ -56,16 +56,13 @@ QuantTradeAI provides:
 ## Quickstart
 
 > [!NOTE]
-> Package publishing is being stabilized. For this release, use the [local development setup](#local-development) so `quanttradeai init` can pin the local checkout in the generated uv project.
+> Package publishing is being stabilized. Until PyPI is available, use the [local development setup](#local-development) below.
 
 ```bash
-git clone -b release/v0.1.0 https://github.com/AKKI0511/QuantTradeAI.git
-cd QuantTradeAI
-poetry install --with dev
-poetry run quanttradeai init my-lab
+pip install quanttradeai
+quanttradeai init my-lab
 cd my-lab
 uv sync
-uv run quanttradeai validate -c config/project.yaml
 ```
 
 Open `my-lab` in Claude Code, Cursor, Codex, or another coding agent and ask:
@@ -127,7 +124,7 @@ my-lab/
 `-- .quanttradeai/workspace.yaml     # workspace metadata
 ```
 
-Reusable QuantTradeAI workflow skills come from the globally installed plugin, not generated `.claude/skills` files inside each workspace.
+Reusable QuantTradeAI workflow skills come from the globally installed plugin.
 
 ---
 
@@ -198,10 +195,9 @@ poetry install --with dev
 Initialize a workspace and open it in your coding agent:
 
 ```bash
-poetry run quanttradeai init my-lab
+quanttradeai init my-lab
 cd my-lab
 uv sync
-uv run quanttradeai validate -c config/project.yaml
 ```
 
 Dev commands:

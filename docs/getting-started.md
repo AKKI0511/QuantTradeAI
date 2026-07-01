@@ -7,13 +7,11 @@ This page helps you create a QuantTradeAI workspace that is ready for both human
 ## Install
 
 ```bash
-git clone -b release/v0.1.0 https://github.com/AKKI0511/QuantTradeAI.git
-cd QuantTradeAI
-poetry install --with dev
+pip install quanttradeai
 ```
 
 > [!NOTE]
-> Package publishing is being stabilized. For this release, use the local development setup below so `quanttradeai init` can pin the local checkout in the generated uv project.
+> Package publishing is being stabilized. Until PyPI is available, use the local development setup below.
 
 ## Optional Agent Plugin
 
@@ -42,7 +40,7 @@ See [Agent Plugins](plugins.md) for provider-specific install, validation, and u
 ## Create A Workspace
 
 ```bash
-poetry run quanttradeai init my-lab
+quanttradeai init my-lab
 cd my-lab
 uv sync
 ```
@@ -50,7 +48,7 @@ uv sync
 To initialize the current directory instead:
 
 ```bash
-poetry run quanttradeai init
+quanttradeai init
 ```
 
 ## What `init` Creates
@@ -92,7 +90,7 @@ The agent should use `AGENTS.md`, `CLAUDE.md`, the globally installed QuantTrade
 This is optional, but useful if you want to confirm the CLI is available:
 
 ```bash
-uv run quanttradeai --help
+quanttradeai --help
 ```
 
 Validation happens later when you or the agent starts editing or running the project.

@@ -52,7 +52,7 @@ The current CLI supports these template names:
 
 `init` reads package templates embedded in `quanttradeai/templates/workspace_context/`.
 
-It also discovers the local QuantTradeAI source checkout and pins that path in the generated uv project. It does not read an existing project config to infer project name, symbols, or agent names.
+It does not read an existing project config to infer project name, symbols, or agent names.
 
 ## Writes
 
@@ -68,10 +68,6 @@ AGENTS.md
 CLAUDE.md
 .quanttradeai/workspace.yaml
 ```
-
-`pyproject.toml` sets `tool.uv.package = false` and depends on `quanttradeai @ file://...` so the workspace is safe to discard and recreate.
-
-`init` does not generate `.claude/skills` files. Reusable QuantTradeAI skills are provided by the globally installed QuantTradeAI plugin.
 
 Some templates also write template-specific assets:
 
@@ -101,7 +97,6 @@ uv run quanttradeai validate -c config/project.yaml
 |---|---|
 | Initializing over an existing generated project config or `pyproject.toml` without `--force` | The command refuses to overwrite protected generated files. |
 | Assuming the folder name changes `project.name` | The template controls `project.name`; the CLI does not rewrite it from `PROJECT_DIR`. |
-| Looking for generated Claude skills | Workspaces no longer contain `.claude/skills`; install the QuantTradeAI plugin once and use those global skills. |
 | Choosing a template name outside the supported list | The command fails with the valid template names. |
 
 ## Related Docs
