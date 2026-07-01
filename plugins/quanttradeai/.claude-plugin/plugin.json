@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "quanttradeai",
+  "displayName": "QuantTradeAI",
+  "version": "0.1.0",
+  "description": "QuantTradeAI workspace skills for strategy experiments, model research, run analysis, promotion, and deployment.",
+  "author": {
+    "name": "Akshat Joshi",
+    "email": "joshiakshat0511@gmail.com",
+    "url": "https://github.com/AKKI0511"
+  },
+  "homepage": "https://akkijoshi.gitbook.io/quanttradeai/",
+  "repository": "https://github.com/AKKI0511/QuantTradeAI",
+  "license": "MIT",
+  "keywords": [
+    "quanttradeai",
+    "trading",
+    "backtesting",
+    "model-research",
+    "deployment"
+  ],
+  "skills": "./skills/"
+}

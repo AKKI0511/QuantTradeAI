@@ -26,6 +26,7 @@ You give the research objective. The agent uses `config/project.yaml`, the `quan
 | Area | What it covers |
 | :--- | :--- |
 | [Getting Started](getting-started.md) | Setup, workspace creation, and agent usage. |
+| [Agent Plugins](plugins.md) | Install the QuantTradeAI plugin in Codex or Claude Code. |
 | [Artifacts](artifacts.md) | Run outputs, scoreboards, summaries, and recommendation evidence. |
 | [CLI](cli/) | Commands, when to use them, inputs, outputs, and artifacts. |
 | [Config](config/) | `project.yaml` and supported data, research, agent, and execution sections. |

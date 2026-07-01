@@ -1,0 +1,40 @@
+{
+  "name": "quanttradeai",
+  "version": "0.1.0",
+  "description": "QuantTradeAI workspace skills for strategy experiments, model research, run analysis, promotion, and deployment.",
+  "author": {
+    "name": "Akshat Joshi",
+    "email": "joshiakshat0511@gmail.com",
+    "url": "https://github.com/AKKI0511"
+  },
+  "homepage": "https://akkijoshi.gitbook.io/quanttradeai/",
+  "repository": "https://github.com/AKKI0511/QuantTradeAI",
+  "license": "MIT",
+  "keywords": [
+    "quanttradeai",
+    "trading",
+    "backtesting",
+    "model-research",
+    "deployment"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "QuantTradeAI",
+    "shortDescription": "Run, compare, promote, and deploy QuantTradeAI workflows.",
+    "longDescription": "A production-ready plugin that packages QuantTradeAI workspace skills for YAML-first strategy experiments, ML model research, artifact analysis, run comparison, promotion, paper checks, live-trading safety boundaries, and deployment bundle generation.",
+    "developerName": "Akshat Joshi",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Shell"
+    ],
+    "websiteURL": "https://akkijoshi.gitbook.io/quanttradeai/",
+    "defaultPrompt": [
+      "Run a QuantTradeAI strategy backtest from config/project.yaml.",
+      "Train and evaluate a QuantTradeAI research model.",
+      "Analyze QuantTradeAI run artifacts and choose a candidate.",
+      "Prepare a QuantTradeAI deployment bundle with safe promotion checks."
+    ]
+  }
+}

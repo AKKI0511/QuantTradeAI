@@ -6,6 +6,7 @@
 
 <p>
   <a href="docs/getting-started.md">Getting Started</a> ·
+  <a href="docs/plugins.md">Agent Plugins</a> ·
   <a href="docs/config/project-file.md">Project YAML</a> ·
   <a href="docs/README.md">Docs</a> ·
   <a href="roadmap.md">Roadmap</a> ·
@@ -68,6 +69,43 @@ Open `my-lab` in Claude Code, Cursor, Codex, or another coding agent and ask:
 > "Research RSI and SMA crossover strategies on AAPL and MSFT and find the best one."
 
 The agent uses `config/project.yaml` and the `quanttradeai` CLI to run experiments, compare results on a scoreboard, and recommend a winner — without you writing any backtest code.
+
+---
+
+## Agent Plugin Install
+
+QuantTradeAI ships a universal agent plugin for Codex and Claude Code. It packages the strategy experiment, model research, run analysis, and promotion/deployment skills from `plugins/quanttradeai/skills/`.
+
+Initial release branch:
+
+```bash
+git clone -b release/v0.1.0 https://github.com/AKKI0511/QuantTradeAI.git
+cd QuantTradeAI
+```
+
+Codex:
+
+```bash
+codex plugin marketplace add .
+```
+
+Then restart Codex, open Plugins, select **QuantTradeAI Plugins**, and install **QuantTradeAI**.
+
+Claude Code:
+
+```bash
+claude plugin marketplace add .
+claude plugin install quanttradeai@quanttradeai
+```
+
+Or install from inside Claude Code:
+
+```text
+/plugin marketplace add .
+/plugin install quanttradeai@quanttradeai
+```
+
+More details: [Agent Plugins](docs/plugins.md).
 
 ---
 

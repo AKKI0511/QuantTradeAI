@@ -1,0 +1,20 @@
+{
+  "name": "quanttradeai",
+  "interface": {
+    "displayName": "QuantTradeAI Plugins"
+  },
+  "plugins": [
+    {
+      "name": "quanttradeai",
+      "source": {
+        "source": "local",
+        "path": "./plugins/quanttradeai"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

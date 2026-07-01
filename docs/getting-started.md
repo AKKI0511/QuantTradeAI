@@ -13,6 +13,30 @@ pip install quanttradeai
 > [!NOTE]
 > Package publishing is being stabilized. Until PyPI is available, use the local development setup below.
 
+## Optional Agent Plugin
+
+For Codex or Claude Code, install the QuantTradeAI agent plugin before opening a workspace. The plugin packages the reusable strategy experiment, model research, run analysis, and promotion/deployment skills from this repository.
+
+```bash
+git clone -b release/v0.1.0 https://github.com/AKKI0511/QuantTradeAI.git
+cd QuantTradeAI
+```
+
+Codex:
+
+```bash
+codex plugin marketplace add .
+```
+
+Claude Code:
+
+```bash
+claude plugin marketplace add .
+claude plugin install quanttradeai@quanttradeai
+```
+
+See [Agent Plugins](plugins.md) for provider-specific install, validation, and usage notes.
+
 ## Create A Workspace
 
 ```bash
