@@ -7,7 +7,7 @@
 Use this command before editing project YAML by hand. It gives humans and coding agents the same baseline files:
 
 - a canonical project config at `config/project.yaml`
-- a disposable uv project pinned to the local QuantTradeAI checkout
+- a disposable uv project pinned to the released QuantTradeAI package version
 - minimal agent-facing context files
 - workspace metadata under `.quanttradeai/`
 
@@ -25,6 +25,7 @@ quanttradeai init my-strategy-lab
 quanttradeai init --template research
 quanttradeai init my-agent-lab --template rule-agent
 quanttradeai init --force
+quanttradeai init my-lab --quanttradeai-version 0.1.0
 ```
 
 ## Options
@@ -34,6 +35,7 @@ quanttradeai init --force
 | `[PROJECT_DIR]` | current directory | No | Workspace directory to initialize. If omitted, QuantTradeAI initializes the current working directory. |
 | `--template TEXT` | `strategy-lab` | No | Project template to write into `config/project.yaml`. |
 | `--force` | `false` | No | Overwrite generated files that are protected by the initializer. |
+| `--quanttradeai-version TEXT` | installed package version | No | Exact QuantTradeAI package version to pin in the generated uv project. Intended for contributor testing of release or pre-release package versions. Local paths and `file://` URLs are rejected. |
 
 ## Supported Templates
 
@@ -53,6 +55,10 @@ The current CLI supports these template names:
 `init` reads package templates embedded in `quanttradeai/templates/workspace_context/`.
 
 It does not read an existing project config to infer project name, symbols, or agent names.
+
+It also does not search for a local QuantTradeAI source checkout. The generated
+`pyproject.toml` always uses an exact package dependency such as
+`quanttradeai==0.1.0`.
 
 ## Writes
 
@@ -88,7 +94,15 @@ After that, edit `config/project.yaml`, then run:
 
 ```bash
 uv sync
+uv run quanttradeai doctor
 uv run quanttradeai validate -c config/project.yaml
+```
+
+For local source contribution, keep the generated package pin intact. After
+`uv sync`, install your checkout into the workspace environment explicitly:
+
+```bash
+uv pip install --reinstall -e <path-to-QuantTradeAI-checkout>
 ```
 
 ## Common Mistakes

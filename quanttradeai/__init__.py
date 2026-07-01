@@ -37,7 +37,9 @@ _EXPORT_MAP = {
     "BacktestEngine": ("quanttradeai.backtest", "BacktestEngine"),
 }
 
-__all__ = list(_EXPORT_MAP)
+__version__ = "0.1.0"
+
+__all__ = [*_EXPORT_MAP, "__version__"]
 
 
 def __getattr__(name: str):

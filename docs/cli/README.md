@@ -10,16 +10,17 @@ It is designed for two users at the same time:
 ## Mental Model
 
 ```text
-init -> validate -> run -> inspect artifacts -> promote/deploy
+init -> doctor -> validate -> run -> inspect artifacts -> promote/deploy
 ```
 
-Start with a generated workspace, edit `config/project.yaml`, validate it, run research or agents, inspect the `runs/` artifacts, then promote or package the result when it is ready.
+Start with a generated workspace, run `doctor` to catch setup issues, edit `config/project.yaml`, validate it, run research or agents, inspect the `runs/` artifacts, then promote or package the result when it is ready.
 
 ## Command Families
 
 QuantTradeAI keeps the command surface intentionally compact:
 
 - **Workspace** commands create the local project structure.
+- **Doctor** checks run a read-only workspace health check with stable text and JSON output.
 - **Validation** commands check the canonical project YAML and emit resolved config artifacts.
 - **Research** commands train and evaluate model workflows.
 - **Agent** commands run YAML-defined trading agents in `backtest`, `paper`, or `live` mode.

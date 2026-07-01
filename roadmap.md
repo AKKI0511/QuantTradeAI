@@ -360,7 +360,7 @@ Status on 2026-04-17:
 Goal:
 Make running many agents and many experiments on one machine easy and trustworthy.
 
-Status on 2026-05-02:
+Status on 2026-07-01:
 
 - `quanttradeai runs list --scoreboard` is implemented for local research and agent runs, with metric-aware sorting via `--sort-by` and additive JSON scoreboard payloads.
 - `quanttradeai runs list --compare <run_id> --compare <run_id>` is implemented for same-family research and agent runs, loading `summary.json`, `metrics.json`, and `resolved_project_config.yaml` to show metric tables plus compact config deltas before promotion.
@@ -370,7 +370,8 @@ Status on 2026-05-02:
 - `quanttradeai research run -c config/project.yaml --sweep <name>` is implemented for research parameter sweeps defined under `sweeps:` in `config/project.yaml`, with deterministic variant expansion, bounded concurrency, preserved child research runs, and sparse batch scoreboards under `runs/research/batches/...`.
 - `quanttradeai promote --run agent/backtest/<sweep_child_run_id> -c config/project.yaml` is implemented for materializing a winning sweep child into the base agent's canonical config and promoting that base agent to paper mode.
 - `quanttradeai agent run --all -c config/project.yaml --mode live --acknowledge-live <project_name>` is implemented for local multi-agent live batches, requiring an explicit project-name acknowledgement, live-mode agent configs, live runtime prerequisites, preserved child runs under `runs/agent/live/...`, and batch-level manifests plus scoreboards under `runs/agent/batches/...`.
-- `quanttradeai init [PROJECT_DIR] --template strategy-lab` is implemented as the package-user workspace initializer, writing `config/project.yaml`, a disposable uv project pinned to the local QuantTradeAI checkout, minimal `AGENTS.md`/`CLAUDE.md` guidance, environment files, and workspace metadata. Reusable agent skills are now supplied by the globally installed QuantTradeAI plugin instead of generated workspace skill copies.
+- `quanttradeai init [PROJECT_DIR] --template strategy-lab` is implemented as the package-user workspace initializer, writing `config/project.yaml`, a disposable uv project pinned to the released QuantTradeAI package version, minimal `AGENTS.md`/`CLAUDE.md` guidance, environment files, and workspace metadata. Reusable agent skills are now supplied by the globally installed QuantTradeAI plugin instead of generated workspace skill copies.
+- `quanttradeai doctor` is implemented as a read-only workspace health check for coding agents, with concise text diagnostics, deterministic exit codes, and `--json` output.
 - `strategy-lab` is the default init template and provides a YAML-only multi-strategy lab with `rsi_reversion`, `sma_trend`, replay-enabled paper settings, top-level risk/runtime defaults, and starter sweeps for RSI thresholds and SMA risk sizing.
 - `rule.preset: sma_crossover` is implemented for deterministic rule agents, using `rule.fast_feature` and `rule.slow_feature` from shared project feature definitions and agent context.
 

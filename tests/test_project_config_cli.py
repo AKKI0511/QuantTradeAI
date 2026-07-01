@@ -109,9 +109,8 @@ def test_init_refuses_existing_without_force_and_overwrites_with_force(tmp_path:
         rendered["project"]["name"] == PROJECT_TEMPLATES["research"]["project"]["name"]
     )
     assert "QuantTradeAI Project Workspace" in agents_path.read_text(encoding="utf-8")
-    assert "quanttradeai @ file://" in (tmp_path / "pyproject.toml").read_text(
-        encoding="utf-8"
-    )
+    pyproject = tomllib.loads((tmp_path / "pyproject.toml").read_text("utf-8"))
+    assert "quanttradeai==0.1.0" in pyproject["project"]["dependencies"]
 
 
 def test_init_current_directory_uses_strategy_lab_by_default(
@@ -209,8 +208,9 @@ def test_init_named_workspace_writes_agent_context_and_metadata(tmp_path: Path):
     pyproject = tomllib.loads((workspace / "pyproject.toml").read_text("utf-8"))
     assert pyproject["project"]["name"] == "my-lab"
     assert pyproject["project"]["requires-python"] == ">=3.11,<4.0"
-    assert any(
-        dependency.startswith("quanttradeai @ file://")
+    assert "quanttradeai==0.1.0" in pyproject["project"]["dependencies"]
+    assert all(
+        "file://" not in dependency
         for dependency in pyproject["project"]["dependencies"]
     )
     assert pyproject["tool"]["uv"]["package"] is False
@@ -239,13 +239,53 @@ def test_init_named_workspace_writes_agent_context_and_metadata(tmp_path: Path):
     assert metadata["project_config"] == "config/project.yaml"
     assert metadata["python_project"]["manager"] == "uv"
     assert metadata["python_project"]["pyproject"] == "pyproject.toml"
-    assert metadata["python_project"]["quanttradeai_dependency"].startswith("file://")
+    assert (
+        metadata["python_project"]["quanttradeai_dependency"] == "quanttradeai==0.1.0"
+    )
+    assert metadata["python_project"]["quanttradeai_version"] == "0.1.0"
     assert metadata["agent_context"] == {
         "agents_md": "AGENTS.md",
         "claude_md": "CLAUDE.md",
         "plugin": "quanttradeai",
     }
     assert metadata["created_by"] == "quanttradeai"
+
+
+def test_init_can_pin_explicit_package_version_for_contributor_testing(
+    tmp_path: Path,
+):
+    workspace = tmp_path / "my-lab"
+
+    result = runner.invoke(
+        app,
+        ["init", str(workspace), "--quanttradeai-version", "0.1.1"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    pyproject = tomllib.loads((workspace / "pyproject.toml").read_text("utf-8"))
+    assert pyproject["project"]["dependencies"] == ["quanttradeai==0.1.1"]
+    metadata = yaml.safe_load(
+        (workspace / ".quanttradeai" / "workspace.yaml").read_text("utf-8")
+    )
+    assert (
+        metadata["python_project"]["quanttradeai_dependency"] == "quanttradeai==0.1.1"
+    )
+    assert metadata["python_project"]["quanttradeai_version"] == "0.1.1"
+
+
+def test_init_rejects_path_like_package_version(tmp_path: Path):
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(tmp_path / "my-lab"),
+            "--quanttradeai-version",
+            "file:///tmp/QuantTradeAI",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Local paths and file URLs are not supported" in result.stderr
 
 
 def test_init_context_resource_loader_works_from_temp_directory(
@@ -283,6 +323,68 @@ def test_validate_passes_for_generated_templates(tmp_path: Path):
         result = runner.invoke(app, ["validate", "--config", str(cfg_path)])
         assert result.exit_code == 0, result.stdout
         assert "Resolved project config summary:" in result.stdout
+
+
+def test_doctor_passes_generated_workspace_without_writing_artifacts(
+    tmp_path: Path, monkeypatch
+):
+    workspace = tmp_path / "doctor-lab"
+    init_result = runner.invoke(app, ["init", str(workspace)])
+    assert init_result.exit_code == 0, init_result.stdout
+    monkeypatch.chdir(workspace)
+
+    result = runner.invoke(app, ["doctor", "--json"])
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["summary"]["errors"] == 0
+    assert payload["package"]["workspace_dependency"] == "quanttradeai==0.1.0"
+    assert not (workspace / "reports").exists()
+    assert not (workspace / "runs").exists()
+
+
+def test_doctor_fails_local_quanttradeai_dependency(tmp_path: Path, monkeypatch):
+    workspace = tmp_path / "doctor-lab"
+    init_result = runner.invoke(app, ["init", str(workspace)])
+    assert init_result.exit_code == 0, init_result.stdout
+    pyproject_path = workspace / "pyproject.toml"
+    pyproject_path.write_text(
+        pyproject_path.read_text("utf-8").replace(
+            "quanttradeai==0.1.0",
+            "quanttradeai @ file:///tmp/QuantTradeAI",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(workspace)
+
+    result = runner.invoke(app, ["doctor", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "error"
+    assert any(
+        item["code"] == "package.dependency_local" for item in payload["diagnostics"]
+    )
+
+
+def test_doctor_fails_invalid_project_yaml(tmp_path: Path, monkeypatch):
+    workspace = tmp_path / "doctor-lab"
+    init_result = runner.invoke(app, ["init", str(workspace)])
+    assert init_result.exit_code == 0, init_result.stdout
+    (workspace / "config" / "project.yaml").write_text(
+        "project:\n  name: broken\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(workspace)
+
+    result = runner.invoke(app, ["doctor", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert any(
+        item["code"] == "project.config_invalid" for item in payload["diagnostics"]
+    )
 
 
 def test_validate_fails_missing_required_sections(tmp_path: Path):

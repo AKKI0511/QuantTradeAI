@@ -599,13 +599,13 @@ def _merge_preserving_unknown(raw_value: Any, validated_value: Any) -> Any:
     return validated_value
 
 
-def validate_project_config(
+def validate_project_config_readonly(
     config_path: Path | str = "config/project.yaml",
     *,
-    output_dir: Path | str = "reports/config_validation",
     project_config_override: dict[str, Any] | None = None,
-    timestamp_subdir: bool = True,
 ) -> Dict:
+    """Validate project config and return resolved data without writing artifacts."""
+
     if project_config_override is not None:
         raw, compatibility_warnings = normalize_live_risk_compatibility(
             deepcopy(project_config_override)
@@ -653,6 +653,30 @@ def validate_project_config(
 
     summary = _render_project_summary(resolved=resolved, warnings=warnings)
 
+    return {
+        "config_path": loaded_source_path,
+        "raw": raw,
+        "resolved": resolved,
+        "summary": summary,
+        "warnings": warnings,
+    }
+
+
+def validate_project_config(
+    config_path: Path | str = "config/project.yaml",
+    *,
+    output_dir: Path | str = "reports/config_validation",
+    project_config_override: dict[str, Any] | None = None,
+    timestamp_subdir: bool = True,
+) -> Dict:
+    validation = validate_project_config_readonly(
+        config_path=config_path,
+        project_config_override=project_config_override,
+    )
+    resolved = validation["resolved"]
+    summary = validation["summary"]
+    warnings = validation["warnings"]
+
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     run_dir = Path(output_dir) / timestamp if timestamp_subdir else Path(output_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -667,7 +691,7 @@ def validate_project_config(
 
     result = {
         "timestamp": timestamp,
-        "config_path": loaded_source_path,
+        "config_path": validation["config_path"],
         "all_passed": True,
         "summary": summary,
         "warnings": warnings,
