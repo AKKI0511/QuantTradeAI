@@ -2,8 +2,6 @@
 
 ## Claude Code
 
-Follow `AGENTS.md` as the main QuantTradeAI operating guide.
+Follow `AGENTS.md` for workspace-local context.
 
-Use `.claude/skills/quanttradeai-research/SKILL.md` when the user asks to research, test, compare, optimize, sweep, paper trade, or prepare deployment for trading strategies.
-
-Live trading and broker-backed execution require explicit human approval.
+Use the globally installed QuantTradeAI plugin skills for reusable workflow guidance.

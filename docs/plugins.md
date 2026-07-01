@@ -83,6 +83,7 @@ Open a QuantTradeAI workspace, usually created with:
 ```bash
 quanttradeai init my-lab
 cd my-lab
+uv sync
 ```
 
 Then ask your coding agent for a QuantTradeAI workflow, for example:

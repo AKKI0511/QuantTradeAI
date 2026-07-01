@@ -42,6 +42,7 @@ See [Agent Plugins](plugins.md) for provider-specific install, validation, and u
 ```bash
 quanttradeai init my-lab
 cd my-lab
+uv sync
 ```
 
 To initialize the current directory instead:
@@ -54,18 +55,24 @@ quanttradeai init
 
 ```text
 config/project.yaml
+pyproject.toml
+.python-version
+.env.example
+.gitignore
 AGENTS.md
 CLAUDE.md
-.claude/skills/quanttradeai-research/
 .quanttradeai/workspace.yaml
 ```
 
 | Path | Purpose |
 | :--- | :--- |
 | `config/project.yaml` | Canonical project config for data, features, research settings, agents, sweeps, and execution defaults. |
-| `AGENTS.md` | General instructions for coding agents working inside the workspace. |
-| `CLAUDE.md` | Claude Code-specific context and operating guidance. |
-| `.claude/skills/quanttradeai-research/` | Claude skill files that teach Claude Code how to run QuantTradeAI research tasks. |
+| `pyproject.toml` | Disposable uv project metadata with QuantTradeAI pinned as a local dependency. |
+| `.python-version` | Python version hint for uv-managed environments. |
+| `.env.example` | Optional environment variable placeholders; copy to `.env` only for local secrets. |
+| `.gitignore` | Ignores local virtualenvs, secrets, and generated run/output directories. |
+| `AGENTS.md` | Minimal workspace-local instructions that point agents to the global plugin. |
+| `CLAUDE.md` | Claude Code adapter for the same workspace-local guidance. |
 | `.quanttradeai/workspace.yaml` | Workspace metadata, including the selected template and init version. |
 
 ## Use With A Coding Agent
@@ -76,7 +83,7 @@ Give the agent a natural request, for example:
 
 > "Research RSI and SMA crossover strategies on AAPL/MSFT and find the best one."
 
-The agent should use `AGENTS.md`, `CLAUDE.md`, the Claude skill, `config/project.yaml`, and the `quanttradeai` CLI instead of creating one-off scripts.
+The agent should use `AGENTS.md`, `CLAUDE.md`, the globally installed QuantTradeAI plugin, `config/project.yaml`, and `uv run quanttradeai ...` commands instead of creating one-off scripts.
 
 ## First Manual Check
 
@@ -118,6 +125,8 @@ git clone https://github.com/AKKI0511/QuantTradeAI.git
 cd QuantTradeAI
 poetry install --with dev
 poetry run quanttradeai init my-lab
+cd my-lab
+uv sync
 ```
 
 Open the generated `my-lab` folder in your coding agent.

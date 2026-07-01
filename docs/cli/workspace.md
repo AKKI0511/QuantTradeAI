@@ -7,7 +7,8 @@
 Use this command before editing project YAML by hand. It gives humans and coding agents the same baseline files:
 
 - a canonical project config at `config/project.yaml`
-- agent-facing context files
+- a disposable uv project pinned to the local QuantTradeAI checkout
+- minimal agent-facing context files
 - workspace metadata under `.quanttradeai/`
 
 For installation and first-run setup, see [`docs/getting-started.md`](../getting-started.md).
@@ -59,9 +60,12 @@ Every template writes:
 
 ```text
 config/project.yaml
+pyproject.toml
+.python-version
+.env.example
+.gitignore
 AGENTS.md
 CLAUDE.md
-.claude/skills/quanttradeai-research/
 .quanttradeai/workspace.yaml
 ```
 
@@ -83,16 +87,16 @@ Wrote <template> template to <workspace>/config/project.yaml
 After that, edit `config/project.yaml`, then run:
 
 ```bash
-quanttradeai validate -c config/project.yaml
+uv sync
+uv run quanttradeai validate -c config/project.yaml
 ```
 
 ## Common Mistakes
 
 | Mistake | What happens |
 |---|---|
-| Initializing over an existing generated project config without `--force` | The command refuses to overwrite protected generated files. |
+| Initializing over an existing generated project config or `pyproject.toml` without `--force` | The command refuses to overwrite protected generated files. |
 | Assuming the folder name changes `project.name` | The template controls `project.name`; the CLI does not rewrite it from `PROJECT_DIR`. |
-| Editing generated agent context casually | `AGENTS.md`, `CLAUDE.md`, and the `.claude/skills/` files are part of the coding-agent workspace contract. Change them only when you want to change agent behavior. |
 | Choosing a template name outside the supported list | The command fails with the valid template names. |
 
 ## Related Docs

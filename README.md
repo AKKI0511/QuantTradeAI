@@ -62,6 +62,7 @@ QuantTradeAI provides:
 pip install quanttradeai
 quanttradeai init my-lab
 cd my-lab
+uv sync
 ```
 
 Open `my-lab` in Claude Code, Cursor, Codex, or another coding agent and ask:
@@ -113,14 +114,17 @@ More details: [Agent Plugins](docs/plugins.md).
 
 ```text
 my-lab/
-├── config/project.yaml                    # canonical project config — start here
-├── AGENTS.md                              # tells coding agents how to use the CLI and YAML
-├── CLAUDE.md                              # Claude Code-specific context and guidance
-├── .claude/skills/quanttradeai-research/  # skill pack for Claude Code agents
-└── .quanttradeai/workspace.yaml          # workspace-level metadata and defaults
+|-- config/project.yaml             # canonical project config
+|-- pyproject.toml                  # uv project with local QuantTradeAI dependency
+|-- .python-version
+|-- .env.example
+|-- .gitignore
+|-- AGENTS.md                       # minimal workspace-local guidance
+|-- CLAUDE.md                       # Claude adapter for the same guidance
+`-- .quanttradeai/workspace.yaml     # workspace metadata
 ```
 
-The coding agent reads these files to understand how to use the framework correctly — you do not need to explain the workflow to it each session.
+Reusable QuantTradeAI workflow skills come from the globally installed plugin.
 
 ---
 
@@ -193,6 +197,7 @@ Initialize a workspace and open it in your coding agent:
 ```bash
 quanttradeai init my-lab
 cd my-lab
+uv sync
 ```
 
 Dev commands:

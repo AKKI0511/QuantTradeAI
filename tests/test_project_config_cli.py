@@ -1,4 +1,5 @@
 import json
+import tomllib
 from pathlib import Path
 
 import pandas as pd
@@ -16,13 +17,6 @@ from quanttradeai.utils.project_config import compile_research_runtime_configs
 
 
 runner = CliRunner()
-
-
-def _skill_frontmatter(markdown: str) -> dict:
-    lines = markdown.splitlines()
-    assert lines[0] == "---"
-    closing_index = lines[1:].index("---") + 1
-    return yaml.safe_load("\n".join(lines[1:closing_index]))
 
 
 def test_project_to_runtime_configs_maps_custom_features_to_supported_keys():
@@ -94,9 +88,9 @@ def test_init_creates_each_template(tmp_path: Path):
 def test_init_refuses_existing_without_force_and_overwrites_with_force(tmp_path: Path):
     output = tmp_path / "config" / "project.yaml"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("project:\n  name: old\n", encoding="utf-8")
+    output.write_text("project:\n  name: existing\n", encoding="utf-8")
     agents_path = tmp_path / "AGENTS.md"
-    agents_path.write_text("old agent notes\n", encoding="utf-8")
+    agents_path.write_text("existing agent notes\n", encoding="utf-8")
 
     fail_result = runner.invoke(
         app,
@@ -114,7 +108,10 @@ def test_init_refuses_existing_without_force_and_overwrites_with_force(tmp_path:
     assert (
         rendered["project"]["name"] == PROJECT_TEMPLATES["research"]["project"]["name"]
     )
-    assert "QuantTradeAI Workspace" in agents_path.read_text(encoding="utf-8")
+    assert "QuantTradeAI Project Workspace" in agents_path.read_text(encoding="utf-8")
+    assert "quanttradeai @ file://" in (tmp_path / "pyproject.toml").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_init_current_directory_uses_strategy_lab_by_default(
@@ -146,10 +143,30 @@ def test_init_preserves_existing_agent_context_without_force(tmp_path: Path):
     assert (tmp_path / "config" / "project.yaml").is_file()
     assert agents_path.read_text(encoding="utf-8") == "existing agent notes\n"
     assert claude_path.read_text(encoding="utf-8") == "existing claude notes\n"
-    assert (
-        tmp_path / ".claude" / "skills" / "quanttradeai-research" / "SKILL.md"
-    ).is_file()
+    assert (tmp_path / "pyproject.toml").is_file()
     assert (tmp_path / ".quanttradeai" / "workspace.yaml").is_file()
+
+
+def test_init_force_overwrites_generated_workspace_files(tmp_path: Path):
+    project_config_path = tmp_path / "config" / "project.yaml"
+    project_config_path.parent.mkdir(parents=True)
+    project_config_path.write_text("project:\n  name: existing\n", encoding="utf-8")
+    pyproject_path = tmp_path / "pyproject.toml"
+    pyproject_path.write_text("existing project metadata\n", encoding="utf-8")
+    agents_path = tmp_path / "AGENTS.md"
+    agents_path.write_text("existing agent notes\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["init", str(tmp_path), "--force"])
+
+    assert result.exit_code == 0, result.stdout
+    project_config = yaml.safe_load(project_config_path.read_text(encoding="utf-8"))
+    assert (
+        project_config["project"]["name"]
+        == PROJECT_TEMPLATES["strategy-lab"]["project"]["name"]
+    )
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    assert pyproject["project"]["name"] == tmp_path.name.lower()
+    assert "QuantTradeAI Project Workspace" in agents_path.read_text(encoding="utf-8")
 
 
 def test_init_preserves_existing_template_assets_without_force(tmp_path: Path):
@@ -172,62 +189,63 @@ def test_init_named_workspace_writes_agent_context_and_metadata(tmp_path: Path):
     assert result.exit_code == 0, result.stdout
     expected_files = [
         "config/project.yaml",
+        "pyproject.toml",
+        ".python-version",
+        ".env.example",
+        ".gitignore",
         "AGENTS.md",
         "CLAUDE.md",
-        ".claude/skills/quanttradeai-research/SKILL.md",
-        ".claude/skills/quanttradeai-research/workflow.md",
-        ".claude/skills/quanttradeai-research/artifacts.md",
-        ".claude/skills/quanttradeai-research/safety.md",
         ".quanttradeai/workspace.yaml",
     ]
     for relative_path in expected_files:
         assert (workspace / relative_path).is_file()
+    assert not (workspace / ".env").exists()
 
     for relative_path in iter_init_context_templates():
         rendered = (workspace / relative_path).read_text(encoding="utf-8")
         expected = read_init_context_template(relative_path).rstrip() + "\n"
         assert rendered == expected
 
+    pyproject = tomllib.loads((workspace / "pyproject.toml").read_text("utf-8"))
+    assert pyproject["project"]["name"] == "my-lab"
+    assert pyproject["project"]["requires-python"] == ">=3.11,<4.0"
+    assert any(
+        dependency.startswith("quanttradeai @ file://")
+        for dependency in pyproject["project"]["dependencies"]
+    )
+    assert pyproject["tool"]["uv"]["package"] is False
+
+    assert (workspace / ".python-version").read_text("utf-8") == "3.11\n"
+    env_example = (workspace / ".env.example").read_text("utf-8")
+    assert "Never commit .env" in env_example
+    assert "ALPACA_API_KEY=" in env_example
+    gitignore = (workspace / ".gitignore").read_text("utf-8")
+    assert ".venv/" in gitignore
+    assert "runs/" in gitignore
+
     agents_text = (workspace / "AGENTS.md").read_text(encoding="utf-8")
-    assert "This is a QuantTradeAI workspace" in agents_text
+    assert "This is a disposable QuantTradeAI project workspace" in agents_text
     assert "config/project.yaml" in agents_text
-    assert "quanttradeai validate -c config/project.yaml" in agents_text
-    assert "summary.json.run_result" in agents_text
-    assert "scoreboard.json" in agents_text
-    assert "Live mode requires explicit human approval" in agents_text
-    assert "Broker-backed execution requires explicit human approval" in agents_text
-    assert "Do not edit QuantTradeAI package/framework internals" in agents_text
+    assert "uv run quanttradeai validate -c config/project.yaml" in agents_text
 
     claude_text = (workspace / "CLAUDE.md").read_text(encoding="utf-8")
     assert claude_text.startswith("@AGENTS.md")
-    assert ".claude/skills/quanttradeai-research/SKILL.md" in claude_text
-    assert "broker-backed execution require explicit human approval" in claude_text
-
-    skill_text = (
-        workspace / ".claude/skills/quanttradeai-research/SKILL.md"
-    ).read_text(encoding="utf-8")
-    skill_metadata = _skill_frontmatter(skill_text)
-    assert skill_metadata["name"] == "quanttradeai-research"
-    assert skill_metadata["description"].startswith(
-        "Use QuantTradeAI CLI and config/project.yaml"
-    )
-    assert "find the best strategy" in skill_metadata["description"]
-    assert "allowed-tools" not in skill_metadata
 
     metadata = yaml.safe_load(
         (workspace / ".quanttradeai/workspace.yaml").read_text(encoding="utf-8")
     )
-    assert metadata == {
-        "version": 1,
-        "template": "strategy-lab",
-        "project_config": "config/project.yaml",
-        "agent_context": {
-            "agents_md": "AGENTS.md",
-            "claude_md": "CLAUDE.md",
-            "skill": ".claude/skills/quanttradeai-research/SKILL.md",
-        },
-        "created_by": "quanttradeai",
+    assert metadata["version"] == 2
+    assert metadata["template"] == "strategy-lab"
+    assert metadata["project_config"] == "config/project.yaml"
+    assert metadata["python_project"]["manager"] == "uv"
+    assert metadata["python_project"]["pyproject"] == "pyproject.toml"
+    assert metadata["python_project"]["quanttradeai_dependency"].startswith("file://")
+    assert metadata["agent_context"] == {
+        "agents_md": "AGENTS.md",
+        "claude_md": "CLAUDE.md",
+        "plugin": "quanttradeai",
     }
+    assert metadata["created_by"] == "quanttradeai"
 
 
 def test_init_context_resource_loader_works_from_temp_directory(
@@ -240,22 +258,16 @@ def test_init_context_resource_loader_works_from_temp_directory(
     assert template_paths == (
         "AGENTS.md",
         "CLAUDE.md",
-        ".claude/skills/quanttradeai-research/SKILL.md",
-        ".claude/skills/quanttradeai-research/workflow.md",
-        ".claude/skills/quanttradeai-research/artifacts.md",
-        ".claude/skills/quanttradeai-research/safety.md",
     )
     assert read_init_context_template("AGENTS.md").startswith(
-        "# QuantTradeAI Workspace"
+        "# QuantTradeAI Project Workspace"
     )
 
     workspace = tmp_path / "workspace"
     write_init_context_files(workspace, force=False)
 
     assert (workspace / "AGENTS.md").is_file()
-    assert (
-        workspace / ".claude" / "skills" / "quanttradeai-research" / "SKILL.md"
-    ).is_file()
+    assert (workspace / "CLAUDE.md").is_file()
 
 
 def test_validate_passes_for_generated_templates(tmp_path: Path):
