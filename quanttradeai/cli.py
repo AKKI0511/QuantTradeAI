@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -712,6 +713,115 @@ def _project_config_path(workspace: Path) -> Path:
     return workspace / "config" / "project.yaml"
 
 
+def _workspace_project_paths(workspace: Path) -> list[Path]:
+    return [
+        workspace / "pyproject.toml",
+        workspace / ".python-version",
+        workspace / ".env.example",
+        workspace / ".gitignore",
+    ]
+
+
+def _normalize_workspace_project_name(workspace: Path) -> str:
+    normalized = re.sub(r"[^a-zA-Z0-9._-]+", "-", workspace.name.lower())
+    normalized = normalized.strip("._-")
+    return normalized or "quanttradeai-workspace"
+
+
+def _quanttradeai_source_root() -> Path:
+    package_dir = Path(__file__).resolve().parent
+    for candidate in package_dir.parents:
+        pyproject_path = candidate / "pyproject.toml"
+        package_init = candidate / "quanttradeai" / "__init__.py"
+        if not pyproject_path.is_file() or not package_init.is_file():
+            continue
+        pyproject_text = pyproject_path.read_text(encoding="utf-8")
+        if re.search(r'(?m)^name\s*=\s*["\']quanttradeai["\']', pyproject_text):
+            return candidate
+
+    raise RuntimeError(
+        "Could not find the local QuantTradeAI source checkout needed for the "
+        "generated uv project dependency. Run init from a local QuantTradeAI "
+        "checkout, for example with `poetry run quanttradeai init <workspace>`."
+    )
+
+
+def _render_workspace_pyproject(workspace: Path, source_root: Path) -> str:
+    project_name = _normalize_workspace_project_name(workspace)
+    dependency = f"quanttradeai @ {source_root.as_uri()}"
+    return f"""
+[project]
+name = {json.dumps(project_name)}
+version = "0.1.0"
+description = "Disposable QuantTradeAI project workspace"
+requires-python = ">=3.11,<4.0"
+dependencies = [
+    {json.dumps(dependency)},
+]
+
+[tool.uv]
+package = false
+"""
+
+
+def _render_workspace_env_example() -> str:
+    return """
+# Copy this file to .env only when local credentials are needed.
+# Never commit .env.
+
+# OPENAI_API_KEY=
+# ANTHROPIC_API_KEY=
+# ALPACA_API_KEY=
+# ALPACA_API_SECRET=
+"""
+
+
+def _render_workspace_gitignore() -> str:
+    return """
+.venv/
+.env
+__pycache__/
+.pytest_cache/
+
+data/
+models/
+reports/
+runs/
+"""
+
+
+def _write_workspace_project_files(
+    workspace: Path, source_root: Path, force: bool
+) -> None:
+    files = {
+        workspace
+        / "pyproject.toml": _render_workspace_pyproject(workspace, source_root),
+        workspace / ".python-version": "3.11\n",
+        workspace / ".env.example": _render_workspace_env_example(),
+        workspace / ".gitignore": _render_workspace_gitignore(),
+    }
+    for path, content in files.items():
+        _write_text_file(path, content, force=force)
+
+
+def _remove_legacy_generated_skills(workspace: Path, force: bool) -> None:
+    if not force:
+        return
+
+    legacy_skill_dir = workspace / ".claude" / "skills" / "quanttradeai-research"
+    if legacy_skill_dir.is_dir():
+        shutil.rmtree(legacy_skill_dir)
+    elif legacy_skill_dir.exists():
+        legacy_skill_dir.unlink()
+
+    for maybe_empty in (
+        workspace / ".claude" / "skills",
+        workspace / ".claude",
+    ):
+        if maybe_empty.is_dir() and not any(maybe_empty.iterdir()):
+            maybe_empty.rmdir()
+
+
 def _template_asset_paths(template_name: str, project_config_path: Path) -> list[Path]:
     project_root = infer_project_root(project_config_path)
     return [
@@ -723,6 +833,7 @@ def _template_asset_paths(template_name: str, project_config_path: Path) -> list
 def _init_owned_paths(template_name: str, project_config_path: Path) -> list[Path]:
     workspace = infer_project_root(project_config_path)
     paths = [project_config_path]
+    paths.extend(_workspace_project_paths(workspace))
     paths.extend(
         workspace / Path(*Path(relative_path).parts)
         for relative_path in iter_init_context_templates()
@@ -738,7 +849,11 @@ def _format_path_list(paths: list[Path]) -> str:
 
 def _init_overwrite_guard_paths(project_config_path: Path) -> list[Path]:
     workspace = infer_project_root(project_config_path)
-    return [project_config_path, workspace / ".quanttradeai" / "workspace.yaml"]
+    return [
+        project_config_path,
+        workspace / "pyproject.toml",
+        workspace / ".quanttradeai" / "workspace.yaml",
+    ]
 
 
 def _check_can_write(
@@ -777,15 +892,22 @@ def _write_agent_context_files(workspace: Path, force: bool) -> None:
     write_init_context_files(workspace, force=force)
 
 
-def _write_workspace_metadata(workspace: Path, template_name: str) -> None:
+def _write_workspace_metadata(
+    workspace: Path, template_name: str, source_root: Path
+) -> None:
     metadata = {
-        "version": 1,
+        "version": 2,
         "template": template_name,
         "project_config": "config/project.yaml",
+        "python_project": {
+            "manager": "uv",
+            "pyproject": "pyproject.toml",
+            "quanttradeai_dependency": source_root.as_uri(),
+        },
         "agent_context": {
             "agents_md": "AGENTS.md",
             "claude_md": "CLAUDE.md",
-            "skill": ".claude/skills/quanttradeai-research/SKILL.md",
+            "plugin": "quanttradeai",
         },
         "created_by": "quanttradeai",
     }
@@ -1861,19 +1983,25 @@ def cmd_init(
     overwrite_guard_paths = _init_overwrite_guard_paths(project_config_path)
 
     try:
+        source_root = _quanttradeai_source_root()
         _check_can_write(
             owned_paths,
             force=force,
             overwrite_guard_paths=overwrite_guard_paths,
         )
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1)
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1)
 
     workspace.mkdir(parents=True, exist_ok=True)
     _write_project_template(normalized, project_config_path)
+    _write_workspace_project_files(workspace, source_root, force=force)
     _write_agent_context_files(workspace, force=force)
-    _write_workspace_metadata(workspace, normalized)
+    _remove_legacy_generated_skills(workspace, force=force)
+    _write_workspace_metadata(workspace, normalized, source_root)
     _write_template_assets(normalized, project_config_path, force)
 
     typer.echo(f"Initialized QuantTradeAI workspace at {workspace}")

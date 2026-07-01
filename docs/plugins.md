@@ -81,8 +81,9 @@ Run `/help` in Claude Code after installation to confirm the `quanttradeai` name
 Open a QuantTradeAI workspace, usually created with:
 
 ```bash
-quanttradeai init my-lab
+poetry run quanttradeai init my-lab
 cd my-lab
+uv sync
 ```
 
 Then ask your coding agent for a QuantTradeAI workflow, for example:

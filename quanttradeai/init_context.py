@@ -5,17 +5,12 @@ from __future__ import annotations
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path, PurePosixPath
-from typing import Iterator
 
 
 _TEMPLATE_ROOT_PARTS = ("templates", "workspace_context")
-_PREFERRED_TEMPLATE_ORDER = (
+_INIT_CONTEXT_TEMPLATES = (
     "AGENTS.md",
     "CLAUDE.md",
-    ".claude/skills/quanttradeai-research/SKILL.md",
-    ".claude/skills/quanttradeai-research/workflow.md",
-    ".claude/skills/quanttradeai-research/artifacts.md",
-    ".claude/skills/quanttradeai-research/safety.md",
 )
 
 
@@ -33,32 +28,10 @@ def _normalize_template_path(relative_path: str | PurePosixPath) -> PurePosixPat
     return path
 
 
-def _walk_template_files(root: Traversable, prefix: PurePosixPath) -> Iterator[str]:
-    for child in sorted(root.iterdir(), key=lambda item: item.name.lower()):
-        child_path = prefix / child.name
-        if child.is_dir():
-            yield from _walk_template_files(child, child_path)
-        elif child.is_file():
-            yield child_path.as_posix()
-
-
 def iter_init_context_templates() -> tuple[str, ...]:
     """Return template-relative paths copied into initialized workspaces."""
 
-    discovered = tuple(_walk_template_files(_template_root(), PurePosixPath()))
-    preferred_order = {
-        relative_path: index
-        for index, relative_path in enumerate(_PREFERRED_TEMPLATE_ORDER)
-    }
-    return tuple(
-        sorted(
-            discovered,
-            key=lambda relative_path: (
-                preferred_order.get(relative_path, len(preferred_order)),
-                relative_path,
-            ),
-        )
-    )
+    return _INIT_CONTEXT_TEMPLATES
 
 
 def read_init_context_template(relative_path: str | PurePosixPath) -> str:
