@@ -55,14 +55,11 @@ QuantTradeAI provides:
 
 ## Quickstart
 
-> [!NOTE]
-> Package publishing is being stabilized. Until PyPI is available, use the [local development setup](#local-development) below.
-
 ```bash
-pip install quanttradeai
-quanttradeai init my-lab
+uvx quanttradeai init my-lab
 cd my-lab
 uv sync
+uv run quanttradeai doctor
 ```
 
 Open `my-lab` in Claude Code, Cursor, Codex, or another coding agent and ask:
@@ -115,7 +112,7 @@ More details: [Agent Plugins](docs/plugins.md).
 ```text
 my-lab/
 |-- config/project.yaml             # canonical project config
-|-- pyproject.toml                  # uv project with local QuantTradeAI dependency
+|-- pyproject.toml                  # uv project pinned to the released QuantTradeAI package
 |-- .python-version
 |-- .env.example
 |-- .gitignore
@@ -195,9 +192,20 @@ poetry install --with dev
 Initialize a workspace and open it in your coding agent:
 
 ```bash
-quanttradeai init my-lab
+poetry run quanttradeai init my-lab
 cd my-lab
 uv sync
+uv run quanttradeai doctor
+```
+
+Generated workspaces always pin `quanttradeai==<version>` in `pyproject.toml`.
+Use `uvx quanttradeai@<version> init my-lab` when you need to generate a
+workspace from a specific published package version. When testing local source
+changes from a generated workspace, keep the generated pin intact and install the
+checkout into the workspace environment explicitly:
+
+```bash
+uv pip install --reinstall -e ..
 ```
 
 Dev commands:

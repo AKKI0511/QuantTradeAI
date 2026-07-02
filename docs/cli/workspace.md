@@ -7,7 +7,7 @@
 Use this command before editing project YAML by hand. It gives humans and coding agents the same baseline files:
 
 - a canonical project config at `config/project.yaml`
-- a disposable uv project pinned to the local QuantTradeAI checkout
+- a disposable uv project pinned to the released QuantTradeAI package version
 - minimal agent-facing context files
 - workspace metadata under `.quanttradeai/`
 
@@ -25,6 +25,7 @@ quanttradeai init my-strategy-lab
 quanttradeai init --template research
 quanttradeai init my-agent-lab --template rule-agent
 quanttradeai init --force
+uvx quanttradeai@0.1.0 init my-lab
 ```
 
 ## Options
@@ -53,6 +54,11 @@ The current CLI supports these template names:
 `init` reads package templates embedded in `quanttradeai/templates/workspace_context/`.
 
 It does not read an existing project config to infer project name, symbols, or agent names.
+
+It also does not search for a local QuantTradeAI source checkout. The generated
+`pyproject.toml` pins the QuantTradeAI package version that is running `init`,
+for example `quanttradeai==0.1.0`. Use `uvx quanttradeai@<version> init ...`
+to choose a specific published version.
 
 ## Writes
 
@@ -88,7 +94,15 @@ After that, edit `config/project.yaml`, then run:
 
 ```bash
 uv sync
+uv run quanttradeai doctor
 uv run quanttradeai validate -c config/project.yaml
+```
+
+For local source contribution, keep the generated package pin intact. After
+`uv sync`, install your checkout into the workspace environment explicitly:
+
+```bash
+uv pip install --reinstall -e <path-to-QuantTradeAI-checkout>
 ```
 
 ## Common Mistakes

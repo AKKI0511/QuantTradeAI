@@ -40,9 +40,10 @@ See [Agent Plugins](plugins.md) for provider-specific install, validation, and u
 ## Create A Workspace
 
 ```bash
-quanttradeai init my-lab
+uvx quanttradeai init my-lab
 cd my-lab
 uv sync
+uv run quanttradeai doctor
 ```
 
 To initialize the current directory instead:
@@ -67,7 +68,7 @@ CLAUDE.md
 | Path | Purpose |
 | :--- | :--- |
 | `config/project.yaml` | Canonical project config for data, features, research settings, agents, sweeps, and execution defaults. |
-| `pyproject.toml` | Disposable uv project metadata with QuantTradeAI pinned as a local dependency. |
+| `pyproject.toml` | Disposable uv project metadata with QuantTradeAI pinned to the released package version. |
 | `.python-version` | Python version hint for uv-managed environments. |
 | `.env.example` | Optional environment variable placeholders; copy to `.env` only for local secrets. |
 | `.gitignore` | Ignores local virtualenvs, secrets, and generated run/output directories. |
@@ -127,9 +128,19 @@ poetry install --with dev
 poetry run quanttradeai init my-lab
 cd my-lab
 uv sync
+uv run quanttradeai doctor
 ```
 
 Open the generated `my-lab` folder in your coding agent.
+
+Use `uvx quanttradeai@<version> init my-lab` when you need a workspace generated
+from a specific published package version. To test local source changes from
+that generated workspace, keep the generated `quanttradeai==<version>` pin and
+install the checkout into `.venv` explicitly:
+
+```bash
+uv pip install --reinstall -e ..
+```
 
 ## Where To Go Next
 

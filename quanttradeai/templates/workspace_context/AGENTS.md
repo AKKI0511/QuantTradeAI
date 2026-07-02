@@ -5,7 +5,7 @@ This is a disposable QuantTradeAI project workspace. Keep project-specific state
 ## Local Project Files
 
 - `config/project.yaml` is the canonical project config.
-- `pyproject.toml` pins QuantTradeAI as a local uv dependency.
+- `pyproject.toml` pins QuantTradeAI to an exact released package version.
 - `.env.example` documents optional local environment variables. Keep real secrets in `.env` or exported environment variables.
 - `runs/`, `reports/`, `data/`, and `models/` are local outputs.
 
@@ -13,6 +13,7 @@ This is a disposable QuantTradeAI project workspace. Keep project-specific state
 
 ```bash
 uv sync
+uv run quanttradeai doctor
 uv run quanttradeai validate -c config/project.yaml
 uv run quanttradeai agent run --all -c config/project.yaml --mode backtest
 ```

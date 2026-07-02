@@ -12,12 +12,15 @@ import re
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from importlib import metadata
 from pathlib import Path
 from typing import Any, Optional
 
 import typer
 import yaml
 
+from . import __version__ as PACKAGE_VERSION
+from .doctor import doctor_workspace, render_doctor_text
 from .init_context import iter_init_context_templates, write_init_context_files
 from .utils.config_validator import validate_project_config
 from .utils.project_paths import infer_project_root
@@ -728,27 +731,19 @@ def _normalize_workspace_project_name(workspace: Path) -> str:
     return normalized or "quanttradeai-workspace"
 
 
-def _quanttradeai_source_root() -> Path:
-    package_dir = Path(__file__).resolve().parent
-    for candidate in package_dir.parents:
-        pyproject_path = candidate / "pyproject.toml"
-        package_init = candidate / "quanttradeai" / "__init__.py"
-        if not pyproject_path.is_file() or not package_init.is_file():
-            continue
-        pyproject_text = pyproject_path.read_text(encoding="utf-8")
-        if re.search(r'(?m)^name\s*=\s*["\']quanttradeai["\']', pyproject_text):
-            return candidate
-
-    raise RuntimeError(
-        "Could not find the local QuantTradeAI source checkout needed for the "
-        "generated uv project dependency. Run init from a local QuantTradeAI "
-        "checkout, for example with `poetry run quanttradeai init <workspace>`."
-    )
+def _installed_quanttradeai_version() -> str:
+    try:
+        return metadata.version("quanttradeai")
+    except metadata.PackageNotFoundError:
+        return PACKAGE_VERSION
 
 
-def _render_workspace_pyproject(workspace: Path, source_root: Path) -> str:
+def _quanttradeai_dependency_spec() -> str:
+    return f"quanttradeai=={_installed_quanttradeai_version()}"
+
+
+def _render_workspace_pyproject(workspace: Path, quanttradeai_dependency: str) -> str:
     project_name = _normalize_workspace_project_name(workspace)
-    dependency = f"quanttradeai @ {source_root.as_uri()}"
     return f"""
 [project]
 name = {json.dumps(project_name)}
@@ -756,7 +751,7 @@ version = "0.1.0"
 description = "Disposable QuantTradeAI project workspace"
 requires-python = ">=3.11,<4.0"
 dependencies = [
-    {json.dumps(dependency)},
+    {json.dumps(quanttradeai_dependency)},
 ]
 
 [tool.uv]
@@ -791,11 +786,13 @@ runs/
 
 
 def _write_workspace_project_files(
-    workspace: Path, source_root: Path, force: bool
+    workspace: Path, quanttradeai_dependency: str, force: bool
 ) -> None:
     files = {
         workspace
-        / "pyproject.toml": _render_workspace_pyproject(workspace, source_root),
+        / "pyproject.toml": _render_workspace_pyproject(
+            workspace, quanttradeai_dependency
+        ),
         workspace / ".python-version": "3.11\n",
         workspace / ".env.example": _render_workspace_env_example(),
         workspace / ".gitignore": _render_workspace_gitignore(),
@@ -893,7 +890,9 @@ def _write_agent_context_files(workspace: Path, force: bool) -> None:
 
 
 def _write_workspace_metadata(
-    workspace: Path, template_name: str, source_root: Path
+    workspace: Path,
+    template_name: str,
+    quanttradeai_dependency: str,
 ) -> None:
     metadata = {
         "version": 2,
@@ -902,7 +901,7 @@ def _write_workspace_metadata(
         "python_project": {
             "manager": "uv",
             "pyproject": "pyproject.toml",
-            "quanttradeai_dependency": source_root.as_uri(),
+            "quanttradeai_dependency": quanttradeai_dependency,
         },
         "agent_context": {
             "agents_md": "AGENTS.md",
@@ -1983,25 +1982,26 @@ def cmd_init(
     overwrite_guard_paths = _init_overwrite_guard_paths(project_config_path)
 
     try:
-        source_root = _quanttradeai_source_root()
+        quanttradeai_dependency = _quanttradeai_dependency_spec()
         _check_can_write(
             owned_paths,
             force=force,
             overwrite_guard_paths=overwrite_guard_paths,
         )
-    except RuntimeError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1)
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1)
 
     workspace.mkdir(parents=True, exist_ok=True)
     _write_project_template(normalized, project_config_path)
-    _write_workspace_project_files(workspace, source_root, force=force)
+    _write_workspace_project_files(workspace, quanttradeai_dependency, force=force)
     _write_agent_context_files(workspace, force=force)
     _remove_legacy_generated_skills(workspace, force=force)
-    _write_workspace_metadata(workspace, normalized, source_root)
+    _write_workspace_metadata(
+        workspace,
+        normalized,
+        quanttradeai_dependency,
+    )
     _write_template_assets(normalized, project_config_path, force)
 
     typer.echo(f"Initialized QuantTradeAI workspace at {workspace}")
@@ -2052,6 +2052,28 @@ def cmd_validate(
             typer.echo(f"Warning: {warning}", err=True)
 
     typer.echo(json.dumps(result, indent=2))
+
+
+@app.command("doctor")
+def cmd_doctor(
+    config: str = typer.Option(
+        "config/project.yaml", "-c", "--config", help="Path to project config YAML"
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit machine-readable JSON diagnostics.",
+    ),
+):
+    """Run a read-only workspace health check."""
+
+    result = doctor_workspace(config_path=config)
+    if json_output:
+        typer.echo(json.dumps(result, sort_keys=True, separators=(",", ":")))
+    else:
+        typer.echo(render_doctor_text(result))
+    if result["exit_code"]:
+        raise typer.Exit(code=int(result["exit_code"]))
 
 
 if __name__ == "__main__":
