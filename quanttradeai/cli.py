@@ -738,22 +738,8 @@ def _installed_quanttradeai_version() -> str:
         return PACKAGE_VERSION
 
 
-def _normalize_quanttradeai_version(version: str | None) -> str:
-    candidate = (
-        _installed_quanttradeai_version() if version is None else str(version).strip()
-    )
-    if not candidate:
-        raise ValueError("QuantTradeAI package version must not be blank.")
-    if re.search(r"[\\/: \t\r\n]", candidate) or candidate.startswith((".", "~")):
-        raise ValueError(
-            "QuantTradeAI package version must be a version like 0.1.0. "
-            "Local paths and file URLs are not supported in generated workspaces."
-        )
-    return candidate
-
-
-def _quanttradeai_dependency_spec(version: str) -> str:
-    return f"quanttradeai=={version}"
+def _quanttradeai_dependency_spec() -> str:
+    return f"quanttradeai=={_installed_quanttradeai_version()}"
 
 
 def _render_workspace_pyproject(workspace: Path, quanttradeai_dependency: str) -> str:
@@ -907,7 +893,6 @@ def _write_workspace_metadata(
     workspace: Path,
     template_name: str,
     quanttradeai_dependency: str,
-    quanttradeai_version: str,
 ) -> None:
     metadata = {
         "version": 2,
@@ -917,7 +902,6 @@ def _write_workspace_metadata(
             "manager": "uv",
             "pyproject": "pyproject.toml",
             "quanttradeai_dependency": quanttradeai_dependency,
-            "quanttradeai_version": quanttradeai_version,
         },
         "agent_context": {
             "agents_md": "AGENTS.md",
@@ -1978,14 +1962,6 @@ def cmd_init(
         "strategy-lab", "--template", help="Project template to initialize"
     ),
     force: bool = typer.Option(False, "--force", help="Overwrite generated files"),
-    quanttradeai_version: Optional[str] = typer.Option(
-        None,
-        "--quanttradeai-version",
-        help=(
-            "QuantTradeAI package version to pin in the generated uv project. "
-            "Defaults to the installed package version."
-        ),
-    ),
 ):
     """Initialize a QuantTradeAI workspace."""
 
@@ -2006,8 +1982,7 @@ def cmd_init(
     overwrite_guard_paths = _init_overwrite_guard_paths(project_config_path)
 
     try:
-        pinned_version = _normalize_quanttradeai_version(quanttradeai_version)
-        quanttradeai_dependency = _quanttradeai_dependency_spec(pinned_version)
+        quanttradeai_dependency = _quanttradeai_dependency_spec()
         _check_can_write(
             owned_paths,
             force=force,
@@ -2026,7 +2001,6 @@ def cmd_init(
         workspace,
         normalized,
         quanttradeai_dependency,
-        pinned_version,
     )
     _write_template_assets(normalized, project_config_path, force)
 

@@ -192,15 +192,17 @@ poetry install --with dev
 Initialize a workspace and open it in your coding agent:
 
 ```bash
-poetry run quanttradeai init my-lab --quanttradeai-version 0.1.0
+poetry run quanttradeai init my-lab
 cd my-lab
 uv sync
 uv run quanttradeai doctor
 ```
 
 Generated workspaces always pin `quanttradeai==<version>` in `pyproject.toml`.
-When testing local source changes from a generated workspace, keep that generated
-pin intact and install the checkout into the workspace environment explicitly:
+Use `uvx quanttradeai@<version> init my-lab` when you need to generate a
+workspace from a specific published package version. When testing local source
+changes from a generated workspace, keep the generated pin intact and install the
+checkout into the workspace environment explicitly:
 
 ```bash
 uv pip install --reinstall -e ..

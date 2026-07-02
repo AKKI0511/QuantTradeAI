@@ -25,7 +25,7 @@ quanttradeai init my-strategy-lab
 quanttradeai init --template research
 quanttradeai init my-agent-lab --template rule-agent
 quanttradeai init --force
-quanttradeai init my-lab --quanttradeai-version 0.1.0
+uvx quanttradeai@0.1.0 init my-lab
 ```
 
 ## Options
@@ -35,7 +35,6 @@ quanttradeai init my-lab --quanttradeai-version 0.1.0
 | `[PROJECT_DIR]` | current directory | No | Workspace directory to initialize. If omitted, QuantTradeAI initializes the current working directory. |
 | `--template TEXT` | `strategy-lab` | No | Project template to write into `config/project.yaml`. |
 | `--force` | `false` | No | Overwrite generated files that are protected by the initializer. |
-| `--quanttradeai-version TEXT` | installed package version | No | Exact QuantTradeAI package version to pin in the generated uv project. Intended for contributor testing of release or pre-release package versions. Local paths and `file://` URLs are rejected. |
 
 ## Supported Templates
 
@@ -57,8 +56,9 @@ The current CLI supports these template names:
 It does not read an existing project config to infer project name, symbols, or agent names.
 
 It also does not search for a local QuantTradeAI source checkout. The generated
-`pyproject.toml` always uses an exact package dependency such as
-`quanttradeai==0.1.0`.
+`pyproject.toml` pins the QuantTradeAI package version that is running `init`,
+for example `quanttradeai==0.1.0`. Use `uvx quanttradeai@<version> init ...`
+to choose a specific published version.
 
 ## Writes
 

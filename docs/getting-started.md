@@ -125,7 +125,7 @@ quanttradeai init my-research-lab --template research
 git clone https://github.com/AKKI0511/QuantTradeAI.git
 cd QuantTradeAI
 poetry install --with dev
-poetry run quanttradeai init my-lab --quanttradeai-version 0.1.0
+poetry run quanttradeai init my-lab
 cd my-lab
 uv sync
 uv run quanttradeai doctor
@@ -133,9 +133,10 @@ uv run quanttradeai doctor
 
 Open the generated `my-lab` folder in your coding agent.
 
-To test local source changes from that generated workspace, keep the generated
-`quanttradeai==<version>` dependency pin and install the checkout into `.venv`
-explicitly:
+Use `uvx quanttradeai@<version> init my-lab` when you need a workspace generated
+from a specific published package version. To test local source changes from
+that generated workspace, keep the generated `quanttradeai==<version>` pin and
+install the checkout into `.venv` explicitly:
 
 ```bash
 uv pip install --reinstall -e ..

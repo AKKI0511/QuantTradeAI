@@ -242,50 +242,12 @@ def test_init_named_workspace_writes_agent_context_and_metadata(tmp_path: Path):
     assert (
         metadata["python_project"]["quanttradeai_dependency"] == "quanttradeai==0.1.0"
     )
-    assert metadata["python_project"]["quanttradeai_version"] == "0.1.0"
     assert metadata["agent_context"] == {
         "agents_md": "AGENTS.md",
         "claude_md": "CLAUDE.md",
         "plugin": "quanttradeai",
     }
     assert metadata["created_by"] == "quanttradeai"
-
-
-def test_init_can_pin_explicit_package_version_for_contributor_testing(
-    tmp_path: Path,
-):
-    workspace = tmp_path / "my-lab"
-
-    result = runner.invoke(
-        app,
-        ["init", str(workspace), "--quanttradeai-version", "0.1.1"],
-    )
-
-    assert result.exit_code == 0, result.stdout
-    pyproject = tomllib.loads((workspace / "pyproject.toml").read_text("utf-8"))
-    assert pyproject["project"]["dependencies"] == ["quanttradeai==0.1.1"]
-    metadata = yaml.safe_load(
-        (workspace / ".quanttradeai" / "workspace.yaml").read_text("utf-8")
-    )
-    assert (
-        metadata["python_project"]["quanttradeai_dependency"] == "quanttradeai==0.1.1"
-    )
-    assert metadata["python_project"]["quanttradeai_version"] == "0.1.1"
-
-
-def test_init_rejects_path_like_package_version(tmp_path: Path):
-    result = runner.invoke(
-        app,
-        [
-            "init",
-            str(tmp_path / "my-lab"),
-            "--quanttradeai-version",
-            "file:///tmp/QuantTradeAI",
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert "Local paths and file URLs are not supported" in result.stderr
 
 
 def test_init_context_resource_loader_works_from_temp_directory(

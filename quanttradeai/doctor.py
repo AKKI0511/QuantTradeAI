@@ -297,25 +297,6 @@ def _check_package_metadata(
             path=".quanttradeai/workspace.yaml",
         )
 
-    metadata_version = python_project.get("quanttradeai_version")
-    if (
-        metadata_version
-        and pinned_dependency
-        and QUANTTRADEAI_DEPENDENCY_RE.fullmatch(pinned_dependency)
-    ):
-        pinned_version = QUANTTRADEAI_DEPENDENCY_RE.fullmatch(pinned_dependency).group(
-            1
-        )
-        if str(metadata_version) != pinned_version:
-            _diagnostic(
-                diagnostics,
-                severity="error",
-                code="package.metadata_version_mismatch",
-                message=".quanttradeai/workspace.yaml records a different QuantTradeAI version than pyproject.toml.",
-                action="Regenerate workspace metadata with `quanttradeai init --force` after preserving local changes.",
-                path=".quanttradeai/workspace.yaml",
-            )
-
     return source_checkout, installed_version, pinned_dependency
 
 
