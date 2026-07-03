@@ -2,14 +2,14 @@
 
 # QuantTradeAI
 
-### Give your coding agent a quant research lab, not a blank terminal.
+### Tell your coding agent to run quant research. Let the plugin do the plumbing.
 
 <p>
-  <a href="docs/getting-started.md">Getting Started</a> ·
-  <a href="docs/plugins.md">Agent Plugins</a> ·
-  <a href="docs/config/project-file.md">Project YAML</a> ·
-  <a href="docs/README.md">Docs</a> ·
-  <a href="roadmap.md">Roadmap</a> ·
+  <a href="docs/getting-started.md">Getting Started</a> |
+  <a href="docs/plugins.md">Agent Plugins</a> |
+  <a href="docs/config/project-file.md">Project YAML</a> |
+  <a href="docs/README.md">Docs</a> |
+  <a href="roadmap.md">Roadmap</a> |
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
@@ -23,173 +23,165 @@
 
 ---
 
-QuantTradeAI is built for coding agents — Claude Code, Codex, Cursor, and similar tools — to research trading strategies without repeatedly writing data, backtest, sweep, artifact, and deployment plumbing from scratch.
+QuantTradeAI is built for Claude Code and Codex. Install the plugin, open your agent, and describe the quant research you want in plain English.
 
-You give the research objective. The agent uses a generated workspace, `config/project.yaml`, and the `quanttradeai` CLI to run repeatable strategy experiments, compare artifacts, and recommend winners.
+The plugin handles the boring parts: workspace creation, `uvx`, uv setup, `config/project.yaml`, validation, experiments, scoreboards, and artifact analysis. You stay at the research-intent level.
+
+---
+
+## Fast Path: Agent First
+
+Install the QuantTradeAI plugin in your coding agent.
+
+Codex:
+
+```bash
+codex plugin marketplace add AKKI0511/QuantTradeAI --sparse .agents/plugins --sparse plugins
+codex plugin add quanttradeai@quanttradeai
+```
+
+Claude Code:
+
+```bash
+claude plugin marketplace add AKKI0511/QuantTradeAI --sparse .claude-plugin plugins
+claude plugin install quanttradeai@quanttradeai
+```
+
+Then open a fresh Claude Code or Codex session in the folder where you want the lab to live and ask for the whole thing:
+
+```text
+use QuantTradeAI and make me a workspace called vibe-lab.
+vibe quant research: test AAPL/MSFT daily momentum vs mean reversion, RSI and SMA crossover stuff, 2022-2024, real costs, no live trading.
+set up uv, edit the yaml, validate it, run the sweeps, read the artifacts, and tell me what looks least fake plus what to try next.
+```
+
+The agent should create the workspace with `uvx quanttradeai init`, run `uv sync`, check `uv run quanttradeai doctor`, edit `config/project.yaml`, validate, run backtest/research workflows, inspect `runs/`, and report evidence instead of vibes.
+
+More install detail: [Agent Plugins](docs/plugins.md). Full walkthrough: [Getting Started](docs/getting-started.md).
 
 ---
 
 ## Why QuantTradeAI
 
-AI agents can write code, but quant research requires repeatable infrastructure.
+AI agents can write code, but quant research needs repeatable structure.
 
-Without structure, agents write one-off scripts, scatter outputs across directories, and produce runs that cannot be compared or built on. Every session starts fresh with no memory of what worked.
+Without structure, agents write one-off scripts, scatter outputs across folders, and produce runs that cannot be compared. Every session starts from scratch.
 
 QuantTradeAI provides:
 
-- **A stable experiment environment** — one project config drives data, features, research, and agents
-- **Standardized run artifacts** — every run writes structured outputs agents can read directly
-- **A promotion model** — backtest → paper → live, with live execution gated behind explicit human approval
+- **One project config** - data, features, research, agents, sweeps, risk, and deployment live in `config/project.yaml`.
+- **Standard run artifacts** - every run writes machine-readable outputs under `runs/`.
+- **Agent-readable scoreboards** - sweeps and batches can be ranked without scraping terminal text.
+- **A promotion path** - backtest -> paper -> live, with live execution gated behind explicit human approval.
 
-## Before and After
+## What The Agent Can Do
 
-| | Without QuantTradeAI | With QuantTradeAI |
-| :--- | :--- | :--- |
-| **Setup** | Agent writes custom fetch and backtest scripts each time | Agent reuses the `quanttradeai` CLI against one project config |
-| **Outputs** | Scattered across ad-hoc directories | Every run writes to `runs/` with standardized artifacts |
-| **Comparison** | No way to compare strategy variants | Scoreboards and `--compare` are built in |
-| **Structure** | Research and agent code in separate scripts | One `config/project.yaml` drives both |
-| **Safety** | No gate before live execution | Backtest → paper → live, each requiring explicit promotion |
+- Create a strategy lab from templates.
+- Edit YAML instead of inventing one-off scripts.
+- Run model research, agent backtests, and parameter sweeps.
+- Compare scoreboards by Sharpe, PnL, drawdown, activity, warnings, and failures.
+- Inspect `summary.json`, `scoreboard.json`, `results.json`, `metrics.json`, and `resolved_project_config.yaml`.
+- Promote selected research/backtest results only when asked.
+- Generate local, Docker Compose, or Render deployment bundles.
+- Keep live trading behind explicit approval.
 
 ---
 
-## Quickstart
+## Manual `uvx` And uv Workflow
+
+Use this when you want to drive the CLI yourself instead of asking the plugin to do it.
 
 ```bash
 uvx quanttradeai init my-lab
 cd my-lab
 uv sync
 uv run quanttradeai doctor
+uv run quanttradeai validate -c config/project.yaml
+uv run quanttradeai agent run --all -c config/project.yaml --mode backtest
 ```
 
-Open `my-lab` in Claude Code, Cursor, Codex, or another coding agent and ask:
+Simple lifecycle:
 
-> "Research RSI and SMA crossover strategies on AAPL and MSFT and find the best one."
+- `uvx quanttradeai init my-lab` runs the published package in a temporary tool environment and creates the workspace.
+- The generated `pyproject.toml` pins `quanttradeai==<version>` for that workspace.
+- `uv sync` creates `.venv` from the workspace pin.
+- `uv run quanttradeai ...` runs the pinned workspace CLI.
 
-The agent uses `config/project.yaml` and the `quanttradeai` CLI to run experiments, compare results on a scoreboard, and recommend a winner — without you writing any backtest code.
+Use `uvx` to create or regenerate a workspace. Use `uv run` once you are inside that workspace.
 
----
-
-## Agent Plugin Install
-
-QuantTradeAI ships a universal agent plugin for Codex and Claude Code. It packages the strategy experiment, model research, run analysis, and promotion/deployment skills from `plugins/quanttradeai/skills/`.
-
-Initial release branch:
+To pin a published release explicitly:
 
 ```bash
-git clone -b release/v0.1.0 https://github.com/AKKI0511/QuantTradeAI.git
-cd QuantTradeAI
+uvx quanttradeai@0.1.0 init my-lab
 ```
-
-Codex:
-
-```bash
-codex plugin marketplace add .
-```
-
-Then restart Codex, open Plugins, select **QuantTradeAI Plugins**, and install **QuantTradeAI**.
-
-Claude Code:
-
-```bash
-claude plugin marketplace add .
-claude plugin install quanttradeai@quanttradeai
-```
-
-Or install from inside Claude Code:
-
-```text
-/plugin marketplace add .
-/plugin install quanttradeai@quanttradeai
-```
-
-More details: [Agent Plugins](docs/plugins.md).
-
----
 
 ## What `init` Creates
 
 ```text
 my-lab/
-|-- config/project.yaml             # canonical project config
-|-- pyproject.toml                  # uv project pinned to the released QuantTradeAI package
+|-- config/project.yaml
+|-- pyproject.toml
 |-- .python-version
 |-- .env.example
 |-- .gitignore
-|-- AGENTS.md                       # minimal workspace-local guidance
-|-- CLAUDE.md                       # Claude adapter for the same guidance
-`-- .quanttradeai/workspace.yaml     # workspace metadata
+|-- AGENTS.md
+|-- CLAUDE.md
+`-- .quanttradeai/workspace.yaml
 ```
 
-Reusable QuantTradeAI workflow skills come from the globally installed plugin.
-
----
-
-## What the Agent Can Do
-
-- **Create strategy labs** — initialize multi-agent projects from templates (`rule`, `model`, `llm`, `hybrid`)
-- **Run parameter sweeps** — expand YAML-defined grids into parallel backtest variants
-- **Compare scoreboards** — rank runs by Sharpe ratio, PnL, or other metrics
-- **Inspect artifacts** — read `summary.json.run_result` and `scoreboard.json` from any run
-- **Promote backtests to paper** — move winning runs forward through explicit gates
-- **Generate deployment bundles** — emit local runners, Docker Compose, or Render worker configs
-- **Keep live trading gated** — live mode requires human acknowledgement at every promotion step
+Reusable workflow skills come from the installed QuantTradeAI plugin. Generated workspaces only carry local context and the uv project files.
 
 ---
 
 ## Artifact-Based Research
 
-Every run writes machine-readable artifacts. Agents read these to decide what to do next — no manual result-parsing required.
+Every run writes durable artifacts the agent can inspect before recommending anything.
 
 | Artifact | What it contains |
 | :--- | :--- |
-| `summary.json` → `run_result` | High-level outcome: winner, ranked candidates, failures |
-| `scoreboard.json` | Ranked metrics across all sweep variants |
-| `results.json` | Per-variant metrics for batch and sweep runs |
-| `metrics.json` | Full metrics for a single run |
-| `resolved_project_config.yaml` | Exact config used for the run — fully reproducible |
-
----
+| `summary.json` -> `run_result` | High-level outcome, ranked candidates, failures, and warnings. |
+| `scoreboard.json` | Ranked metrics across sweep or batch variants. |
+| `results.json` | Child run IDs, statuses, parameters, variant configs, and failures. |
+| `metrics.json` | Full metrics for a single run. |
+| `resolved_project_config.yaml` | Exact config used for the run. |
 
 ## Safety Model
 
-Experiments start in backtest. Agents cannot self-promote to live trading.
+Experiments start in backtest. Agents cannot quietly jump to live trading.
 
 | Mode | Gate |
 | :--- | :--- |
-| **Backtest** | Always available — no credentials needed |
-| **Paper** | Replay-backed simulation — requires explicit `promote` from a passing backtest |
-| **Live** | Requires `--acknowledge-live` from a human, plus validated streaming and risk config |
+| **Backtest** | Always available; no broker credentials needed. |
+| **Paper** | Replay-backed simulation; promote from a passing backtest first. |
+| **Live** | Requires explicit human acknowledgement plus validated streaming and risk config. |
 
 > [!CAUTION]
-> Live mode and broker-backed execution are fully opt-in. QuantTradeAI does not guarantee profitability.
+> Live mode and broker-backed execution are opt-in. QuantTradeAI does not guarantee profitability.
 
 ---
 
-## Current Capabilities
+## Documentation
 
-| Capability | Status |
-| :--- | :---: |
-| Strategy labs, sweeps, and research runs | Supported |
-| Rule, model, LLM, and hybrid agents | Supported |
-| Backtest, paper (replay-backed), and live modes | Supported |
-| Scoreboards and run comparison | Supported |
-| Research-to-agent promotion pipeline | Supported |
-| Deployment bundles (local, Docker Compose, Render) | Supported |
+**Start** - [Getting Started](docs/getting-started.md) | [Agent Plugins](docs/plugins.md) | [Docs Home](docs/README.md)
 
-For the full list, see the [docs](docs/README.md).
+**Configure** - [Project YAML](docs/config/project-file.md) | [Config Overview](docs/config/)
+
+**Reference** - [CLI](docs/cli/) | [Artifacts](docs/artifacts.md) | [API Docs](docs/api/) | [Roadmap](roadmap.md)
 
 ---
 
-## Local Development
+## Contributor Setup
+
+Clone the source only when you are contributing to QuantTradeAI itself or testing local package changes.
 
 ```bash
 git clone https://github.com/AKKI0511/QuantTradeAI.git
 cd QuantTradeAI
 poetry install --with dev
+make test
 ```
 
-Initialize a workspace and open it in your coding agent:
+Create a test workspace from the checkout:
 
 ```bash
 poetry run quanttradeai init my-lab
@@ -198,11 +190,7 @@ uv sync
 uv run quanttradeai doctor
 ```
 
-Generated workspaces always pin `quanttradeai==<version>` in `pyproject.toml`.
-Use `uvx quanttradeai@<version> init my-lab` when you need to generate a
-workspace from a specific published package version. When testing local source
-changes from a generated workspace, keep the generated pin intact and install the
-checkout into the workspace environment explicitly:
+When testing checkout changes inside a generated workspace, keep the generated package pin and install the checkout into that workspace environment explicitly:
 
 ```bash
 uv pip install --reinstall -e ..
@@ -211,20 +199,10 @@ uv pip install --reinstall -e ..
 Dev commands:
 
 ```bash
-make format   # auto-format
-make lint     # run linters
-make test     # run test suite
+make format
+make lint
+make test
 ```
-
----
-
-## Documentation
-
-**Get started** — [Getting Started](docs/getting-started.md) · [Docs](docs/README.md)
-
-**Configure** — [Project YAML](docs/config/project-file.md) · [Config Overview](docs/config/)
-
-**Reference** — [API Docs](docs/api/) · [Roadmap](roadmap.md) · [Contributing](CONTRIBUTING.md)
 
 ---
 

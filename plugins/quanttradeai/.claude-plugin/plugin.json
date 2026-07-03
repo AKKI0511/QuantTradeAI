@@ -3,7 +3,7 @@
   "name": "quanttradeai",
   "displayName": "QuantTradeAI",
   "version": "0.1.0",
-  "description": "QuantTradeAI workspace skills for strategy experiments, model research, run analysis, promotion, and deployment.",
+  "description": "QuantTradeAI workspace skills for onboarding, strategy experiments, model research, run analysis, promotion, and deployment.",
   "author": {
     "name": "Akshat Joshi",
     "email": "joshiakshat0511@gmail.com",

@@ -9,31 +9,37 @@ agent runs, promotion, and deployment.
 Use the small CLI surface first:
 
 ```bash
-poetry run quanttradeai init --template research -o config/project.yaml
-poetry run quanttradeai validate -c config/project.yaml
-poetry run quanttradeai research run -c config/project.yaml
-poetry run quanttradeai research run -c config/project.yaml --sweep <sweep_name> --max-concurrency 4
-poetry run quanttradeai runs list --scoreboard --sort-by net_sharpe
-poetry run quanttradeai promote --run research/<run_id> -c config/project.yaml
+uvx quanttradeai init research-lab --template research
+cd research-lab
+uv sync
+uv run quanttradeai doctor
+uv run quanttradeai validate -c config/project.yaml
+uv run quanttradeai research run -c config/project.yaml
+uv run quanttradeai research run -c config/project.yaml --sweep <sweep_name> --max-concurrency 4
+uv run quanttradeai runs list --scoreboard --sort-by net_sharpe
+uv run quanttradeai promote --run research/<run_id> -c config/project.yaml
 ```
 
 Agent projects follow the same pattern:
 
 ```bash
-poetry run quanttradeai init --template llm-agent -o config/project.yaml
-poetry run quanttradeai validate -c config/project.yaml
-poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
-poetry run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
-poetry run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
-poetry run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live breakout_gpt
+uvx quanttradeai init llm-lab --template llm-agent
+cd llm-lab
+uv sync
+uv run quanttradeai doctor
+uv run quanttradeai validate -c config/project.yaml
+uv run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode backtest
+uv run quanttradeai promote --run agent/backtest/<run_id> -c config/project.yaml
+uv run quanttradeai agent run --agent breakout_gpt -c config/project.yaml --mode paper
+uv run quanttradeai promote --run agent/paper/<run_id> -c config/project.yaml --to live --acknowledge-live breakout_gpt
 ```
 
 Deployment stays under the same command:
 
 ```bash
-poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target local
-poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
-poetry run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target render -o deployments/breakout-render
+uv run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target local
+uv run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target docker-compose
+uv run quanttradeai deploy --agent breakout_gpt -c config/project.yaml --target render -o deployments/breakout-render
 ```
 
 ## Product Objects

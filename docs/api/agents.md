@@ -2,7 +2,7 @@
 
 ## Overview
 
-QuantTradeAI agent classes are framework components for turning market context into normalized trading decisions. They are different from coding agents such as Claude, Codex, or Cursor, which are operators that can edit files or run the CLI/YAML workflows.
+QuantTradeAI agent classes are framework components for turning market context into normalized trading decisions. They are different from coding agents such as Claude Code or Codex, which are operators that can edit files or run the CLI/YAML workflows.
 
 Use this API when you want to extend strategy logic in Python or embed project-defined agent runs in another Python process.
 

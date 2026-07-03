@@ -1,6 +1,6 @@
 # Examples
 
-These examples are working patterns for using QuantTradeAI with a coding agent such as Claude Code, Codex, or Cursor. They are not deep tutorials and they do not replace the CLI, config, or artifact reference pages.
+These examples are working patterns for using QuantTradeAI with a coding agent such as Claude Code or Codex. They are not deep tutorials and they do not replace the CLI, config, or artifact reference pages.
 
 Start with [Strategy Lab Sweep](strategy-lab-sweep.md) if you want the quickest realistic workflow: define rule-based strategies in YAML, run backtest sweeps, and have the agent recommend a candidate from artifacts.
 
