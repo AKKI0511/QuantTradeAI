@@ -4,9 +4,7 @@
 
 QuantTradeAI is an agent-native workspace for researching trading strategies. It is built so Claude Code, Codex, Cursor, and similar coding agents can work from a structured lab instead of creating messy one-off scripts for every data pull, backtest, sweep, and comparison.
 
-You give the research objective. The agent uses `config/project.yaml`, the `quanttradeai` CLI, and machine-readable artifacts to run repeatable experiments, compare strategy variants, and recommend the next step.
-
-## Start here
+You give the research objective. The agent uses `project.yaml`, the `quanttradeai` CLI, and machine-readable artifacts to run repeatable experiments, compare strategy variants, and recommend the next step.
 
 <table>
   <tr>
@@ -15,25 +13,48 @@ You give the research objective. The agent uses `config/project.yaml`, the `quan
       Set up a QuantTradeAI workspace and hand it to a coding agent.
     </td>
     <td width="50%">
-      <a href="artifacts.md"><strong>Artifacts</strong></a><br>
-      Understand the outputs agents use to compare runs and explain recommendations.
+      <a href="plugins.md"><strong>Agent Plugins</strong></a><br>
+      Codex and Claude Code marketplace install, checks, and plugin skill behavior.
     </td>
   </tr>
 </table>
 
-## Documentation map
+## Start Here
+
+Install the plugin:
+
+```bash
+# Codex
+codex plugin marketplace add AKKI0511/QuantTradeAI --sparse .agents/plugins --sparse plugins
+codex plugin add quanttradeai@quanttradeai
+
+# Claude Code
+claude plugin marketplace add AKKI0511/QuantTradeAI --sparse .claude-plugin plugins
+claude plugin install quanttradeai@quanttradeai
+```
+
+Open Claude Code or Codex in the folder where you want the workspace, then prompt it like this:
+
+```text
+use QuantTradeAI and create a workspace called vibe-lab.
+vibe quant research: AAPL/MSFT, daily bars, RSI mean reversion vs SMA trend, 2022-2024, costs included, no live trading.
+```
+
+The agent should create the workspace, run the CLI and give you an evidence-backed answer.
+
+## Documentation Map
 
 | Area | What it covers |
 | :--- | :--- |
 | [Getting Started](getting-started.md) | Setup, workspace creation, and agent usage. |
-| [Agent Plugins](plugins.md) | Install the QuantTradeAI plugin in Codex or Claude Code. |
+| [Agent Plugins](plugins.md) | Codex and Claude Code marketplace install, checks, and plugin skill behavior. |
 | [Artifacts](artifacts.md) | Run outputs, scoreboards, summaries, and recommendation evidence. |
-| [CLI](cli/) | Commands, when to use them, inputs, outputs, and artifacts. |
+| [CLI](cli/) | Commands, inputs, outputs, and artifacts. |
 | [Config](config/) | `project.yaml` and supported data, research, agent, and execution sections. |
+| [Examples](examples/) | Agent-native patterns for strategy sweeps and model promotion. |
 | [API](api/) | Python API reference for advanced users. |
-| [Examples](examples/) | Agent-native working patterns for strategy sweeps and model promotion. |
 
-## Safety model
+## Safety Model
 
 > Backtest first. Replay-backed paper next. Live trading and broker-backed execution require explicit human approval.
 

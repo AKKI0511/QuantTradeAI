@@ -2,7 +2,7 @@
 
 The `agents` section defines trading agents that QuantTradeAI can backtest, run in paper mode, run in live mode, sweep, promote, and deploy.
 
-> **Important distinction:** a coding agent/operator is Claude Code, Codex, or Cursor editing YAML and running CLI commands. A trading agent is a YAML-defined `rule`, `model`, `llm`, or `hybrid` strategy executed by QuantTradeAI.
+> **Important distinction:** a coding agent/operator is Claude Code or Codex editing YAML and running CLI commands. A trading agent is a YAML-defined `rule`, `model`, `llm`, or `hybrid` strategy executed by QuantTradeAI.
 
 ## Used By
 

@@ -1,7 +1,7 @@
 {
   "name": "quanttradeai",
   "version": "0.1.0",
-  "description": "QuantTradeAI workspace skills for strategy experiments, model research, run analysis, promotion, and deployment.",
+  "description": "QuantTradeAI workspace skills for onboarding, strategy experiments, model research, run analysis, promotion, and deployment.",
   "author": {
     "name": "Akshat Joshi",
     "email": "joshiakshat0511@gmail.com",
@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "QuantTradeAI",
     "shortDescription": "Run, compare, promote, and deploy QuantTradeAI workflows.",
-    "longDescription": "A production-ready plugin that packages QuantTradeAI workspace skills for YAML-first strategy experiments, ML model research, artifact analysis, run comparison, promotion, paper checks, live-trading safety boundaries, and deployment bundle generation.",
+    "longDescription": "A production-ready plugin that packages QuantTradeAI workspace skills for agent-first onboarding, YAML-first strategy experiments, ML model research, artifact analysis, run comparison, promotion, paper checks, live-trading safety boundaries, and deployment bundle generation.",
     "developerName": "Akshat Joshi",
     "category": "Productivity",
     "capabilities": [
@@ -31,6 +31,7 @@
     ],
     "websiteURL": "https://akkijoshi.gitbook.io/quanttradeai/",
     "defaultPrompt": [
+      "Create a QuantTradeAI workspace and run a strategy research pass.",
       "Run a QuantTradeAI strategy backtest from config/project.yaml.",
       "Train and evaluate a QuantTradeAI research model.",
       "Analyze QuantTradeAI run artifacts and choose a candidate.",
