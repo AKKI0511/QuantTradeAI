@@ -1,6 +1,6 @@
 ---
 name: workspace-onboarding
-description: Use when a user wants to start with QuantTradeAI from outside an initialized workspace, create a new QuantTradeAI lab, set up uv, run doctor, validate the generated project YAML, or asks for a natural-language quant research workflow that should begin by creating a workspace. Handles the agent-first onboarding path with `uvx quanttradeai init`, `uv sync`, `uv run quanttradeai doctor`, and handoff into strategy, model, or run-analysis workflows.
+description: Use when a user wants to start with QuantTradeAI from outside an initialized workspace, create a new QuantTradeAI lab, validate the generated project YAML, or asks for a natural-language quant research workflow that should begin by creating a workspace. Handles the agent-first onboarding path with `uvx quanttradeai init`, `uv sync`, and handoff into strategy, model, or run-analysis workflows.
 ---
 
 # Workspace Onboarding
